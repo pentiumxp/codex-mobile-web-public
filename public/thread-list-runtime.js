@@ -779,9 +779,16 @@ function renderThreads(result = null) {
     const goal = threadGoalForThread(thread);
     const goalBadge = renderThreadGoalBadge(goal);
     const pendingIncomingTaskCards = Math.max(0, Number(thread && thread.pendingIncomingTaskCardCount) || 0);
+    const returnFollowUpTaskCards = Math.max(0, Number(thread && thread.returnFollowUpTaskCardCount) || 0);
+    const returnReceiptTaskCards = Math.max(0, Number(thread && thread.returnReceiptTaskCardCount) || 0);
     const taskCardBadge = pendingIncomingTaskCards
       ? `<div class="thread-card-task-badge" title="Pending incoming task cards">${escapeHtml(`Task ${pendingIncomingTaskCards}`)}</div>`
       : "";
+    const returnTaskCardBadge = returnFollowUpTaskCards
+      ? `<div class="thread-card-task-badge thread-card-return-badge follow-up" title="Return follow-up required">${escapeHtml(`Follow-up ${returnFollowUpTaskCards}`)}</div>`
+      : returnReceiptTaskCards
+        ? `<div class="thread-card-task-badge thread-card-return-badge" title="Recent task-card return receipt">${escapeHtml(`Return ${returnReceiptTaskCards}`)}</div>`
+        : "";
     const sizeBadge = sizeText
       ? `<div class="thread-card-size${sizeWarn ? " warn" : ""}" title="Rollout file size">${escapeHtml(sizeText)}</div>`
       : "";
@@ -799,6 +806,7 @@ function renderThreads(result = null) {
           <div class="thread-card-meta-badges">
             ${goalBadge}
             ${taskCardBadge}
+            ${returnTaskCardBadge}
             ${sizeBadge}
           </div>
         </div>
@@ -819,6 +827,10 @@ function renderThreads(result = null) {
       threadGoalSignature(thread),
       state.unreadThreadIds.has(thread.id) ? 1 : 0,
       Number(thread.pendingIncomingTaskCardCount || 0),
+      Number(thread.returnReceiptTaskCardCount || 0),
+      Number(thread.returnFollowUpTaskCardCount || 0),
+      String(thread.latestReturnReceiptTaskCardId || ""),
+      String(thread.latestReturnFollowUpTaskCardId || ""),
       rolloutSizeBytes(thread),
       isRolloutOverThreshold(thread),
     ]),

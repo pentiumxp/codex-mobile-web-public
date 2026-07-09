@@ -1,6 +1,9 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { test } = require("node:test");
 
 const {
@@ -8,6 +11,9 @@ const {
   restartDefaultShellModeFromBody,
 } = require("../server-routes/core-api-route-service");
 const { createCodexProfileSwitchService } = require("../adapters/codex-profile-switch-service");
+const {
+  createRemoteManagedWorkspaceSettingsService,
+} = require("../services/remote-managed-workspaces/remote-managed-workspace-settings-service");
 
 test("core API route adapter re-exports server-routes service", () => {
   const adapter = require("../adapters/core-api-route-service");
@@ -76,6 +82,9 @@ test("core public config route uses injected runtime dependencies", async () => 
     pushSubscriptionPublicStatus: () => ({ enabled: false }),
     rateLimitsByModelObject: () => ({}),
     reasoningEffortOptions: ["medium"],
+    remoteManagedWorkspaceSettingsService: {
+      publicSettings: () => ({ enabled: true, workspaceKind: "remote_managed_workspace", connectionStatus: "connected" }),
+    },
     requestBaseUrl: () => "http://127.0.0.1:8787",
     rolloutWarningBytes: 1000,
     syncKnownCodexMobileMcpToolsets: () => {
@@ -118,6 +127,7 @@ test("core public config route uses injected runtime dependencies", async () => 
   assert.equal(sent.body.defaultShellMode, "vite-app-preview");
   assert.equal(sent.body.defaultModel, "gpt-test");
   assert.equal(sent.body.workspaceDelegation.enabled, true);
+  assert.equal(sent.body.remoteManagedWorkspace.connectionStatus, "connected");
   assert.equal(sent.body.frontendDiagnosticLog.enabled, true);
   assert.deepEqual(sent.body.frontendDiagnosticLog.scopes, ["submitted_echo"]);
   assert.equal(sent.body.threadListFallbackPrewarm.pending, false);
@@ -167,6 +177,134 @@ test("core settings route persists frontend diagnostic log settings", async () =
   assert.deepEqual(handled, { handled: true });
   assert.equal(sent.status, 200);
   assert.equal(sent.body.frontendDiagnosticLog.source, "runtime");
+});
+
+test("core remote managed workspace settings route masks enrollment token readback", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-core-route-"));
+  const projectRoot = path.join(dir, "project");
+  fs.mkdirSync(projectRoot, { recursive: true });
+  const settingsService = createRemoteManagedWorkspaceSettingsService({
+    fs,
+    path,
+    settingsFile: path.join(dir, "settings.json"),
+    stateFile: path.join(dir, "state.json"),
+    enrollmentTokenFile: path.join(dir, "secret", "enrollment-token"),
+  });
+  let settingsChanged = 0;
+  let sent = null;
+  const service = createCoreApiRouteService({
+    httpStatusError: (statusCode, message) => {
+      const err = new Error(message);
+      err.statusCode = statusCode;
+      return err;
+    },
+    remoteManagedWorkspaceSettingsService: settingsService,
+    remoteManagedWorkspaceRunnerService: {
+      handleSettingsChanged: () => {
+        settingsChanged += 1;
+      },
+    },
+  });
+
+  try {
+    const handled = await service.handleAuthorizedRoute({
+      url: new URL("http://127.0.0.1:8787/api/settings/remote-managed-workspace"),
+      req: { method: "POST", headers: {} },
+      res: {},
+      readBody: async () => ({
+        enabled: true,
+        workspaceId: "rmw_core",
+        nodeName: "core-node",
+        centralUrl: "http://127.0.0.1:9888",
+        projectRoot,
+        allowedRoot: dir,
+        enrollmentToken: "core-secret-token",
+      }),
+      sendJson: (status, body) => {
+        sent = { status, body };
+      },
+    });
+
+    assert.deepEqual(handled, { handled: true });
+    assert.equal(settingsChanged, 1);
+    assert.equal(sent.status, 200);
+    assert.equal(sent.body.remoteManagedWorkspace.enrollmentTokenConfigured, true);
+    assert.doesNotMatch(JSON.stringify(sent.body), /core-secret-token/);
+
+    await service.handleAuthorizedRoute({
+      url: new URL("http://127.0.0.1:8787/api/settings/remote-managed-workspace"),
+      req: { method: "GET", headers: {} },
+      res: {},
+      readBody: async () => ({}),
+      sendJson: (status, body) => {
+        sent = { status, body };
+      },
+    });
+    assert.equal(sent.status, 200);
+    assert.equal(sent.body.remoteManagedWorkspace.workspaceId, "rmw_core");
+    assert.doesNotMatch(JSON.stringify(sent.body), /core-secret-token/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("core remote managed workspace workspace action auto-generates internal settings", async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-core-action-"));
+  const projectRoot = path.join(dir, "project");
+  fs.mkdirSync(projectRoot, { recursive: true });
+  const settingsService = createRemoteManagedWorkspaceSettingsService({
+    fs,
+    path,
+    settingsFile: path.join(dir, "settings.json"),
+    stateFile: path.join(dir, "state.json"),
+    enrollmentTokenFile: path.join(dir, "secret", "enrollment-token"),
+  });
+  let settingsChanged = 0;
+  let sent = null;
+  const service = createCoreApiRouteService({
+    httpStatusError: (statusCode, message) => {
+      const err = new Error(message);
+      err.statusCode = statusCode;
+      return err;
+    },
+    remoteManagedWorkspaceSettingsService: settingsService,
+    remoteManagedWorkspaceRunnerService: {
+      handleSettingsChanged: () => {
+        settingsChanged += 1;
+      },
+    },
+  });
+
+  try {
+    const handled = await service.handleAuthorizedRoute({
+      url: new URL("http://127.0.0.1:8787/api/settings/remote-managed-workspace/workspace"),
+      req: { method: "POST", headers: {} },
+      res: {},
+      readBody: async () => ({
+        action: "enable",
+        centralUrl: "http://127.0.0.1:9888",
+        enrollmentToken: "workspace-action-secret",
+        workspace: {
+          cwd: projectRoot,
+          label: "Route Project",
+        },
+      }),
+      sendJson: (status, body) => {
+        sent = { status, body };
+      },
+    });
+
+    assert.deepEqual(handled, { handled: true });
+    assert.equal(settingsChanged, 1);
+    assert.equal(sent.status, 200);
+    assert.match(sent.body.remoteManagedWorkspace.workspaceId, /^rmw_route-project_[a-f0-9]{12}$/);
+    assert.equal(sent.body.remoteManagedWorkspace.projectRoot, projectRoot);
+    assert.equal(sent.body.remoteManagedWorkspace.allowedRoot, projectRoot);
+    assert.equal(sent.body.remoteManagedWorkspace.enrollmentTokenConfigured, true);
+    assert.doesNotMatch(JSON.stringify(sent.body), /workspace-action-secret/);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("core client-events route schedules user-behavior repair cards without blocking response", async () => {

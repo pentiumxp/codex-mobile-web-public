@@ -2046,6 +2046,7 @@ test("thread detail first-paint performance input preserves cached and API timin
     renderElapsedMs: 4.4,
     detailRenderMode: "cached-current",
     cached: true,
+    fullBackfillPlanned: false,
     threadListRenderMs: 1.2,
     conversationRenderMs: 2.3,
   });
@@ -2077,6 +2078,7 @@ test("thread detail first-paint performance input preserves cached and API timin
     renderElapsedMs: 20,
     detailRenderMode: "first-paint",
     cached: false,
+    fullBackfillPlanned: false,
     mergeMs: 1,
     draftRestoreMs: 2,
     composerRenderMs: 3,
@@ -2108,6 +2110,7 @@ test("thread detail first-paint reporting stage owns telemetry input shape", () 
       renderElapsedMs: 4.4,
       detailRenderMode: "cached-current",
       cached: true,
+      fullBackfillPlanned: false,
       threadListRenderMs: 1.2,
       conversationRenderMs: 2.3,
     },
@@ -2123,6 +2126,7 @@ test("thread detail first-paint reporting stage owns telemetry input shape", () 
       omittedTurns: 0,
       rolloutSizeBytes: 0,
       threadHash: "hash-1",
+      fullBackfillPlanned: false,
     },
     reason: "cached-current-reporting",
   });
@@ -2148,6 +2152,7 @@ test("thread detail first-paint reporting stage owns telemetry input shape", () 
     omittedTurns: 2.2,
     rolloutSizeBytes: 12345.9,
     threadHash: "hash-2",
+    fullBackfillPlanned: true,
   }), {
     performanceInput: {
       source: "thread-list",
@@ -2157,6 +2162,7 @@ test("thread detail first-paint reporting stage owns telemetry input shape", () 
       renderElapsedMs: 20,
       detailRenderMode: "first-paint",
       cached: false,
+      fullBackfillPlanned: true,
       mergeMs: 1,
       draftRestoreMs: 2,
       composerRenderMs: 3,
@@ -2176,6 +2182,7 @@ test("thread detail first-paint reporting stage owns telemetry input shape", () 
       omittedTurns: 2,
       rolloutSizeBytes: 12345,
       threadHash: "hash-2",
+      fullBackfillPlanned: true,
     },
     reason: "first-paint-reporting",
   });
@@ -2697,6 +2704,7 @@ test("thread detail first-paint telemetry effects plan preserves bounded event o
     omittedTurns: 2,
     rolloutSizeBytes: 12345.9,
     threadHash: "hash-1",
+    fullBackfillPlanned: true,
   }), {
     effects: [
       {
@@ -2710,6 +2718,7 @@ test("thread detail first-paint telemetry effects plan preserves bounded event o
         context: {
           action: "thread-detail-load",
           threadId: "thread-1",
+          fullBackfillPlanned: true,
         },
       },
       {
@@ -3154,6 +3163,7 @@ test("single-thread full render shell preserves fragment order with primary cont
     taskToolbar: "<toolbar/>",
     omittedBanner: "<omitted/>",
     readWarning: "<warning/>",
+    taskCardReceiptsHtml: "<receipt/>",
     turnsHtml: "<turn/>",
     approvalsHtml: "<approval/>",
     taskCardsHtml: "<task/>",
@@ -3163,7 +3173,18 @@ test("single-thread full render shell preserves fragment order with primary cont
   assert.equal(plan.mode, "detail");
   assert.equal(plan.hasPrimaryContent, true);
   assert.equal(plan.emptyMessage, "No visible turns.");
-  assert.equal(plan.html, "<goal/><rollout/><loading/><toolbar/><omitted/><warning/><turn/><approval/><task/><plugin/>");
+  assert.equal(plan.html, "<goal/><rollout/><loading/><toolbar/><omitted/><warning/><turn/><receipt/><approval/><task/><plugin/>");
+});
+
+test("single-thread full render shell treats return receipts as primary conversation content", () => {
+  const plan = renderPlan.planSingleThreadFullRenderShell({
+    taskCardReceiptsHtml: "<receipt/>",
+  });
+
+  assert.equal(plan.mode, "detail");
+  assert.equal(plan.hasPrimaryContent, true);
+  assert.equal(plan.emptyMessage, "No visible turns.");
+  assert.equal(plan.html, "<receipt/>");
 });
 
 test("single-thread full render shell renders plugin notice before empty state", () => {

@@ -70,6 +70,8 @@ function createCoreApiRouteService(deps = {}) {
     publicReleaseRepository,
     rateLimitsByModelObject,
     reasoningEffortOptions,
+    remoteManagedWorkspaceRunnerService,
+    remoteManagedWorkspaceSettingsService,
     refreshAppUpdateStatus,
     refreshGitHubLinkPreview,
     refreshPublicPullRequestStatus,
@@ -222,6 +224,10 @@ function createCoreApiRouteService(deps = {}) {
           roots: workspaceRegistryService.createRoots(),
         },
         workspaceDelegation,
+        remoteManagedWorkspace: remoteManagedWorkspaceSettingsService
+          && typeof remoteManagedWorkspaceSettingsService.publicSettings === "function"
+          ? remoteManagedWorkspaceSettingsService.publicSettings()
+          : { enabled: false, workspaceKind: "remote_managed_workspace", connectionStatus: "disconnected" },
         frontendDiagnosticLog: frontendDiagnosticLogPublicSettings(),
         hermesPlugin: {
           id: "codex-mobile",
@@ -422,6 +428,106 @@ function createCoreApiRouteService(deps = {}) {
         });
       } catch (err) {
         sendJson(err.statusCode || 500, { ok: false, error: err.message || String(err) });
+      }
+      return { handled: true };
+    }
+    if (url.pathname === "/api/settings/remote-managed-workspace" && (req.method === "GET" || req.method === "POST")) {
+      try {
+        if (!remoteManagedWorkspaceSettingsService || typeof remoteManagedWorkspaceSettingsService.publicSettings !== "function") {
+          throw httpStatusError(503, "remote_managed_workspace_settings_unavailable");
+        }
+        if (req.method === "GET") {
+          sendJson(200, { ok: true, remoteManagedWorkspace: remoteManagedWorkspaceSettingsService.publicSettings() });
+          return { handled: true };
+        }
+        const body = await readBody();
+        const remoteManagedWorkspace = remoteManagedWorkspaceSettingsService.saveSettings(body);
+        if (remoteManagedWorkspaceRunnerService && typeof remoteManagedWorkspaceRunnerService.handleSettingsChanged === "function") {
+          remoteManagedWorkspaceRunnerService.handleSettingsChanged();
+        }
+        sendJson(200, { ok: true, remoteManagedWorkspace });
+      } catch (err) {
+        sendJson(err.statusCode || 500, { ok: false, error: err.code || err.message || String(err) });
+      }
+      return { handled: true };
+    }
+    if (url.pathname === "/api/settings/remote-managed-workspace/workspace" && req.method === "POST") {
+      try {
+        if (!remoteManagedWorkspaceSettingsService || typeof remoteManagedWorkspaceSettingsService.enableWorkspace !== "function") {
+          throw httpStatusError(503, "remote_managed_workspace_settings_unavailable");
+        }
+        const body = await readBody();
+        const action = String(body && body.action || "enable").trim().toLowerCase();
+        const remoteManagedWorkspace = action === "disable"
+          ? remoteManagedWorkspaceSettingsService.disableWorkspace(body)
+          : remoteManagedWorkspaceSettingsService.enableWorkspace(body);
+        if (remoteManagedWorkspaceRunnerService && typeof remoteManagedWorkspaceRunnerService.handleSettingsChanged === "function") {
+          remoteManagedWorkspaceRunnerService.handleSettingsChanged();
+        }
+        sendJson(200, { ok: true, remoteManagedWorkspace });
+      } catch (err) {
+        sendJson(err.statusCode || 500, {
+          ok: false,
+          error: err.code || err.message || String(err),
+          remoteManagedWorkspace: remoteManagedWorkspaceSettingsService
+            && typeof remoteManagedWorkspaceSettingsService.publicSettings === "function"
+            ? remoteManagedWorkspaceSettingsService.publicSettings()
+            : undefined,
+        });
+      }
+      return { handled: true };
+    }
+    if (url.pathname === "/api/settings/remote-managed-workspace/test-connection" && req.method === "POST") {
+      try {
+        if (!remoteManagedWorkspaceRunnerService || typeof remoteManagedWorkspaceRunnerService.testConnection !== "function") {
+          throw httpStatusError(503, "remote_managed_workspace_runner_unavailable");
+        }
+        sendJson(200, await remoteManagedWorkspaceRunnerService.testConnection());
+      } catch (err) {
+        sendJson(err.statusCode || 500, {
+          ok: false,
+          error: err.code || err.message || String(err),
+          remoteManagedWorkspace: remoteManagedWorkspaceSettingsService
+            && typeof remoteManagedWorkspaceSettingsService.publicSettings === "function"
+            ? remoteManagedWorkspaceSettingsService.publicSettings()
+            : undefined,
+        });
+      }
+      return { handled: true };
+    }
+    if (url.pathname === "/api/settings/remote-managed-workspace/register" && req.method === "POST") {
+      try {
+        if (!remoteManagedWorkspaceRunnerService || typeof remoteManagedWorkspaceRunnerService.registerNow !== "function") {
+          throw httpStatusError(503, "remote_managed_workspace_runner_unavailable");
+        }
+        sendJson(200, await remoteManagedWorkspaceRunnerService.registerNow());
+      } catch (err) {
+        sendJson(err.statusCode || 500, {
+          ok: false,
+          error: err.code || err.message || String(err),
+          remoteManagedWorkspace: remoteManagedWorkspaceSettingsService
+            && typeof remoteManagedWorkspaceSettingsService.publicSettings === "function"
+            ? remoteManagedWorkspaceSettingsService.publicSettings()
+            : undefined,
+        });
+      }
+      return { handled: true };
+    }
+    if (url.pathname === "/api/settings/remote-managed-workspace/poll-once" && req.method === "POST") {
+      try {
+        if (!remoteManagedWorkspaceRunnerService || typeof remoteManagedWorkspaceRunnerService.runOnce !== "function") {
+          throw httpStatusError(503, "remote_managed_workspace_runner_unavailable");
+        }
+        sendJson(200, await remoteManagedWorkspaceRunnerService.runOnce({ force: true, suppressErrors: true }));
+      } catch (err) {
+        sendJson(err.statusCode || 500, {
+          ok: false,
+          error: err.code || err.message || String(err),
+          remoteManagedWorkspace: remoteManagedWorkspaceSettingsService
+            && typeof remoteManagedWorkspaceSettingsService.publicSettings === "function"
+            ? remoteManagedWorkspaceSettingsService.publicSettings()
+            : undefined,
+        });
       }
       return { handled: true };
     }

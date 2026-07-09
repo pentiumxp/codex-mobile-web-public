@@ -38,6 +38,11 @@ test("settings panel exposes Codex profile account and switch UI", () => {
   assert.match(appJs, /正在读取目标 Profile/);
   assert.match(appJs, /切换已写入，正在等待服务恢复/);
   assert.match(appJs, /setCodexProfileSwitchStage\(`切换失败：/);
+  assert.match(appJs, /codexProfileStatusLabel/);
+  assert.match(appJs, /profile\.accountName \|\| profile\.displayName \|\| profile\.accountLabel/);
+  assert.match(appJs, /const label = profile \? codexProfileAccountLabel\(profile\) : profileId/);
+  assert.doesNotMatch(appJs, /<strong>\$\{escapeHtml\(profile\.label \|\| id\)\}<\/strong>/);
+  assert.doesNotMatch(appJs, /`\$\{profile\.label \|\| profileId\} \(\$\{codexProfileAccountLabel\(profile\)\}\)`/);
   assert.match(appJs, /showingSwitchProgress/);
   assert.match(appJs, /switchAccepted/);
   assert.match(appJs, /function finishRestartingUiIfReady\(\)/);

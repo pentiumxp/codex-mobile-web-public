@@ -108,6 +108,93 @@ test("thread self-check repeat catches transient list and detail downgrade", asy
   }
 });
 
+test("thread self-check uses raw rollout evidence to ignore projection user-input overcount collapse", async () => {
+  const originalFetch = global.fetch;
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-self-check-"));
+  const rolloutPath = path.join(tmpDir, "rollout.jsonl");
+  const completedTurnId = "019f0e0c-a89e-7382-8251-0f58aac5df12";
+  fs.writeFileSync(rolloutPath, [
+    JSON.stringify({ type: "turn_context", payload: { turn_id: completedTurnId } }),
+    JSON.stringify({ type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "private user text" }] } }),
+    JSON.stringify({ type: "event_msg", payload: { type: "user_message" } }),
+    JSON.stringify({ type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "private assistant text" }] } }),
+    "",
+  ].join("\n"));
+  const overcountDetail = {
+    thread: {
+      id: "thread-anchor-collapse",
+      path: rolloutPath,
+      turns: [{
+        id: completedTurnId,
+        status: "completed",
+        items: [
+          { id: "u1", type: "userMessage", content: [{ type: "text", text: "private user text" }] },
+          { id: "u-anchor", type: "userMessage", content: [{ type: "text", text: "projection anchor overcount" }] },
+          { id: "a1", type: "agentMessage" },
+          { id: "usage1", type: "turnUsageSummary" },
+        ],
+      }],
+    },
+  };
+  const canonicalDetail = {
+    thread: {
+      id: "thread-anchor-collapse",
+      path: rolloutPath,
+      turns: [{
+        id: completedTurnId,
+        status: "completed",
+        items: [
+          { id: "u1", type: "userMessage", content: [{ type: "text", text: "private user text" }] },
+          { id: "a1", type: "agentMessage" },
+          { id: "usage1", type: "turnUsageSummary" },
+        ],
+      }],
+    },
+  };
+  const detailResponses = [overcountDetail, canonicalDetail];
+  global.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes("/api/public-config")) {
+      return responseJson({ version: "0.1.11", clientBuildId: "test-build", shellCacheName: "test-cache", authRequired: true });
+    }
+    if (target.includes("/api/threads/thread-anchor-collapse")) {
+      return responseJson(detailResponses.shift() || canonicalDetail);
+    }
+    if (target.includes("/api/threads")) {
+      return responseJson({
+        data: [{
+          id: "thread-anchor-collapse",
+          status: "completed",
+          updatedAt: 1782624000000,
+          path: rolloutPath,
+        }],
+      });
+    }
+    throw new Error(`unexpected url: ${target}`);
+  };
+
+  try {
+    const options = selfCheck.parseArgs([
+      "--server", "http://127.0.0.1:8787",
+      "--no-auth",
+      "--sample-threads", "1",
+      "--repeat", "2",
+      "--repeat-delay-ms", "1",
+    ]);
+    const report = await selfCheck.run(options, {});
+    const codes = report.summary.issues.map((issue) => issue.code);
+
+    assert.equal(report.ok, true);
+    assert.ok(!codes.includes("thread_detail_refresh_lost_user_input"));
+    assert.ok(!codes.includes("thread_detail_refresh_item_downgrade"));
+    assert.ok(codes.includes("thread_detail_refresh_collapsed_user_input_projection_overcount"));
+    assert.doesNotMatch(JSON.stringify(report.summary), /private user|private assistant|rollout\\.jsonl|thread-anchor-collapse/);
+  } finally {
+    global.fetch = originalFetch;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test("thread self-check catches active turn assistant projection gap from raw rollout metadata", async () => {
   const originalFetch = global.fetch;
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-self-check-"));

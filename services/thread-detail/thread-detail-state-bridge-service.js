@@ -5,6 +5,14 @@ function defaultThreadTaskCardCounts() {
     pendingTotal: 0,
     pendingIncoming: 0,
     pendingOutgoing: 0,
+    returnReceiptTotal: 0,
+    returnFollowUpTotal: 0,
+    latestReturnReceiptId: "",
+    latestReturnReceiptAt: "",
+    latestReturnReceiptStatus: "",
+    latestReturnFollowUpId: "",
+    latestReturnFollowUpAt: "",
+    latestReturnFollowUpStatus: "",
   };
 }
 
@@ -157,6 +165,8 @@ function createThreadDetailStateBridgeService(dependencies = {}) {
       : null;
     const counts = summary && summary.counts
       ? summary.counts
+      : typeof threadTaskCardService.summaryCountsForThread === "function"
+        ? threadTaskCardService.summaryCountsForThread(thread.id)
       : typeof threadTaskCardService.pendingCountsForThread === "function"
         ? threadTaskCardService.pendingCountsForThread(thread.id)
         : defaultThreadTaskCardCounts();
@@ -165,9 +175,29 @@ function createThreadDetailStateBridgeService(dependencies = {}) {
       : typeof threadTaskCardService.listForThread === "function"
         ? threadTaskCardService.listForThread(thread.id)
         : [];
+    thread.taskCardReturnLedger = summary && Array.isArray(summary.returnLedger)
+      ? summary.returnLedger
+      : typeof threadTaskCardService.returnLedgerForThread === "function"
+        ? threadTaskCardService.returnLedgerForThread(thread.id)
+        : [];
+    thread.taskCardReturnLedgerStatusCounts = summary && summary.returnLedgerStatusCounts && typeof summary.returnLedgerStatusCounts === "object"
+      ? summary.returnLedgerStatusCounts
+      : {};
+    thread.taskCardReturnLedgerIssueCodes = summary && Array.isArray(summary.returnLedgerIssueCodes)
+      ? summary.returnLedgerIssueCodes
+      : [];
     thread.pendingTaskCardCount = Number(counts.pendingTotal || 0);
     thread.pendingIncomingTaskCardCount = Number(counts.pendingIncoming || 0);
     thread.pendingOutgoingTaskCardCount = Number(counts.pendingOutgoing || 0);
+    thread.returnReceiptTaskCardCount = Number(counts.returnReceiptTotal || 0);
+    thread.returnFollowUpTaskCardCount = Number(counts.returnFollowUpTotal || 0);
+    thread.returnFollowUpPending = Number(counts.returnFollowUpTotal || 0) > 0;
+    thread.latestReturnReceiptTaskCardId = String(counts.latestReturnReceiptId || "");
+    thread.latestReturnReceiptAt = String(counts.latestReturnReceiptAt || "");
+    thread.latestReturnReceiptStatus = String(counts.latestReturnReceiptStatus || "");
+    thread.latestReturnFollowUpTaskCardId = String(counts.latestReturnFollowUpId || "");
+    thread.latestReturnFollowUpAt = String(counts.latestReturnFollowUpAt || "");
+    thread.latestReturnFollowUpStatus = String(counts.latestReturnFollowUpStatus || "");
     return thread;
   }
 

@@ -2065,10 +2065,21 @@ function rememberCodexProfiles(value) {
 }
 
 function codexProfileAccountLabel(profile) {
+  const displayName = String(profile && (profile.accountName || profile.displayName || profile.accountLabel) || "").trim();
+  if (displayName) return displayName;
   const auth = profile && profile.auth || {};
   if (auth.status === "loggedIn") {
     return auth.email || auth.name || auth.label || auth.accountId || "Logged in";
   }
+  if (auth.status === "error") return "Auth unreadable";
+  return "Not logged in";
+}
+
+function codexProfileStatusLabel(profile) {
+  const explicit = String(profile && profile.authStatusLabel || "").trim();
+  if (explicit) return explicit;
+  const auth = profile && profile.auth || {};
+  if (auth.status === "loggedIn") return "Signed in";
   if (auth.status === "error") return "Auth unreadable";
   return "Not logged in";
 }
@@ -2088,6 +2099,7 @@ function renderCodexProfileSettings() {
     const showingSwitchProgress = state.codexProfileSwitchTargetId === id && Boolean(state.codexProfileSwitchStage);
     const loggedIn = profile.auth && profile.auth.status === "loggedIn";
     const disabled = active || state.codexProfileSwitchBusy || state.codexProfileRestarting || !state.codexProfileSwitchSupported || !loggedIn;
+    const accountLabel = codexProfileAccountLabel(profile);
     const action = switchingThisProfile
       ? (state.codexProfileSwitchStage || "预检中...")
       : active
@@ -2109,8 +2121,8 @@ function renderCodexProfileSettings() {
       : "";
     return `<div class="codex-profile-row${active ? " active" : ""}">`
       + `<div class="codex-profile-main">`
-      + `<strong>${escapeHtml(profile.label || id)}</strong>`
-      + `<span>${escapeHtml(codexProfileAccountLabel(profile))}</span>`
+      + `<strong>${escapeHtml(accountLabel)}</strong>`
+      + `<span>${escapeHtml(codexProfileStatusLabel(profile))}</span>`
       + `<small>${escapeHtml(profile.codexHome || "")}</small>`
       + status
       + `</div>`
@@ -2198,13 +2210,306 @@ async function handleWorkspaceDelegationSettingsClick(event) {
   }
 }
 
+function normalizeRemoteManagedWorkspaceList(value) {
+  if (Array.isArray(value)) return value.map((item) => String(item || "").trim()).filter(Boolean);
+  return String(value || "").split(/[\n,]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizeRemoteManagedWorkspaceConfig(value) {
+  const input = value && typeof value === "object" ? value : {};
+  return {
+    enabled: Boolean(input.enabled),
+    workspaceKind: String(input.workspaceKind || "remote_managed_workspace"),
+    workspaceId: String(input.workspaceId || ""),
+    nodeName: String(input.nodeName || ""),
+    centralUrl: String(input.centralUrl || ""),
+    projectRoot: String(input.projectRoot || ""),
+    allowedRoot: String(input.allowedRoot || ""),
+    projectType: String(input.projectType || "vite_game"),
+    connectionMode: String(input.connectionMode || "persistent"),
+    effectiveConnectionMode: String(input.effectiveConnectionMode || "http_polling"),
+    persistentSession: String(input.persistentSession || ""),
+    fallbackReason: String(input.fallbackReason || ""),
+    enrollmentTokenConfigured: Boolean(input.enrollmentTokenConfigured),
+    enrollmentTokenRef: String(input.enrollmentTokenRef || ""),
+    enrollmentTokenPreview: String(input.enrollmentTokenPreview || ""),
+    connectionStatus: String(input.connectionStatus || "disconnected"),
+    lastHeartbeatAt: String(input.lastHeartbeatAt || ""),
+    lastPollAt: String(input.lastPollAt || ""),
+    activeTaskCardId: String(input.activeTaskCardId || ""),
+    activeLocalThreadId: String(input.activeLocalThreadId || ""),
+    activeLocalTurnId: String(input.activeLocalTurnId || ""),
+    activeTaskCardStartedAt: String(input.activeTaskCardStartedAt || ""),
+    lastTaskCardId: String(input.lastTaskCardId || ""),
+    lastLocalThreadId: String(input.lastLocalThreadId || ""),
+    lastLocalTurnId: String(input.lastLocalTurnId || ""),
+    lastReturnStatus: String(input.lastReturnStatus || ""),
+    lastExecutionBridgeStatus: String(input.lastExecutionBridgeStatus || ""),
+    lastRegisterAt: String(input.lastRegisterAt || ""),
+    lastConnectionCheckAt: String(input.lastConnectionCheckAt || ""),
+    queuedTerminalReturnCount: Number(input.queuedTerminalReturnCount || 0) || 0,
+    roles: normalizeRemoteManagedWorkspaceList(input.roles),
+    capabilities: normalizeRemoteManagedWorkspaceList(input.capabilities),
+    issueCodes: normalizeRemoteManagedWorkspaceList(input.issueCodes),
+    source: String(input.source || "default"),
+    updatedAt: String(input.updatedAt || ""),
+  };
+}
+
+function rememberRemoteManagedWorkspaceConfig(value) {
+  state.remoteManagedWorkspace = normalizeRemoteManagedWorkspaceConfig(value);
+  renderRemoteManagedWorkspaceSettings();
+}
+
+function remoteManagedWorkspaceStatusLabel(status) {
+  switch (String(status || "")) {
+    case "connected": return "connected";
+    case "connecting": return "connecting";
+    case "stale": return "stale";
+    case "auth_failed": return "auth failed";
+    case "config_invalid": return "config invalid";
+    case "offline": return "offline";
+    default: return "disconnected";
+  }
+}
+
+function remoteManagedWorkspacePathKey(value) {
+  return String(value || "").replace(/[\\/]+$/, "").toLowerCase();
+}
+
+function remoteManagedWorkspaceBaseName(value) {
+  const text = String(value || "").replace(/[\\/]+$/, "");
+  const parts = text.split(/[\\/]+/).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : text;
+}
+
+function remoteManagedWorkspaceFieldHtml(label, name, value, options = {}) {
+  const type = options.type || "text";
+  const placeholder = options.placeholder || "";
+  return `<label class="remote-managed-workspace-field"><span>${escapeHtml(label)}</span>`
+    + `<input type="${escapeHtml(type)}" data-rmw-field="${escapeHtml(name)}" value="${escapeHtml(value || "")}" placeholder="${escapeHtml(placeholder)}" autocomplete="off">`
+    + `</label>`;
+}
+
+function remoteManagedWorkspaceReadonlyField(label, value) {
+  return `<div class="remote-managed-workspace-diagnostic"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value || "--")}</strong></div>`;
+}
+
+function remoteManagedWorkspaceRowStatus(config, workspace) {
+  const cwd = String(workspace && workspace.cwd || "");
+  if (!cwd) return { label: "Invalid path", className: "invalid" };
+  const active = Boolean(config.enabled && remoteManagedWorkspacePathKey(config.projectRoot) === remoteManagedWorkspacePathKey(cwd));
+  if (!active) return { label: "Local", className: "local" };
+  if (!config.enrollmentTokenConfigured) return { label: "Auth required", className: "auth" };
+  const status = remoteManagedWorkspaceStatusLabel(config.connectionStatus);
+  if (status === "connected") return { label: "Connected", className: "connected" };
+  if (status === "connecting") return { label: "Connecting", className: "connecting" };
+  if (status === "offline") return { label: "Offline", className: "offline" };
+  if (status === "stale") return { label: "Remote managed", className: "stale" };
+  if (status === "auth failed") return { label: "Auth required", className: "auth" };
+  if (status === "config invalid") return { label: "Invalid path", className: "invalid" };
+  return { label: "Remote managed", className: "remote" };
+}
+
+function remoteManagedWorkspaceRowsHtml(config, busy) {
+  const workspaces = Array.isArray(state.workspaces) ? state.workspaces.slice(0, 24) : [];
+  if (!workspaces.length) {
+    return `<div class="remote-managed-workspace-empty">No local workspaces.</div>`;
+  }
+  return workspaces.map((workspace) => {
+    const cwd = String(workspace && workspace.cwd || "");
+    const label = String(workspace && workspace.label || remoteManagedWorkspaceBaseName(cwd) || "Workspace");
+    const source = String(workspace && workspace.source || "local");
+    const active = Boolean(config.enabled && remoteManagedWorkspacePathKey(config.projectRoot) === remoteManagedWorkspacePathKey(cwd));
+    const status = remoteManagedWorkspaceRowStatus(config, workspace);
+    const mainAction = active ? "disable-workspace" : "enable-workspace";
+    const mainLabel = active ? "Disable" : "远程受控";
+    return `<article class="remote-managed-workspace-item ${escapeHtml(status.className)}${active ? " active" : ""}">`
+      + `<div class="remote-managed-workspace-item-main">`
+      + `<strong>${escapeHtml(label)}</strong>`
+      + `<span>${escapeHtml(cwd)}</span>`
+      + `<small>${escapeHtml(status.label)} · ${escapeHtml(source)}</small>`
+      + `</div>`
+      + `<div class="remote-managed-workspace-item-actions">`
+      + `<button type="button" data-rmw-action="${escapeHtml(mainAction)}" data-rmw-workspace-cwd="${escapeHtml(cwd)}" ${busy || !cwd ? "disabled" : ""}>${escapeHtml(mainLabel)}</button>`
+      + `<button type="button" data-rmw-action="test-connection" data-rmw-workspace-cwd="${escapeHtml(cwd)}" ${busy || !active ? "disabled" : ""}>Test</button>`
+      + `</div>`
+      + `</article>`;
+  }).join("");
+}
+
+function remoteManagedWorkspaceAdvancedHtml(config) {
+  const issueText = config.issueCodes.length ? config.issueCodes.slice(0, 8).join(", ") : "";
+  return `<details class="remote-managed-workspace-advanced">`
+    + `<summary>Advanced / Diagnostics</summary>`
+    + `<div class="remote-managed-workspace-advanced-grid">`
+    + remoteManagedWorkspaceReadonlyField("workspace kind", config.workspaceKind)
+    + remoteManagedWorkspaceReadonlyField("workspace id", config.workspaceId)
+    + remoteManagedWorkspaceReadonlyField("node name", config.nodeName)
+    + remoteManagedWorkspaceReadonlyField("project root", config.projectRoot)
+    + remoteManagedWorkspaceReadonlyField("allowed root", config.allowedRoot)
+    + remoteManagedWorkspaceReadonlyField("project type", config.projectType)
+    + remoteManagedWorkspaceReadonlyField("connection", `${config.connectionMode} -> ${config.effectiveConnectionMode}`)
+    + remoteManagedWorkspaceReadonlyField("token", config.enrollmentTokenConfigured ? (config.enrollmentTokenRef || config.enrollmentTokenPreview || "configured") : "not configured")
+    + remoteManagedWorkspaceReadonlyField("roles", config.roles.join(", "))
+    + remoteManagedWorkspaceReadonlyField("capabilities", config.capabilities.join(", "))
+    + remoteManagedWorkspaceReadonlyField("heartbeat", config.lastHeartbeatAt)
+    + remoteManagedWorkspaceReadonlyField("poll", config.lastPollAt)
+    + remoteManagedWorkspaceReadonlyField("task", config.lastTaskCardId)
+    + remoteManagedWorkspaceReadonlyField("return", config.lastReturnStatus)
+    + remoteManagedWorkspaceReadonlyField("queued returns", String(config.queuedTerminalReturnCount || 0))
+    + remoteManagedWorkspaceReadonlyField("issues", issueText)
+    + `</div>`
+    + `<div class="remote-managed-workspace-token-entry">`
+    + remoteManagedWorkspaceFieldHtml("Enrollment token", "enrollmentToken", "", { type: "password", placeholder: config.enrollmentTokenConfigured ? "configured" : "write-only" })
+    + `<button type="button" data-rmw-action="save" ${state.remoteManagedWorkspaceBusy ? "disabled" : ""}>Save secure entry</button>`
+    + `</div>`
+    + `</details>`;
+}
+
+function refreshRemoteManagedWorkspaceRows() {
+  if (state.remoteManagedWorkspaceWorkspaceLoadInFlight) return;
+  state.remoteManagedWorkspaceWorkspaceLoadInFlight = true;
+  api("/api/workspaces", { timeoutMs: 12000 })
+    .then((workspaceResult) => {
+      if (workspaceResult && Array.isArray(workspaceResult.data)) {
+        state.workspaces = workspaceResult.data;
+        renderRemoteManagedWorkspaceSettings();
+      }
+    })
+    .catch(() => {})
+    .finally(() => {
+      state.remoteManagedWorkspaceWorkspaceLoadInFlight = false;
+      state.remoteManagedWorkspaceWorkspaceLoadAttempted = true;
+    });
+}
+
+function renderRemoteManagedWorkspaceSettings() {
+  const el = $("remoteManagedWorkspaceSettings");
+  if (!el) return;
+  if (!((state.workspaces || []).length) && !state.remoteManagedWorkspaceWorkspaceLoadAttempted) {
+    refreshRemoteManagedWorkspaceRows();
+  }
+  const config = normalizeRemoteManagedWorkspaceConfig(state.remoteManagedWorkspace);
+  const busy = Boolean(state.remoteManagedWorkspaceBusy);
+  const status = remoteManagedWorkspaceStatusLabel(config.connectionStatus);
+  const issueText = config.issueCodes.length ? ` · ${config.issueCodes.slice(0, 3).join(", ")}` : "";
+  el.innerHTML = `<div class="remote-managed-workspace-row${config.enabled ? " enabled" : ""}">`
+    + `<div class="remote-managed-workspace-main">`
+    + `<strong>${escapeHtml(config.enabled ? "已开启" : "已关闭")} · ${escapeHtml(status)}</strong>`
+    + `<span>${escapeHtml(config.centralUrl || "Central server not set")}</span>`
+    + `<small>${escapeHtml(config.effectiveConnectionMode || "http_polling")} fallback active${escapeHtml(issueText)}</small>`
+    + `</div>`
+    + `<div class="remote-managed-workspace-side">`
+    + `<button type="button" data-rmw-action="poll-once" ${busy || !config.enabled ? "disabled" : ""}>Poll</button>`
+    + `</div>`
+    + `</div>`
+    + `<div class="remote-managed-workspace-simple-form">`
+    + remoteManagedWorkspaceFieldHtml("中央服务器地址", "centralUrl", config.centralUrl, { placeholder: "https://home-ai.example" })
+    + `<div class="remote-managed-workspace-actions">`
+    + `<button type="button" data-rmw-action="save-central" ${busy ? "disabled" : ""}>${busy ? "保存中" : "保存"}</button>`
+    + `<button type="button" data-rmw-action="register" ${busy || !config.enabled ? "disabled" : ""}>Register</button>`
+    + `</div>`
+    + `</div>`
+    + `<div class="remote-managed-workspace-workspaces">`
+    + `<div class="remote-managed-workspace-list-title"><strong>Workspaces</strong><span>${escapeHtml(String((state.workspaces || []).length || 0))}</span></div>`
+    + remoteManagedWorkspaceRowsHtml(config, busy)
+    + `</div>`
+    + remoteManagedWorkspaceAdvancedHtml(config);
+}
+
+function remoteManagedWorkspaceFormPayload() {
+  const el = $("remoteManagedWorkspaceSettings");
+  if (!el) return {};
+  const payload = {
+    enabled: Boolean(state.remoteManagedWorkspace && state.remoteManagedWorkspace.enabled),
+  };
+  el.querySelectorAll("[data-rmw-field]").forEach((field) => {
+    const name = field.getAttribute("data-rmw-field");
+    if (!name) return;
+    if (name === "enrollmentToken" && !String(field.value || "").trim()) return;
+    payload[name] = String(field.value || "").trim();
+  });
+  return payload;
+}
+
+function remoteManagedWorkspaceConfigFromResult(result) {
+  return result && (result.remoteManagedWorkspace || result.status || result.remoteManagedWorkspaceStatus) || null;
+}
+
+async function loadRemoteManagedWorkspaceSettings() {
+  const result = await api("/api/settings/remote-managed-workspace", { timeoutMs: 12000 });
+  try {
+    const workspaceResult = await api("/api/workspaces", { timeoutMs: 12000 });
+    if (workspaceResult && Array.isArray(workspaceResult.data)) state.workspaces = workspaceResult.data;
+  } catch (_) {}
+  rememberRemoteManagedWorkspaceConfig(remoteManagedWorkspaceConfigFromResult(result));
+  return result;
+}
+
+async function handleRemoteManagedWorkspaceSettingsClick(event) {
+  const button = event.target.closest("[data-rmw-action]");
+  if (!button || button.disabled || state.remoteManagedWorkspaceBusy) return;
+  const action = button.getAttribute("data-rmw-action") || "";
+  const endpoint = action === "save" || action === "save-central"
+    ? "/api/settings/remote-managed-workspace"
+    : action === "enable-workspace" || action === "disable-workspace"
+      ? "/api/settings/remote-managed-workspace/workspace"
+    : action === "test-connection"
+      ? "/api/settings/remote-managed-workspace/test-connection"
+      : action === "register"
+        ? "/api/settings/remote-managed-workspace/register"
+        : action === "poll-once"
+          ? "/api/settings/remote-managed-workspace/poll-once"
+          : "";
+  if (!endpoint) return;
+  state.remoteManagedWorkspaceBusy = true;
+  renderRemoteManagedWorkspaceSettings();
+  try {
+    const workspaceCwd = button.getAttribute("data-rmw-workspace-cwd") || "";
+    const workspace = workspaceCwd
+      ? (state.workspaces || []).find((item) => remoteManagedWorkspacePathKey(item && item.cwd) === remoteManagedWorkspacePathKey(workspaceCwd)) || { cwd: workspaceCwd }
+      : null;
+    let body = "{}";
+    if (action === "save" || action === "save-central") {
+      body = JSON.stringify(remoteManagedWorkspaceFormPayload());
+    } else if (action === "enable-workspace" || action === "disable-workspace") {
+      const payload = remoteManagedWorkspaceFormPayload();
+      body = JSON.stringify({
+        action: action === "disable-workspace" ? "disable" : "enable",
+        centralUrl: payload.centralUrl,
+        enrollmentToken: payload.enrollmentToken,
+        workspace,
+      });
+    }
+    const result = await api(endpoint, {
+      method: "POST",
+      body,
+      timeoutMs: 20000,
+    });
+    rememberRemoteManagedWorkspaceConfig(remoteManagedWorkspaceConfigFromResult(result));
+    $("connectionState").textContent = "Remote Managed Workspace 已更新";
+  } catch (err) {
+    showError(err);
+    $("connectionState").textContent = err.message || "Remote Managed Workspace 设置失败";
+    try {
+      await loadRemoteManagedWorkspaceSettings();
+    } catch (_) {
+      renderRemoteManagedWorkspaceSettings();
+    }
+  } finally {
+    state.remoteManagedWorkspaceBusy = false;
+    renderRemoteManagedWorkspaceSettings();
+  }
+}
+
 async function handleCodexProfileSettingsClick(event) {
   const button = event.target.closest("[data-codex-profile-id]");
   if (!button || button.disabled) return;
   const profileId = button.getAttribute("data-codex-profile-id") || "";
   if (!profileId || state.codexProfileSwitchBusy || state.codexProfileRestarting) return;
   const profile = state.codexProfiles.find((item) => String(item.id || "") === profileId);
-  const label = profile ? `${profile.label || profileId} (${codexProfileAccountLabel(profile)})` : profileId;
+  const label = profile ? codexProfileAccountLabel(profile) : profileId;
   const confirmed = await requestCodexProfileSwitchConfirmation(profileId, label);
   if (!confirmed) return;
   await performCodexProfileSwitch(profileId);
@@ -2434,6 +2739,7 @@ function createSettingsRuntime() {
       renderQuotaUsage: typeof renderQuotaUsage === "function" ? renderQuotaUsage : null,
       renderCodexProfileSettings: typeof renderCodexProfileSettings === "function" ? renderCodexProfileSettings : null,
       renderWorkspaceDelegationSettings: typeof renderWorkspaceDelegationSettings === "function" ? renderWorkspaceDelegationSettings : null,
+      renderRemoteManagedWorkspaceSettings: typeof renderRemoteManagedWorkspaceSettings === "function" ? renderRemoteManagedWorkspaceSettings : null,
       rememberRateLimitsFromConfig: typeof rememberRateLimitsFromConfig === "function" ? rememberRateLimitsFromConfig : null,
       rememberCodexProfiles: typeof rememberCodexProfiles === "function" ? rememberCodexProfiles : null,
   };
@@ -2620,6 +2926,7 @@ const settingsRuntimeApi = Object.freeze({ createSettingsRuntime });
     quotaShortTextFromSnapshot,
     rememberCodexProfiles,
     codexProfileAccountLabel,
+    codexProfileStatusLabel,
     renderCodexProfileSettings,
     loadCodexProfiles,
     normalizeWorkspaceDelegationConfig,
@@ -2627,6 +2934,13 @@ const settingsRuntimeApi = Object.freeze({ createSettingsRuntime });
     workspaceDelegationSourceLabel,
     renderWorkspaceDelegationSettings,
     handleWorkspaceDelegationSettingsClick,
+    normalizeRemoteManagedWorkspaceConfig,
+    rememberRemoteManagedWorkspaceConfig,
+    remoteManagedWorkspaceStatusLabel,
+    renderRemoteManagedWorkspaceSettings,
+    remoteManagedWorkspaceFormPayload,
+    loadRemoteManagedWorkspaceSettings,
+    handleRemoteManagedWorkspaceSettingsClick,
     handleCodexProfileSettingsClick,
     appVersionText,
     clientBuildVersionText,

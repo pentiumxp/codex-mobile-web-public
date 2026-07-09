@@ -126,6 +126,54 @@ test("thread-detail active turn evidence reconciles materialized rollout active 
   assert.equal(thread.mobileRolloutActiveTurn.turnId, "turn-rollout");
 });
 
+test("thread-detail active turn evidence releases terminal return receipt injected turns", () => {
+  const evidence = createService({
+    rolloutLatestTurnEvidence: () => ({
+      turnId: "turn-terminal-return",
+      startedAtMs: 2000,
+      lastActivityMs: 2500,
+      hasVisibleUser: true,
+      hasAssistant: false,
+      hasOperation: false,
+      hasTerminal: false,
+    }),
+  });
+  const thread = {
+    path: "/tmp/terminal-return-rollout.jsonl",
+    status: { type: "active" },
+    activeTurnId: "turn-terminal-return",
+    mobileLocalActiveStatus: { turnId: "turn-terminal-return" },
+    turns: [{
+      id: "turn-completed",
+      status: { type: "completed" },
+      completedAtMs: 1000,
+      items: [{ id: "assistant", type: "agentMessage" }],
+    }, {
+      id: "turn-terminal-return",
+      status: { type: "inProgress" },
+      items: [{
+        id: "terminal-return-user",
+        type: "userMessage",
+        content: [{
+          type: "input_text",
+          text: "[Cross-thread task card sent by source thread]\nTask card id: ttc_return\nReturn policy: terminal receipt; do not send an acknowledgement return unless this card explicitly creates new work.",
+        }],
+      }],
+    }],
+  };
+
+  evidence.reconcileThreadActiveTurnWithRolloutEvidence(thread, { nowMs: 3000 });
+  evidence.normalizeSupersededLiveTurns(thread);
+  evidence.pruneSupersededLiveShellTurns(thread);
+
+  assert.equal(thread.activeTurnId, undefined);
+  assert.equal(thread.mobileLocalActiveStatus, undefined);
+  assert.equal(thread.status.type, "completed");
+  assert.equal(thread.status.mobileTerminalReturnReceiptReleased, true);
+  assert.deepEqual(thread.turns.map((turn) => turn.id), ["turn-completed"]);
+  assert.deepEqual(thread.mobileTerminalReturnReceiptReleasedTurnIds, ["turn-terminal-return"]);
+});
+
 test("thread-detail active turn evidence drops empty resting active shells", () => {
   const evidence = createService();
   const thread = {

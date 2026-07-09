@@ -1282,6 +1282,7 @@ function normalizeSignature(value) {
       renderElapsedMs: normalizedDurationMs(timings.renderElapsedMs),
       detailRenderMode: compactReason(input.detailRenderMode, cached ? "cached-current" : "first-paint"),
       cached,
+      fullBackfillPlanned: input.fullBackfillPlanned === true,
     };
     addOptionalTimingField(out, "mergeMs", timings.mergeMs);
     addOptionalTimingField(out, "draftRestoreMs", timings.draftRestoreMs);
@@ -1299,6 +1300,7 @@ function normalizeSignature(value) {
       threadId: input.threadId,
       detailRenderMode: input.detailRenderMode || (cached ? "cached-current" : "first-paint"),
       cached,
+      fullBackfillPlanned: input.fullBackfillPlanned === true,
       timings: objectOrEmpty(input.timings),
     });
     return {
@@ -1315,6 +1317,7 @@ function normalizeSignature(value) {
         omittedTurns: normalizedCount(input.omittedTurns),
         rolloutSizeBytes: normalizedCount(input.rolloutSizeBytes),
         threadHash: compactReason(input.threadHash, ""),
+        fullBackfillPlanned: input.fullBackfillPlanned === true,
       },
       reason: cached ? "cached-current-reporting" : "first-paint-reporting",
     };
@@ -1685,6 +1688,7 @@ function normalizeSignature(value) {
           context: {
             action: "thread-detail-load",
             threadId,
+            fullBackfillPlanned: input.fullBackfillPlanned === true,
           },
         },
         {
@@ -1883,12 +1887,12 @@ function normalizeSignature(value) {
         emptyMessage: "",
       };
     }
-    const hasPrimaryContent = hasHtml(input.turnsHtml) || hasHtml(input.approvalsHtml) || hasHtml(input.taskCardsHtml);
+    const hasPrimaryContent = hasHtml(input.taskCardReceiptsHtml) || hasHtml(input.turnsHtml) || hasHtml(input.approvalsHtml) || hasHtml(input.taskCardsHtml);
     const emptyMessage = input.readWarningMessage
       ? "暂时没有可显示的完整消息。共享模式恢复后刷新这个页面即可继续读取。"
       : "No visible turns.";
     const body = hasPrimaryContent
-      ? `${text(input.turnsHtml)}${text(input.approvalsHtml)}${text(input.taskCardsHtml)}${text(input.pluginRefreshNotice)}`
+      ? `${text(input.turnsHtml)}${text(input.taskCardReceiptsHtml)}${text(input.approvalsHtml)}${text(input.taskCardsHtml)}${text(input.pluginRefreshNotice)}`
       : `${text(input.pluginRefreshNotice)}<div class="empty-state entry-animate">${escape(emptyMessage)}</div>`;
     return {
       mode: "detail",

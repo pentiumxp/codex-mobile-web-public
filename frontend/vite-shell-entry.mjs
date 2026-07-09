@@ -1,4 +1,4 @@
-import buildTimeShellManifest from "../public/shell-asset-manifest.json";
+import buildTimeShellManifest from "virtual:codex-mobile-shell-build-manifest";
 import {
   codexMobileViteEntryGroupIds,
   loadCodexMobileViteEntryGroups,

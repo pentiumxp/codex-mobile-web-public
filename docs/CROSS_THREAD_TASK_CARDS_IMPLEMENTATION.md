@@ -112,13 +112,15 @@ as the retry seed, and routine `cardKind=plugin_deployment` cards with
 app-server dynamic-tool attempt and a fallback `scripts/create-thread-task-card.js`
 retry from creating separate deployment cards when the plugin id, final deploy
 lane set, title/body, workflow, and return metadata are the same. Source-thread
-direct auto-approval is gated by the runtime Settings switch `跨工作区委派`, and is
-off by default. The runtime value is stored in `settings.json`;
-`CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` (or compatible alias
-`CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`) only supplies the default when no
-runtime value exists. When the switch is off, the route stores pending cards
-only. Passing `pending:true`, `autoApprove:false`, or `direct:false` also keeps
-the card in the manual-pending flow even when the switch is enabled.
+direct auto-approval is enabled for dynamic in-thread delegation by the runtime
+Settings switch `跨工作区委派`. Desktop/CLI/MCP compatibility callers can also
+request the same source-direct approval explicitly with `direct:true` or
+`autoApprove:true` on the thread-callable route. The runtime value is stored in
+`settings.json`; `CODEX_MOBILE_ALLOW_WORKSPACE_DELEGATION=1` (or compatible
+alias `CODEX_MOBILE_WORKSPACE_DELEGATION_ENABLED=1`) only supplies the default
+when no runtime value exists. Passing `pending:true`, `autoApprove:false`, or
+`direct:false` keeps the card in the manual-pending flow even when the switch or
+explicit direct compatibility request would otherwise auto-run it.
 
 Thread id is the task-card routing identity. Titles and cwd/workspace values are
 hints only and must not be used as the final workflow execution key.

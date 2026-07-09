@@ -1373,11 +1373,72 @@ function approvalRequestsSignature(threadId) {
   }));
 }
 
+function taskCardVisibleInThread(card) {
+  const status = String(card && card.status || "").trim();
+  const threadRole = String(card && card.threadRole || "").trim();
+  return threadRole === "target" && status === "pending";
+}
+
+function taskCardTerminalReturnReceiptVisibleInThread(card) {
+  const threadRole = String(card && card.threadRole || "").trim();
+  if (threadRole !== "target") return false;
+  const delivery = card && card.delivery && typeof card.delivery === "object" ? card.delivery : {};
+  const audit = card && card.audit && typeof card.audit === "object" ? card.audit : {};
+  const terminal = card && card.terminal === true
+    || delivery.terminal === true
+    || audit.terminal === true;
+  const returnToSource = delivery.returnToSource === true
+    || audit.returnToSource === true
+    || String(card && card.ackPolicy || delivery.ackPolicy || audit.ackPolicy || "").trim() === "none";
+  return terminal && returnToSource;
+}
+
+function taskCardReceiptTimestampMs(value) {
+  if (value == null || value === "") return 0;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return value < 10000000000 ? value * 1000 : value;
+  }
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  if (/^\d+$/.test(text)) return taskCardReceiptTimestampMs(Number(text));
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function taskCardReceiptUpdatedAtMs(card) {
+  const delivery = card && card.delivery && typeof card.delivery === "object" ? card.delivery : {};
+  const audit = card && card.audit && typeof card.audit === "object" ? card.audit : {};
+  const message = card && card.message && typeof card.message === "object" ? card.message : {};
+  return taskCardReceiptTimestampMs(delivery.returnedAtMs)
+    || taskCardReceiptTimestampMs(delivery.returnedAt)
+    || taskCardReceiptTimestampMs(delivery.deliveredAtMs)
+    || taskCardReceiptTimestampMs(delivery.deliveredAt)
+    || taskCardReceiptTimestampMs(audit.returnedAtMs)
+    || taskCardReceiptTimestampMs(audit.returnedAt)
+    || taskCardReceiptTimestampMs(card && card.returnedAtMs)
+    || taskCardReceiptTimestampMs(card && card.returnedAt)
+    || taskCardReceiptTimestampMs(message.createdAtMs)
+    || taskCardReceiptTimestampMs(message.createdAt)
+    || taskCardReceiptTimestampMs(card && card.createdAtMs)
+    || taskCardReceiptTimestampMs(card && card.createdAt)
+    || taskCardReceiptTimestampMs(card && card.updatedAtMs)
+    || taskCardReceiptTimestampMs(card && card.updatedAt);
+}
+
+function threadTaskCardReturnReceiptsForThread(thread) {
+  const cards = Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards : [];
+  return cards
+    .filter(taskCardTerminalReturnReceiptVisibleInThread)
+    .slice()
+    .sort((a, b) => taskCardReceiptUpdatedAtMs(b) - taskCardReceiptUpdatedAtMs(a))
+    .slice(0, 1);
+}
+
 function threadTaskCardsForThread(thread) {
   const cards = Array.isArray(thread && thread.threadTaskCards) ? thread.threadTaskCards : [];
   return cards
-    .filter((card) => String(card && card.status || "") === "pending")
-    .filter((card) => String(card && card.threadRole || "") === "target")
+    .filter(taskCardVisibleInThread)
     .slice()
     .sort((a, b) => Number(b && b.updatedAt ? Date.parse(b.updatedAt) : 0) - Number(a && a.updatedAt ? Date.parse(a.updatedAt) : 0));
 }
@@ -1390,6 +1451,17 @@ function threadTaskCardsSignature(thread) {
     threadRole: card.threadRole,
     replyCardId: card.replyCardId || "",
     injectedTurnId: card.injectedTurnId || "",
+  }));
+}
+
+function threadTaskCardReturnReceiptsSignature(thread) {
+  return threadTaskCardReturnReceiptsForThread(thread).map((card) => ({
+    id: card.id,
+    status: card.status,
+    updatedAt: card.updatedAt,
+    threadRole: card.threadRole,
+    terminal: card.terminal === true,
+    ackPolicy: card.ackPolicy || "",
   }));
 }
 
@@ -1476,6 +1548,7 @@ function conversationPatchShellSignature(thread) {
       goal: threadGoalSignature(thread),
       approvals: approvalRequestsSignature(threadId),
       taskCards: threadTaskCardsSignature(thread),
+      taskCardReceipts: threadTaskCardReturnReceiptsSignature(thread),
       readWarning: String(thread.mobileReadWarning || ""),
       readWarningMessage,
       visibleTurns: turns.map((turn) => turn && (turn.id || turn.startedAt || "")),
@@ -1505,6 +1578,7 @@ function conversationRenderSignature(thread) {
       goal: threadGoalSignature(thread),
       approvals: approvalRequestsSignature(threadId),
       taskCards: threadTaskCardsSignature(thread),
+      taskCardReceipts: threadTaskCardReturnReceiptsSignature(thread),
       projectionVersion: String(thread.mobileProjectionVersion || ""),
       projectionRevision: String(thread.mobileProjectionRevision || ""),
       visibleItemKeys: Array.isArray(thread.mobileVisibleItemKeys) ? thread.mobileVisibleItemKeys : [],
@@ -2124,6 +2198,10 @@ function createNavigationRuntime() {
     scheduleApprovalThreadRender,
     approvalsForTurn,
     pendingApprovalsForThread,
+    taskCardTerminalReturnReceiptVisibleInThread,
+    threadTaskCardReturnReceiptsSignature,
+    threadTaskCardReturnReceiptsForThread,
+    taskCardVisibleInThread,
     threadTaskCardsForThread,
     collectFileNames,
     visibleTurnsForConversation,

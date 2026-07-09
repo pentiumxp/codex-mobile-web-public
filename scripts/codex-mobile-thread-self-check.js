@@ -635,6 +635,7 @@ async function run(options = {}, env = process.env) {
       const repeatChecks = [];
       let lastDetail = firstDetail;
       let lastAnalysis = firstAnalysis;
+      let lastRawLatestCompletedCounts = rawLatestCompletedCountsBeforeFirstDetail;
       for (let index = 1; index < options.repeat; index += 1) {
         await sleep(options.repeatDelayMs);
         const rawCountsBeforeNextDetail = await readRawActiveTurnCounts(rawActiveCountSource(row, lastDetail), options);
@@ -659,19 +660,29 @@ async function run(options = {}, env = process.env) {
         if (nextLatestCompletedRawProjection && nextLatestCompletedRawProjection.issues.length) {
           repeatChecks.push(Object.assign({ index, baseline: "raw-latest-completed-turn" }, nextLatestCompletedRawProjection));
         }
-        const previousComparison = compareDetailReadbacks(lastDetail, nextDetail, { threadId });
+        const previousComparison = compareDetailReadbacks(lastDetail, nextDetail, {
+          threadId,
+          rawLatestCompletedCounts: rawLatestCompletedCountsBeforeNextDetail,
+        });
         if (previousComparison.issues.length) {
           repeatChecks.push(Object.assign({ index, baseline: "previous" }, previousComparison));
         }
-        const firstComparison = compareDetailReadbacks(firstDetail, nextDetail, { threadId });
+        const firstComparison = compareDetailReadbacks(firstDetail, nextDetail, {
+          threadId,
+          rawLatestCompletedCounts: rawLatestCompletedCountsBeforeNextDetail,
+        });
         if (firstComparison.issues.length) {
           repeatChecks.push(Object.assign({ index, baseline: "first" }, firstComparison));
         }
         lastDetail = nextDetail;
         lastAnalysis = nextAnalysis;
+        lastRawLatestCompletedCounts = rawLatestCompletedCountsBeforeNextDetail;
       }
       detailReport.second = lastAnalysis;
-      detailReport.repeat = compareDetailReadbacks(firstDetail, lastDetail, { threadId });
+      detailReport.repeat = compareDetailReadbacks(firstDetail, lastDetail, {
+        threadId,
+        rawLatestCompletedCounts: lastRawLatestCompletedCounts,
+      });
       detailReport.repeatChecks = repeatChecks;
     }
     report.threadDetails.push(detailReport);

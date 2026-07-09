@@ -104,6 +104,10 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(taskCardRuntimeCompositionServiceJs, /recordAtLoopTerminalReturn\(event\)/);
   assert.match(taskCardRuntimeCompositionServiceJs, /delete externalEvent\.returnBody/);
   assert.match(taskCardRuntimeCompositionServiceJs, /homeAiAutonomousDeliveryReturnService\.send\(externalEvent, \{ workspaceId: "owner" \}\)/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /onTaskCardReturnChanged: async \(event\) =>/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /method: "thread\/task-card-return\/changed"/);
+  assert.match(taskCardRuntimeCompositionServiceJs, /params: Object\.assign\(\{\}, event \|\| \{\}, \{ threadId \}\)/);
+  assert.match(serverJs, /broadcast,/);
   assert.doesNotMatch(serverJs, /createThreadTaskCardIntentService/);
   assert.match(serverJs, /THREAD_TASK_CARD_FILE/);
   assert.match(serverRuntimeConfigServiceJs, /CODEX_MOBILE_THREAD_TASK_CARD_FILE/);
@@ -112,6 +116,8 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(taskCardRouteServiceJs, /"\/api\/thread-task-cards"/);
   assert.doesNotMatch(taskCardRouteServiceJs, /"\/api\/thread-task-cards\/parse"/);
   assert.match(taskCardRouteServiceJs, /const threadTaskCardApprove = url\.pathname\.match\(/);
+  assert.match(taskCardRouteServiceJs, /const sourceThreadTaskCardReturnLedger = url\.pathname\.match\(/);
+  assert.match(taskCardRouteServiceJs, /const threadTaskCardReturnLedger = url\.pathname\.match\(/);
   assert.match(taskCardRouteServiceJs, /const threadTaskCardDelete = url\.pathname\.match\(/);
   assert.match(taskCardRouteServiceJs, /const threadTaskCardRevoke = url\.pathname\.match\(/);
   assert.match(taskCardRouteServiceJs, /const threadTaskCardReply = url\.pathname\.match\(/);
@@ -128,6 +134,62 @@ test("server exposes thread task card routes and enriches thread detail response
   assert.match(serverJs, /attachThreadTaskCardsToResult,/);
   assert.match(taskCardRouteServiceJs, /await threadTaskCardService\.approve/);
   assert.match(taskCardRouteServiceJs, /await threadTaskCardService\.reply/);
+  assert.match(taskCardRouteServiceJs, /threadTaskCardService\.returnLedgerForCard/);
+  assert.match(taskCardRouteServiceJs, /threadTaskCardService\.returnLedgerForThread/);
+});
+
+test("thread task-card route exposes bounded return ledger readback", async () => {
+  const calls = [];
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {
+      returnLedgerForCard(cardId, threadId) {
+        calls.push({ type: "card", cardId, threadId });
+        return {
+          taskCardId: cardId,
+          sourceThreadId: "thread-source",
+          targetThreadId: "thread-worker",
+          status: "return_visible",
+          terminalReturnCardId: "ttc_return",
+          visibilityState: "return_visible",
+          issueCodes: [],
+        };
+      },
+      returnLedgerForThread(threadId, options) {
+        calls.push({ type: "thread", threadId, options });
+        return [{
+          taskCardId: "ttc_source",
+          sourceThreadId: threadId,
+          targetThreadId: "thread-worker",
+          status: "return_visible",
+          terminalReturnCardId: "ttc_return",
+          visibilityState: "return_visible",
+          issueCodes: [],
+        }];
+      },
+    },
+  });
+  const responses = [];
+  const sendJson = (status, body) => responses.push({ status, body });
+
+  assert.deepEqual(await service.handleRoute({
+    url: new URL("http://local.invalid/api/thread-task-cards/ttc_source/return-ledger?threadId=thread-source"),
+    method: "GET",
+    sendJson,
+  }), { handled: true });
+  assert.deepEqual(await service.handleRoute({
+    url: new URL("http://local.invalid/api/threads/thread-source/task-card-return-ledger?limit=8"),
+    method: "GET",
+    sendJson,
+  }), { handled: true });
+
+  assert.equal(responses[0].status, 200);
+  assert.equal(responses[0].body.ledger.status, "return_visible");
+  assert.equal(responses[1].status, 200);
+  assert.equal(responses[1].body.returnLedger[0].taskCardId, "ttc_source");
+  assert.deepEqual(calls, [
+    { type: "card", cardId: "ttc_source", threadId: "thread-source" },
+    { type: "thread", threadId: "thread-source", options: { limit: "8" } },
+  ]);
 });
 
 test("thread task card route adapter re-exports the canonical server route", () => {
@@ -212,7 +274,8 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "applyHomeAiDeployLaneRoutingPolicy"), /planHomeAiDeployLaneRouting/);
   assert.match(functionBody(taskCardRouteServiceJs, "applyHomeAiDeployLaneRoutingPolicy"), /deploy_lane_required/);
   assert.match(functionBody(taskCardRouteServiceJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegationSettings\(\)/);
-  assert.match(functionBody(taskCardRouteServiceJs, "createThreadTaskCardsFromSourceThread"), /workspaceDelegation\.enabled[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
+  assert.match(functionBody(taskCardRouteServiceJs, "threadCallableDirectAutoApproveRequested"), /body\.direct === true \|\| body\.autoApprove === true/);
+  assert.match(functionBody(taskCardRouteServiceJs, "createThreadTaskCardsFromSourceThread"), /\(workspaceDelegation\.enabled \|\| explicitDirectAutoApprove\)[\s\S]*body\.autoApprove !== false[\s\S]*body\.direct !== false[\s\S]*body\.pending !== true/);
   assert.match(taskCardRouteServiceJs, /task-card-idempotency-service/);
   assert.match(taskCardIdempotencyServiceJs, /function threadTaskCardThreadCallIdempotencyKey/);
   assert.match(functionBody(taskCardRouteServiceJs, "threadTaskCardThreadCallIdempotencyKey"), /canonicalThreadTaskCardThreadCallIdempotencyKey/);
@@ -337,7 +400,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(createThreadTaskCardScript, /--secret-ref <sec_\.\.\.>/);
   assert.match(createThreadTaskCardScript, /--reply-to-thread <id>/);
   assert.match(createThreadTaskCardScript, /replyToThreadId/);
-  assert.match(createThreadTaskCardScript, /Settings -> 跨工作区委派/);
+  assert.match(createThreadTaskCardScript, /Request direct auto-approval on the thread-callable route/);
   assert.match(returnThreadTaskCardScript, /\/api\/thread-task-cards\/\$\{encodeURIComponent\(taskCardId\)\}\/reply/);
   assert.match(returnThreadTaskCardScript, /CODEX_MOBILE_KEY_FILE/);
   assert.match(returnThreadTaskCardScript, /--status <value>/);
@@ -567,6 +630,140 @@ test("task-card source create resolves direct started target summaries outside v
   assert.equal(createCalls[0].targetRole, "implementation");
 });
 
+test("source-thread route auto-runs explicit Desktop direct task cards without workspace switch", async () => {
+  const calls = [];
+  const rows = [
+    { id: "thread-desktop-main", name: "Desktop Main", cwd: "/repo/source" },
+    { id: "thread-plugin-worker", name: "Plugin Worker", cwd: "/repo/plugin", threadRole: "plugin_worker" },
+  ];
+  const service = createThreadTaskCardRouteService({
+    workspaceDelegationPublicSettings: () => ({ enabled: false }),
+    reasoningEffortOptions: ["low", "medium", "high", "xhigh"],
+    threadTaskCardService: {
+      createMany: async (payload) => {
+        calls.push({ type: "createMany", payload });
+        return [{
+          id: "ttc_desktop_direct",
+          status: "pending",
+          source: { threadId: payload.sourceThreadId },
+          target: { threadId: payload.targetThreadId || payload.targetThreadIds[0] },
+          delivery: { injectOnApprove: true, autoRunAfterFirstApproval: true },
+        }];
+      },
+      approveFromSource: async (cardId, actorThreadId) => {
+        calls.push({ type: "approveFromSource", cardId, actorThreadId });
+        return {
+          card: {
+            id: cardId,
+            status: "approved",
+            source: { threadId: actorThreadId },
+            target: { threadId: "thread-plugin-worker" },
+            delivery: {
+              approvalMode: "source_thread_direct",
+              targetApprovalBypassed: true,
+              injectOnApprove: true,
+              autoRunAfterFirstApproval: true,
+            },
+            injectedTurnId: "turn-worker-started",
+            injectionResult: { turn: { status: "inProgress" } },
+            executionLease: { status: "active", currentTurnId: "turn-worker-started" },
+          },
+          execution: { turnId: "turn-worker-started", result: { turn: { status: "inProgress" } } },
+        };
+      },
+    },
+    readThreadListFallback: () => rows,
+    readStartedThread: (threadId) => rows.find((row) => row.id === threadId) || null,
+    threadDisplayTitle: (thread) => thread && (thread.name || thread.title || thread.preview || thread.id) || "",
+  });
+
+  const result = await service.createThreadTaskCardsFromSourceThread("thread-desktop-main", {
+    targetThreadId: "thread-plugin-worker",
+    title: "Desktop direct worker task",
+    body: "Repair worker auto-run.",
+    workflowMode: "autonomous",
+    reasoningEffort: "xhigh",
+    direct: true,
+    autoApprove: true,
+    pending: false,
+    requestId: "desktop-direct-autostart",
+  });
+
+  assert.equal(result.workspaceDelegationEnabled, false);
+  assert.equal(result.autoApprove, true);
+  assert.equal(result.direct, true);
+  assert.equal(result.autoApproveReason, "explicit_thread_callable_direct");
+  assert.equal(calls.filter((call) => call.type === "approveFromSource").length, 1);
+  assert.equal(result.card.status, "approved");
+  assert.equal(result.card.delivery.targetApprovalBypassed, true);
+  assert.equal(result.card.injectedTurnId, "turn-worker-started");
+  assert.equal(result.card.injectionResult.turn.status, "inProgress");
+  assert.equal(result.card.executionLease.status, "active");
+});
+
+test("source-thread route preserves workspace-enabled auto-run and explicit pending override", async () => {
+  const calls = [];
+  const rows = [
+    { id: "thread-mobile-source", name: "Mobile Source", cwd: "/repo/source" },
+    { id: "thread-worker", name: "Worker", cwd: "/repo/plugin", threadRole: "plugin_worker" },
+  ];
+  const service = createThreadTaskCardRouteService({
+    workspaceDelegationPublicSettings: () => ({ enabled: true }),
+    threadTaskCardService: {
+      createMany: async (payload) => {
+        calls.push({ type: "createMany", payload });
+        return [{
+          id: `ttc_${calls.length}`,
+          status: "pending",
+          source: { threadId: payload.sourceThreadId },
+          target: { threadId: payload.targetThreadId || payload.targetThreadIds[0] },
+          delivery: { injectOnApprove: true },
+        }];
+      },
+      approveFromSource: async (cardId, actorThreadId) => {
+        calls.push({ type: "approveFromSource", cardId, actorThreadId });
+        return {
+          card: {
+            id: cardId,
+            status: "approved",
+            source: { threadId: actorThreadId },
+            target: { threadId: "thread-worker" },
+            delivery: { approvalMode: "source_thread_direct", targetApprovalBypassed: true },
+            injectedTurnId: `turn-${cardId}`,
+            executionLease: { status: "active", currentTurnId: `turn-${cardId}` },
+          },
+        };
+      },
+    },
+    readThreadListFallback: () => rows,
+    readStartedThread: (threadId) => rows.find((row) => row.id === threadId) || null,
+    threadDisplayTitle: (thread) => thread && (thread.name || thread.title || thread.preview || thread.id) || "",
+  });
+
+  const autoResult = await service.createThreadTaskCardsFromSourceThread("thread-mobile-source", {
+    targetThreadId: "thread-worker",
+    title: "Mobile source worker task",
+    body: "Run via enabled workspace delegation.",
+  });
+  const pendingResult = await service.createThreadTaskCardsFromSourceThread("thread-mobile-source", {
+    targetThreadId: "thread-worker",
+    title: "Pending worker task",
+    body: "Keep pending.",
+    direct: true,
+    autoApprove: true,
+    pending: true,
+  });
+
+  assert.equal(autoResult.autoApprove, true);
+  assert.equal(autoResult.autoApproveReason, "workspace_delegation_enabled");
+  assert.equal(autoResult.card.status, "approved");
+  assert.equal(autoResult.card.executionLease.status, "active");
+  assert.equal(pendingResult.autoApprove, false);
+  assert.equal(pendingResult.autoApproveReason, "");
+  assert.equal(pendingResult.card.status, "pending");
+  assert.equal(calls.filter((call) => call.type === "approveFromSource").length, 1);
+});
+
 test("workspace delegation RPC diagnostics are route-owned and bounded", () => {
   const lines = [];
   const service = createThreadTaskCardRouteService({
@@ -740,6 +937,14 @@ test("task_card_heartbeat dynamic tool records bounded target-thread progress", 
         assert.equal(body.source, "dynamic-tool");
         return {
           ok: true,
+          taskCardId: cardId,
+          targetThreadId: actorThreadId,
+          lastHeartbeatAt: "2026-07-04T03:00:00.000Z",
+          status: body.status,
+          source: body.source,
+          heartbeatCount: 2,
+          executionState: "active_with_heartbeat",
+          resumeRequired: true,
           heartbeat: {
             taskCardId: cardId,
             targetThreadId: actorThreadId,
@@ -773,6 +978,10 @@ test("task_card_heartbeat dynamic tool records bounded target-thread progress", 
   assert.equal(payload.targetThreadId, "target-thread");
   assert.equal(payload.lastHeartbeatAt, "2026-07-04T03:00:00.000Z");
   assert.equal(payload.heartbeatStatus, "testing");
+  assert.equal(payload.heartbeatSource, "dynamic-tool");
+  assert.equal(payload.heartbeatCount, 2);
+  assert.equal(payload.executionState, "active_with_heartbeat");
+  assert.equal(payload.resumeRequired, true);
   assert.equal(calls.length, 1);
 });
 
@@ -990,6 +1199,7 @@ test("server broadcasts lightweight thread status for background turn notificati
 
   const eventFilterBody = functionBody(threadEventNotificationServiceJs, "shouldSendEventToClient");
   assert.match(eventFilterBody, /payload\.method === "thread\/status\/changed"[\s\S]*return true;/);
+  assert.match(eventFilterBody, /payload\.method === "thread\/task-card-return\/changed"[\s\S]*return true;/);
   assert.match(functionBody(threadEventNotificationServiceJs, "broadcastThreadStatusChanged"), /applyThreadStatusPayloadToThreadListFallbackCache\(payload\);\s*broadcast\(payload\);/);
 });
 
@@ -1080,15 +1290,25 @@ test("server materializes structured task-card drafts from thread detail", () =>
 test("conversation render includes task card signature, toolbar, and action handlers", () => {
   assert.match(appJs, /clientBuildId": "0\.1\.11\|codex-mobile-shell-v\d+(?:-[a-f0-9]{12})?"/);
   assert.match(appJs, /function threadTaskCardsForThread\(/);
-  assert.match(appJs, /filter\(\(card\) => String\(card && card\.status \|\| ""\) === "pending"\)/);
-  assert.match(appJs, /filter\(\(card\) => String\(card && card\.threadRole \|\| ""\) === "target"\)/);
+  assert.match(appJs, /function taskCardVisibleInThread\(/);
+  assert.match(functionBody(appJs, "taskCardVisibleInThread"), /status === "pending"/);
+  assert.doesNotMatch(functionBody(appJs, "taskCardVisibleInThread"), /terminal && returnToSource/);
+  assert.match(appJs, /function taskCardTerminalReturnReceiptVisibleInThread\(/);
+  assert.match(functionBody(appJs, "taskCardTerminalReturnReceiptVisibleInThread"), /terminal && returnToSource/);
+  assert.match(functionBody(appJs, "threadTaskCardReturnReceiptsForThread"), /slice\(0, 1\)/);
+  assert.match(functionBody(appJs, "threadTaskCardsForThread"), /\.filter\(taskCardVisibleInThread\)/);
   assert.match(appJs, /function settleCurrentThreadTaskCard\(/);
   assert.match(appJs, /settledCard\.threadRole === "target"/);
   assert.match(appJs, /settledCard\.threadRole === "source"/);
   assert.match(appJs, /settleThreadTaskCardForThread\(threadId, id, action === "approve" \? "approved" : action === "delete" \? "deleted" : action === "revoke" \? "revoked" : "replied"/);
   assert.match(appJs, /function threadTaskCardsSignature\(/);
   assert.match(appJs, /taskCards: threadTaskCardsSignature\(thread\)/);
+  assert.match(appJs, /function threadTaskCardReturnReceiptsSignature\(/);
+  assert.match(appJs, /taskCardReceipts: threadTaskCardReturnReceiptsSignature\(thread\)/);
   assert.match(threadListRuntimeJs, /thread-card-task-badge/);
+  assert.match(threadListRuntimeJs, /thread-card-return-badge/);
+  assert.match(threadListRuntimeJs, /returnFollowUpTaskCardCount/);
+  assert.match(threadListRuntimeJs, /returnReceiptTaskCardCount/);
   assert.match(appJs, /function renderThreadTaskToolbar\(/);
   assert.match(appJs, /data-create-thread-task-card/);
   assert.match(functionBody(appJs, "renderThreadTaskToolbar"), /data-thread-action-thread-id/);
@@ -1248,6 +1468,94 @@ test("conversation render includes task card signature, toolbar, and action hand
   assert.doesNotMatch(appJs, /function maybeDelegateCrossWorkspaceMessage\(/);
   assert.doesNotMatch(functionBody(composerRuntimeJs, "sendMessage"), /maybeDelegateCrossWorkspaceMessage/);
   assert.doesNotMatch(functionBody(composerRuntimeJs, "sendMessage"), /workspaceDelegation/);
+});
+
+test("conversation task-card projection includes terminal return receipts for the source thread", () => {
+  const harness = Function(`
+${functionSource(appJs, "taskCardVisibleInThread")}
+${functionSource(appJs, "taskCardTerminalReturnReceiptVisibleInThread")}
+${functionSource(appJs, "taskCardReceiptTimestampMs")}
+${functionSource(appJs, "taskCardReceiptUpdatedAtMs")}
+${functionSource(appJs, "threadTaskCardReturnReceiptsForThread")}
+${functionSource(appJs, "threadTaskCardsForThread")}
+return { threadTaskCardReturnReceiptsForThread, threadTaskCardsForThread };
+`)();
+  const thread = {
+    id: "source-thread",
+    threadTaskCards: [
+      {
+        id: "ttc_pending",
+        status: "pending",
+        threadRole: "target",
+        updatedAt: "2026-07-09T09:00:00.000Z",
+      },
+      {
+        id: "ttc_return",
+        status: "approved",
+        threadRole: "target",
+        terminal: true,
+        ackPolicy: "none",
+        updatedAt: "2026-07-09T09:02:00.000Z",
+        createdAt: "2026-07-09T09:01:00.000Z",
+        delivery: { returnToSource: true, terminal: true, returnedAt: "2026-07-09T09:01:00.000Z" },
+        message: {
+          title: "Return: Worker completed",
+          summary: "completed",
+          bodyOmitted: true,
+        },
+      },
+      {
+        id: "ttc_old_reprojected_return",
+        status: "approved",
+        threadRole: "target",
+        terminal: true,
+        ackPolicy: "none",
+        updatedAt: "2026-07-09T10:00:00.000Z",
+        createdAt: "2026-07-09T08:00:00.000Z",
+        delivery: { returnToSource: true, terminal: true, returnedAt: "2026-07-09T08:00:00.000Z" },
+        message: {
+          title: "Return: Older worker completed",
+          summary: "older",
+          bodyOmitted: true,
+        },
+      },
+      {
+        id: "ttc_return_old",
+        status: "approved",
+        threadRole: "target",
+        terminal: true,
+        ackPolicy: "none",
+        updatedAt: "2026-07-09T09:01:00.000Z",
+        delivery: { returnToSource: true, terminal: true },
+        message: {
+          title: "Return: Older worker completed",
+          summary: "completed",
+          bodyOmitted: true,
+        },
+      },
+      {
+        id: "ttc_settled_regular",
+        status: "approved",
+        threadRole: "target",
+        updatedAt: "2026-07-09T09:03:00.000Z",
+      },
+      {
+        id: "ttc_outgoing_original",
+        status: "replied",
+        threadRole: "source",
+        terminal: true,
+        ackPolicy: "none",
+        updatedAt: "2026-07-09T09:04:00.000Z",
+        delivery: { returnToSource: true, terminal: true },
+      },
+    ],
+  };
+  const cards = harness.threadTaskCardsForThread(thread);
+  const receipts = harness.threadTaskCardReturnReceiptsForThread(thread);
+
+  assert.deepEqual(cards.map((card) => card.id), ["ttc_pending"]);
+  assert.deepEqual(receipts.map((card) => card.id), ["ttc_return"]);
+  assert.equal(receipts[0].message.title, "Return: Worker completed");
 });
 
 test("client pane toolbar actions use the owning pane thread", async () => {

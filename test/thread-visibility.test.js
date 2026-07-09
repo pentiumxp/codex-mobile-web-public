@@ -2322,6 +2322,9 @@ test("thread list summaries strip detail-only fields from app-server and fallbac
     turns: [],
     runtimeSettings: { permissionMode: "custom" },
     threadTaskCards: [{ id: "ttc-private" }],
+    taskCardReturnLedger: [{ taskCardId: "ttc-private" }],
+    taskCardReturnLedgerStatusCounts: { return_visible: 1 },
+    taskCardReturnLedgerIssueCodes: ["private-issue"],
     pendingServerRequests: [{ id: "request-private" }],
     mobileDetailLoaded: true,
     mobileLoading: false,
@@ -2339,6 +2342,9 @@ test("thread list summaries strip detail-only fields from app-server and fallbac
     "turns",
     "runtimeSettings",
     "threadTaskCards",
+    "taskCardReturnLedger",
+    "taskCardReturnLedgerStatusCounts",
+    "taskCardReturnLedgerIssueCodes",
     "pendingServerRequests",
     "mobileDetailLoaded",
     "mobileLoading",
@@ -2375,6 +2381,9 @@ test("thread list merge strips empty detail authority from app-server list rows"
       mobileProjectionVersion: "v4",
       mobileVisibleItemKeys: ["stale-key"],
       threadTaskCards: [{ id: "stale-card" }],
+      taskCardReturnLedger: [{ taskCardId: "stale-card" }],
+      taskCardReturnLedgerStatusCounts: { pending: 1 },
+      taskCardReturnLedgerIssueCodes: ["stale-issue"],
     }],
   }, [{
     id: threadId,
@@ -2388,7 +2397,7 @@ test("thread list merge strips empty detail authority from app-server list rows"
 
   assert.equal(result.data[0].id, threadId);
   assert.equal(result.data[0].mobileFallback, true);
-  for (const field of ["turns", "mobileDetailLoaded", "mobileReadMode", "mobileProjectionVersion", "mobileVisibleItemKeys", "threadTaskCards", "mobileDiagnostics"]) {
+  for (const field of ["turns", "mobileDetailLoaded", "mobileReadMode", "mobileProjectionVersion", "mobileVisibleItemKeys", "threadTaskCards", "taskCardReturnLedger", "taskCardReturnLedgerStatusCounts", "taskCardReturnLedgerIssueCodes", "mobileDiagnostics"]) {
     assert.equal(Object.prototype.hasOwnProperty.call(result.data[0], field), false, `${field} should be stripped from merged list row`);
   }
 });

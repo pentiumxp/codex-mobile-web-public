@@ -1696,16 +1696,21 @@ function evaluatedThreadStatusNotificationContext() {
     "scheduleThreadStatusDetailRender",
     "updateThreadListStatus",
     "localThreadForStatusContext",
+    "boundedTaskCardReturnCount",
+    "applyTaskCardReturnSummaryToThread",
+    "applyTaskCardReturnSummaryToLocalThreads",
     "applyNotification",
   ].map((name) => functionSourceFrom(threadListRuntimeSourceNames.has(name) ? threadListRuntimeJs : appJs, name));
   return Function(`
 const calls = {
   statusHints: [],
   currentRenders: 0,
+  currentRefreshes: [],
   tileRenders: [],
   tileLoads: [],
   renderThreads: 0,
   livePolls: [],
+  threadLoads: [],
   viewed: [],
   clearedBubbles: [],
 };
@@ -1746,6 +1751,10 @@ function threadDisplayName(thread) { return thread && (thread.name || thread.id)
 function pruneHiddenThreads() { calls.pruned = true; }
 function markThreadViewed(id, thread, eventAtMs) { calls.viewed.push({ id, threadId: thread && thread.id, eventAtMs }); }
 function renderCurrentThread() { calls.currentRenders += 1; }
+function refreshCurrentThread(options = {}) {
+  calls.currentRefreshes.push({ source: options.source, force: options.force });
+  return Promise.resolve();
+}
 function scheduleLivePollIfNeeded(delayMs) { calls.livePolls.push(delayMs); }
 function threadTilePaneIsVisible(id) { return state.threadTileActiveIds.includes(id); }
 function scheduleRenderThreadTilePane(threadId, options = {}) {
@@ -1755,6 +1764,10 @@ function scheduleRenderThreadTilePane(threadId, options = {}) {
 function scheduleRenderCurrentThread() { calls.currentRenders += 1; }
 function loadThreadTileDetail(threadId, options = {}) {
   calls.tileLoads.push({ threadId, source: options.source, force: options.force, background: options.background });
+  return Promise.resolve();
+}
+function loadThreads(options = {}) {
+  calls.threadLoads.push({ silent: options.silent, allowDuringDetail: options.allowDuringDetail });
   return Promise.resolve();
 }
 function showError(err) { calls.error = err && err.message || String(err); }
@@ -4613,7 +4626,8 @@ test("conversation html update invalidates stable signatures when the DOM has lo
   assert.match(functionBody("renderCurrentThread"), /expectedDuplicateUserMessageCount: 0/);
   assert.match(functionBody("renderCurrentThread"), /checkProjectionConsistency: true/);
   assert.match(functionBody("renderCurrentThread"), /updateConversationHtml\(\s*shellUpdatePlan\.html,\s*shellUpdatePlan\.conversationSignature,\s*Object\.assign\(\{\}, shellUpdatePlan\.options, \{ userReadingCurrentTurn \}\),\s*\)/);
-  assert.match(functionBody("visibleRenderableTurnIds"), /visibleRenderableTurnsForConversation\(thread\)\.map/);
+  assert.match(functionBody("visibleRenderableTurnIds"), /const turns = visibleRenderableTurnsForConversation\(thread\);/);
+  assert.match(functionBody("visibleRenderableTurnIds"), /returnReceiptTurnIdsForConversation\(thread, turns\)/);
   assert.match(functionBody("threadTileVisibleShape"), /visibleTurnsForConversation\(thread\)/);
   assert.match(functionBody("threadTileVisibleShape"), /const visibleItems = visibleItemsForTurn\(turn, thread\);/);
   assert.match(functionBody("threadTileVisibleShape"), /const itemCount = visibleItems\.length;/);
@@ -4854,6 +4868,7 @@ test("thread detail response diagnostics delegate outcome effects to helper", ()
   const body = functionBody("recordThreadDetailResponseDiagnostics");
   assert.match(body, /const slowPlan = threadPerformanceMetrics\.planThreadDetailSlowPathDiagnostic\(performanceEvent, \{/);
   assert.match(body, /const contractPlan = threadPerformanceMetrics\.planThreadDetailResponseContractDiagnostic\(performanceEvent, \{/);
+  assert.match(body, /fullBackfillPlanned: source\.fullBackfillPlanned === true \|\| performanceEvent\.fullBackfillPlanned === true/);
   assert.match(body, /const effectsPlan = threadDiagnosticEventsApi\.threadDetailResponseDiagnosticEffects\(\{/);
   assert.match(body, /slowPlan,/);
   assert.match(body, /slowSuccessInput: \{/);
@@ -5273,6 +5288,92 @@ return {
 
   assert.deepEqual(result.shape, { visibleTurnCount: 1, visibleItemCount: 0, duplicateUserMessageCount: 0 });
   assert.deepEqual(result.ids, ["budget-turn"]);
+});
+
+test("visible conversation shape includes source task-card return receipt turns", () => {
+  const sources = [
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
+    "turnRendersConversationArticle",
+    "visibleRenderableTurnsForConversation",
+    "returnReceiptTurnIdsForConversation",
+    "visibleConversationShape",
+    "visibleRenderableTurnIds",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+  const state = { currentThreadId: "target-thread" };
+  function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+  function visibleItemsForTurn(turn) { return Array.isArray(turn && turn.entries) ? turn.entries : []; }
+  function visibleItemBudgetSignature() { return null; }
+  function threadTaskCardReturnReceiptTurnIds(thread) { return thread && Array.isArray(thread.returnReceiptTurnIds) ? thread.returnReceiptTurnIds : []; }
+  function threadTaskCardReturnReceiptFlowTurnIds(thread, turns) {
+    return Array.isArray(thread && thread.returnReceiptFlowTurnIds)
+      ? thread.returnReceiptFlowTurnIds
+      : (Array.isArray(turns) ? turns.map((turn) => String(turn && turn.id || "")).filter(Boolean) : []).concat(threadTaskCardReturnReceiptTurnIds(thread));
+  }
+  function clientSubmissionDiagnosticHash() { return ""; }
+  function userMessageComparableParts(item) { return { text: String(item && item.text || ""), paths: [] }; }
+  function itemTextValue(value) { return String(value || ""); }
+  function userMessageTimestampMs() { return 0; }
+  function turnStartedAtMs() { return 0; }
+  function stableTextHash(value) { return "text-" + String(value || ""); }
+${sources.join("\n")}
+const thread = {
+  id: "target-thread",
+  returnReceiptTurnIds: ["task-card-return-receipt|ttc_return"],
+  turns: [
+    { id: "visible-turn", entries: [{ item: { id: "assistant-1", type: "agentMessage", text: "ok" } }] },
+  ],
+};
+  return {
+    shape: visibleConversationShape(thread),
+    ids: visibleRenderableTurnIds(thread),
+  };
+`)();
+
+  assert.deepEqual(result.shape, { visibleTurnCount: 2, visibleItemCount: 1, duplicateUserMessageCount: 0 });
+  assert.deepEqual(result.ids, ["visible-turn", "task-card-return-receipt|ttc_return"]);
+});
+
+test("visible renderable turn ids preserve return receipt flow ordering", () => {
+  const sources = [
+    "duplicateUserMessageSignatureCount",
+    "visibleUserMessageDuplicateSignature",
+    "turnRendersConversationArticle",
+    "visibleRenderableTurnsForConversation",
+    "returnReceiptTurnIdsForConversation",
+    "visibleConversationShape",
+    "visibleRenderableTurnIds",
+  ].map((name) => functionSourceFrom(appJs, name));
+  const result = Function(`
+  const state = { currentThreadId: "target-thread" };
+  function visibleTurnsForConversation(thread) { return thread && Array.isArray(thread.turns) ? thread.turns : []; }
+  function visibleItemsForTurn(turn) { return Array.isArray(turn && turn.entries) ? turn.entries : []; }
+  function visibleItemBudgetSignature() { return null; }
+  function threadTaskCardReturnReceiptTurnIds() { return ["task-card-return-receipt|ttc_return"]; }
+  function threadTaskCardReturnReceiptFlowTurnIds() { return ["turn-before", "task-card-return-receipt|ttc_return", "turn-after"]; }
+  function clientSubmissionDiagnosticHash() { return ""; }
+  function userMessageComparableParts(item) { return { text: String(item && item.text || ""), paths: [] }; }
+  function itemTextValue(value) { return String(value || ""); }
+  function userMessageTimestampMs() { return 0; }
+  function turnStartedAtMs() { return 0; }
+  function stableTextHash(value) { return "text-" + String(value || ""); }
+${sources.join("\n")}
+const thread = {
+  id: "target-thread",
+  turns: [
+    { id: "turn-before", entries: [{ item: { id: "assistant-1", type: "agentMessage", text: "before" } }] },
+    { id: "turn-after", entries: [{ item: { id: "assistant-2", type: "agentMessage", text: "after" } }] },
+  ],
+};
+return {
+  shape: visibleConversationShape(thread),
+  ids: visibleRenderableTurnIds(thread),
+};
+`)();
+
+  assert.deepEqual(result.shape, { visibleTurnCount: 3, visibleItemCount: 2, duplicateUserMessageCount: 0 });
+  assert.deepEqual(result.ids, ["turn-before", "task-card-return-receipt|ttc_return", "turn-after"]);
 });
 
 test("visible conversation shape counts duplicate user entries by entry item", () => {
@@ -7843,6 +7944,7 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.doesNotMatch(functionBody("loadThread"), /const firstPaintResponsePlan[\s\S]*?applyThreadDetailRefreshTimedPostMergeEffectsGroup\(postMergePlan, "composer-render"\)/);
   assert.doesNotMatch(functionBody("loadThread"), /state\.currentThread = mergeThreadPreservingVisibleItems\(state\.currentThread, result\.thread\);\s*mergeThreadIntoThreadList\(state\.currentThread\);/);
   assert.match(functionBody("loadThread"), /const firstPaintReportingStage = threadDetailRenderPlanApi\.planThreadDetailFirstPaintReportingStage\(\{[\s\S]*detailRenderMode: "first-paint",[\s\S]*cached: false,[\s\S]*threadHash: diagnosticThreadHash\(threadId\),[\s\S]*\}\);[\s\S]*threadPerformanceMetrics\.threadDetailFirstPaintEventFields\(\s*result\.thread,\s*firstPaintReportingStage\.performanceInput,\s*\);/);
+  assert.match(functionBody("loadThread"), /fullBackfillPlanned: shouldBackfillFullThreadDetail\(result\.thread\)/);
   assert.match(functionBody("refreshCurrentThread"), /const responseEffectsPlan = threadDetailRenderPlanApi\.planThreadDetailRefreshResponseEffects\(\{/);
   assert.match(functionBody("refreshCurrentThread"), /if \(!responseEffectsPlan\.shouldApply\) return;/);
   assert.match(functionBody("refreshCurrentThread"), /applyThreadDetailRefreshResponseEffectsPlan\(responseEffectsPlan, \{ thread: result\.thread \}\);[\s\S]*const postMergePlan = threadDetailRenderPlanApi\.planThreadDetailRefreshPostMergeEffects\(\);/);
@@ -7883,10 +7985,15 @@ test("thread running hints survive notLoaded list refreshes", () => {
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /scheduleLivePollIfNeeded\(Number\.isFinite\(delayMs\) && delayMs >= 0 \? delayMs : undefined\)/);
   assert.match(functionBody("applyThreadDetailPostRenderEffect"), /if \(shouldBackfillFullThreadDetail\(context\.thread\)\)/);
   assert.match(functionBody("shouldBackfillFullThreadDetail"), /mobileDeferredProjectionSeed/);
-  assert.match(functionBody("shouldBackfillFullThreadDetail"), /return false;[\s\S]*turns-list-initial/i);
+  assert.match(functionBody("shouldBackfillFullThreadDetail"), /projection\.partial === true/);
+  assert.match(functionBody("shouldBackfillFullThreadDetail"), /projection-v\?\\d\*-partial\|projection-partial/i);
+  assert.match(functionBody("shouldBackfillFullThreadDetail"), /projection-stale-partial-hit\|projection-partial-hit/i);
+  assert.match(functionBody("shouldBackfillFullThreadDetail"), /turns-list-initial/i);
+  assert.match(functionBody("shouldBackfillFullThreadDetail"), /mobileDeferredProjectionSeed[\s\S]*return false;/);
   assert.doesNotMatch(functionBody("loadThread"), /publishPluginNavigationState\(\{ force: true \}\);\s*restoreConnectionState\(\);\s*scheduleLivePollIfNeeded\(1200\);/);
   assert.match(functionBody("loadThread"), /const firstPaintTelemetryPlan = threadDetailRenderPlanApi\.planThreadDetailFirstPaintTelemetryEffects\(Object\.assign\(\{[\s\S]*performanceEvent: firstPaintPerformance,[\s\S]*\}, firstPaintReportingStage\.telemetryInput\)\);[\s\S]*applyThreadDetailFirstPaintTelemetryEffectsPlan\(firstPaintTelemetryPlan, \{ thread: result\.thread \}\);/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /recordThreadDetailResponseDiagnostics\(item\.performanceEvent \|\| \{\}, \{[\s\S]*thread: context\.thread,[\s\S]*\}\);/);
+  assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /fullBackfillPlanned: eventContext\.fullBackfillPlanned === true/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /postClientEvent\(String\(item\.eventName \|\| ""\), item\.payload \|\| \{\}\);/);
   assert.match(functionBody("applyThreadDetailFirstPaintTelemetryEffect"), /recordHomeAiDiagnosticSuccess\(item\.payload \|\| \{\}\);/);
   assert.doesNotMatch(functionBody("loadThread"), /postPerformanceEvent\("thread_detail_first_paint", firstPaintPerformance\);\s*recordThreadDetailResponseDiagnostics\(firstPaintPerformance/);
@@ -8026,6 +8133,84 @@ test("thread status notifications update visible tile pane through status helper
   assert.equal(harness.calls.renderThreads, 1);
   assert.equal(harness.calls.pruned, true);
   assert.deepEqual(harness.calls.livePolls, []);
+});
+
+test("task-card return notifications refresh the current source thread detail", () => {
+  const harness = evaluatedThreadStatusNotificationContext();
+
+  harness.applyNotification("thread/task-card-return/changed", {
+    threadId: "thread-current",
+    taskCardId: "ttc_original",
+    returnCardId: "ttc_return",
+    status: "return_visible",
+    returnReceiptTaskCardCount: 1,
+    returnFollowUpTaskCardCount: 0,
+    latestReturnReceiptTaskCardId: "ttc_return",
+  });
+
+  assert.deepEqual(harness.calls.currentRefreshes, [{
+    source: "task-card-return",
+    force: true,
+  }]);
+  assert.deepEqual(harness.calls.tileLoads, []);
+  assert.deepEqual(harness.calls.threadLoads, []);
+  assert.equal(harness.state.currentThread.returnReceiptTaskCardCount, 1);
+  assert.equal(harness.state.currentThread.returnFollowUpPending, false);
+  assert.equal(harness.calls.currentRenders, 0);
+});
+
+test("task-card return notifications refresh visible tile detail only for that thread", () => {
+  const harness = evaluatedThreadStatusNotificationContext();
+
+  harness.applyNotification("thread/task-card-return/changed", {
+    threadId: "thread-pane",
+    taskCardId: "ttc_original",
+    returnCardId: "ttc_return",
+    status: "return_visible",
+    returnReceiptTaskCardCount: 1,
+    returnFollowUpTaskCardCount: 1,
+    latestReturnReceiptTaskCardId: "ttc_return",
+    latestReturnFollowUpTaskCardId: "ttc_return",
+  });
+
+  assert.deepEqual(harness.calls.currentRefreshes, []);
+  assert.deepEqual(harness.calls.tileLoads, [{
+    threadId: "thread-pane",
+    source: "task-card-return",
+    force: true,
+    background: true,
+  }]);
+  assert.deepEqual(harness.calls.threadLoads, []);
+  assert.equal(harness.state.threads[0].returnFollowUpTaskCardCount, 1);
+  assert.equal(harness.state.threadTileDetails.get("thread-pane").returnFollowUpPending, true);
+  assert.equal(harness.calls.currentRenders, 0);
+});
+
+test("task-card return notifications mark non-open source thread list follow-up", () => {
+  const harness = evaluatedThreadStatusNotificationContext();
+
+  harness.applyNotification("thread/task-card-return/changed", {
+    threadId: "thread-resting-source",
+    taskCardId: "ttc_original",
+    returnCardId: "ttc_return",
+    status: "return_visible",
+    returnedAt: "2026-07-09T06:00:00.000Z",
+    returnReceiptTaskCardCount: 1,
+    returnFollowUpTaskCardCount: 1,
+    latestReturnReceiptTaskCardId: "ttc_return",
+    latestReturnFollowUpTaskCardId: "ttc_return",
+    latestReturnFollowUpStatus: "partially_completed",
+  });
+
+  assert.deepEqual(harness.calls.currentRefreshes, []);
+  assert.deepEqual(harness.calls.tileLoads, []);
+  assert.deepEqual(harness.calls.threadLoads, [{ silent: true, allowDuringDetail: true }]);
+  assert.equal(harness.calls.renderThreads, 1);
+  assert.equal(harness.state.threads[0].id, "thread-resting-source");
+  assert.equal(harness.state.threads[0].returnReceiptTaskCardCount, 1);
+  assert.equal(harness.state.threads[0].returnFollowUpTaskCardCount, 1);
+  assert.equal(harness.state.threads[0].returnFollowUpPending, true);
+  assert.equal(harness.state.threads[0].latestReturnFollowUpTaskCardId, "ttc_return");
 });
 
 test("thread merge drops superseded stale active turns", () => {

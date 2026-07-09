@@ -117,6 +117,10 @@ function createAppServerEndpointResolver(options = {}) {
     externalAppServerTcp,
   } = options;
 
+  function currentMuxEndpointFile() {
+    return typeof muxEndpointFile === "function" ? muxEndpointFile() : muxEndpointFile;
+  }
+
   return function resolveExternalEndpoint() {
     if (externalAppServerWs) {
       return { protocol: "ws", url: externalAppServerWs, source: "CODEX_MOBILE_APP_SERVER_WS", required: true };
@@ -124,16 +128,17 @@ function createAppServerEndpointResolver(options = {}) {
     if (externalAppServerTcp) {
       return parseTcpEndpoint(externalAppServerTcp, "CODEX_MOBILE_APP_SERVER_TCP");
     }
-    if (!muxEndpointFile) return null;
+    const endpointFile = currentMuxEndpointFile();
+    if (!endpointFile) return null;
     try {
-      const raw = fsImpl.readFileSync(muxEndpointFile, "utf8");
+      const raw = fsImpl.readFileSync(endpointFile, "utf8");
       const endpoint = JSON.parse(raw);
       if (endpoint && endpoint.protocol === "jsonl-tcp" && endpoint.host && endpoint.port) {
         const resolved = {
           protocol: "jsonl-tcp",
           host: endpoint.host,
           port: Number(endpoint.port),
-          source: muxEndpointFile,
+          source: endpointFile,
           capabilities: endpoint.capabilities || null,
           required: true,
         };
@@ -145,7 +150,7 @@ function createAppServerEndpointResolver(options = {}) {
         return resolved;
       }
       if (endpoint && endpoint.protocol === "ws" && endpoint.url) {
-        return { protocol: "ws", url: endpoint.url, source: muxEndpointFile, required: true };
+        return { protocol: "ws", url: endpoint.url, source: endpointFile, required: true };
       }
     } catch (_) {
       return null;
@@ -200,7 +205,7 @@ function createCodexAppServerClient(dependencies = {}) {
     codexAppServerChildEnv,
     getFreePort: getFreePortImpl = getFreePort,
     assertCommandAvailable,
-    broadcast,
+    broadcast = () => {},
     normalizeFsPath,
     recordRateLimitReadResult,
     recordRateLimits,
@@ -226,11 +231,46 @@ function createCodexAppServerClient(dependencies = {}) {
     codexProfileService = { profiles: () => null },
     liveQuotaSnapshotForProfiles = () => null,
     processImpl = process,
+    runtimeProfileBindingProvider,
   } = dependencies;
   const latestLiveRateLimitsValue = typeof dependencies.latestLiveRateLimits === "function"
     ? dependencies.latestLiveRateLimits
     : () => null;
   const maxInboundMessageBytes = boundedByteLimit(MAX_APP_SERVER_INBOUND_MESSAGE_BYTES);
+
+  function runtimeProfileBinding() {
+    const dynamic = typeof runtimeProfileBindingProvider === "function"
+      ? (runtimeProfileBindingProvider() || {})
+      : {};
+    const resolution = dynamic.codexHomeResolution || dynamic.CODEX_HOME_RESOLUTION || CODEX_HOME_RESOLUTION || {};
+    const codexHome = dynamic.codexHome || dynamic.CODEX_HOME || CODEX_HOME || "";
+    const muxEndpointFile = dynamic.muxEndpointFile || dynamic.MUX_ENDPOINT_FILE || MUX_ENDPOINT_FILE || "";
+    return {
+      codexHome,
+      muxEndpointFile,
+      codexHomeResolution: resolution,
+    };
+  }
+
+  function runtimeBindingKey(binding = runtimeProfileBinding()) {
+    return JSON.stringify({
+      codexHome: normalizeRuntimePath(binding.codexHome),
+      muxEndpointFile: normalizeRuntimePath(binding.muxEndpointFile),
+      activeProfileId: binding.codexHomeResolution && binding.codexHomeResolution.activeProfileId || "",
+      source: binding.codexHomeResolution && binding.codexHomeResolution.source || "",
+    });
+  }
+
+  function normalizeRuntimePath(value) {
+    const text = String(value || "");
+    if (!text) return "";
+    if (typeof normalizeFsPath === "function") return normalizeFsPath(text);
+    return path.resolve(text).toLowerCase();
+  }
+
+  function sameRuntimePath(left, right) {
+    return Boolean(left && right && normalizeRuntimePath(left) === normalizeRuntimePath(right));
+  }
 
 class CodexAppServerClient {
   constructor() {
@@ -250,10 +290,16 @@ class CodexAppServerClient {
     this.resetting = false;
     this.requireSharedAppServer = REQUIRE_SHARED_APP_SERVER;
     this.lastRateLimitRefreshAttemptAt = 0;
+    this.connectedRuntimeBinding = null;
+    this.connectedRuntimeBindingKey = "";
   }
 
   async ensure() {
-    if (this.ready && this.isTransportOpen()) return;
+    if (this.ready && this.isTransportOpen()) {
+      const mismatch = this.runtimeBindingMismatch();
+      if (!mismatch) return;
+      this.resetConnection(`codex profile runtime binding changed (${mismatch})`);
+    }
     if (this.connecting) return this.connecting;
     this.connecting = this.startAndConnect().finally(() => {
       this.connecting = null;
@@ -261,13 +307,25 @@ class CodexAppServerClient {
     return this.connecting;
   }
 
+  rememberRuntimeBinding(binding = runtimeProfileBinding()) {
+    this.connectedRuntimeBinding = binding;
+    this.connectedRuntimeBindingKey = runtimeBindingKey(binding);
+  }
+
+  runtimeBindingMismatch() {
+    if (!this.connectedRuntimeBindingKey) return "";
+    const currentKey = runtimeBindingKey();
+    return currentKey === this.connectedRuntimeBindingKey ? "" : "active_profile_changed";
+  }
+
   isTransportOpen() {
     return this.ws && this.ws.readyState === 1;
   }
 
   async startAndConnect() {
+    const binding = runtimeProfileBinding();
     this.closeTransportOnly();
-    const externalEndpoint = resolveExternalEndpoint();
+    const externalEndpoint = resolveExternalEndpoint(binding);
     if (externalEndpoint) {
       this.requireSharedAppServer = true;
       let connected = false;
@@ -275,19 +333,21 @@ class CodexAppServerClient {
         await this.connectEndpoint(externalEndpoint);
         connected = true;
         await this.initialize({ allowAlreadyInitialized: true });
+        this.rememberRuntimeBinding(binding);
         return;
       } catch (err) {
         this.closeTransportOnly();
-        if (this.shouldPreserveProfileMuxAfterFailure(externalEndpoint)) {
+        if (this.shouldPreserveProfileMuxAfterFailure(externalEndpoint, binding)) {
           const phase = connected ? "initialize" : "connect";
           this.lastError = `shared app-server endpoint preserved after ${phase} failure (${err.message})`;
           console.error(`[codex app-server] ${this.lastError}`);
           throw new Error(this.lastError);
         }
-        if (this.canStartOwnedMuxForEndpoint(externalEndpoint)) {
+        if (this.canStartOwnedMuxForEndpoint(externalEndpoint, binding)) {
           console.error(`[codex app-server] profile mux endpoint unavailable; starting Mobile-owned mux (${err.message})`);
-          await this.startOwnedMuxAndConnect();
+          await this.startOwnedMuxAndConnect(binding);
           await this.initialize({ allowAlreadyInitialized: true });
+          this.rememberRuntimeBinding(binding);
           return;
         }
         this.lastError = `shared app-server endpoint unavailable (${err.message})`;
@@ -298,28 +358,30 @@ class CodexAppServerClient {
 
     if (this.requireSharedAppServer) {
       if (!DISABLE_MOBILE_OWNED_MUX && !EXTERNAL_APP_SERVER_WS && !EXTERNAL_APP_SERVER_TCP) {
-        console.error(`[codex app-server] shared endpoint missing; starting Mobile-owned mux (${MUX_ENDPOINT_FILE})`);
-        await this.startOwnedMuxAndConnect();
+        console.error(`[codex app-server] shared endpoint missing; starting Mobile-owned mux (${binding.muxEndpointFile})`);
+        await this.startOwnedMuxAndConnect(binding);
         await this.initialize({ allowAlreadyInitialized: true });
+        this.rememberRuntimeBinding(binding);
         return;
       }
-      this.lastError = `shared app-server endpoint unavailable (${MUX_ENDPOINT_FILE} not found)`;
+      this.lastError = `shared app-server endpoint unavailable (${binding.muxEndpointFile} not found)`;
       console.error(`[codex app-server] ${this.lastError}`);
       throw new Error(this.lastError);
     }
 
-    await this.startManagedChild();
+    await this.startManagedChild(binding);
     await this.connectEndpoint({ protocol: "ws", url: `ws://127.0.0.1:${this.port}`, source: "managed child", required: true });
     await this.initialize();
+    this.rememberRuntimeBinding(binding);
   }
 
-  async startManagedChild() {
+  async startManagedChild(binding = runtimeProfileBinding()) {
     assertCommandAvailable(CODEX_EXE, "Codex executable");
     if (!this.child || this.child.exitCode !== null || this.child.signalCode !== null) {
       this.port = await getFreePortImpl();
       const child = spawn(CODEX_EXE, ["app-server", "--listen", `ws://127.0.0.1:${this.port}`], {
         cwd: APP_ROOT,
-        env: codexAppServerChildEnv({ CODEX_HOME }),
+        env: codexAppServerChildEnv({ CODEX_HOME: binding.codexHome }),
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -352,9 +414,9 @@ class CodexAppServerClient {
     }
   }
 
-  canStartOwnedMuxForEndpoint(endpoint) {
+  canStartOwnedMuxForEndpoint(endpoint, binding = runtimeProfileBinding()) {
     if (DISABLE_MOBILE_OWNED_MUX || EXTERNAL_APP_SERVER_WS || EXTERNAL_APP_SERVER_TCP) return false;
-    return Boolean(endpoint && endpoint.source && normalizeFsPath(endpoint.source) === normalizeFsPath(MUX_ENDPOINT_FILE));
+    return Boolean(endpoint && endpoint.source && sameRuntimePath(endpoint.source, binding.muxEndpointFile));
   }
 
   endpointProcessIsAlive(endpoint) {
@@ -368,27 +430,27 @@ class CodexAppServerClient {
     }
   }
 
-  shouldPreserveProfileMuxAfterFailure(endpoint) {
-    return this.canStartOwnedMuxForEndpoint(endpoint) && this.endpointProcessIsAlive(endpoint);
+  shouldPreserveProfileMuxAfterFailure(endpoint, binding = runtimeProfileBinding()) {
+    return this.canStartOwnedMuxForEndpoint(endpoint, binding) && this.endpointProcessIsAlive(endpoint);
   }
 
-  async startOwnedMuxAndConnect() {
+  async startOwnedMuxAndConnect(binding = runtimeProfileBinding()) {
     assertCommandAvailable(CODEX_EXE, "Codex executable");
     if (this.muxChild && this.muxChild.exitCode === null && this.muxChild.signalCode === null) {
-      return this.waitForMuxEndpointAndConnect();
+      return this.waitForMuxEndpointAndConnect(binding);
     }
 
-    fs.mkdirSync(path.dirname(MUX_ENDPOINT_FILE), { recursive: true });
+    fs.mkdirSync(path.dirname(binding.muxEndpointFile), { recursive: true });
     const muxPath = path.join(APP_ROOT, "codex-app-server-mux.js");
     const child = spawn(process.execPath, [muxPath, "app-server", "--analytics-default-enabled"], {
       cwd: APP_ROOT,
       env: codexAppServerChildEnv({
-        CODEX_HOME,
+        CODEX_HOME: binding.codexHome,
         CODEX_MOBILE_RUNTIME_DIR: RUNTIME_ROOT,
         CODEX_MUX_STANDALONE: "1",
         CODEX_MUX_KEEP_ALIVE: "1",
         CODEX_MUX_PUBLISH_ENDPOINT: "auto",
-        CODEX_MUX_ENDPOINT_FILE: MUX_ENDPOINT_FILE,
+        CODEX_MUX_ENDPOINT_FILE: binding.muxEndpointFile,
         CODEX_MUX_CODEX_EXE: CODEX_EXE,
       }),
       detached: PERSIST_MOBILE_OWNED_MUX,
@@ -421,15 +483,15 @@ class CodexAppServerClient {
       child.once("error", onError);
       child.once("spawn", onSpawn);
     });
-    await this.waitForMuxEndpointAndConnect();
+    await this.waitForMuxEndpointAndConnect(binding);
   }
 
-  async waitForMuxEndpointAndConnect() {
+  async waitForMuxEndpointAndConnect(binding = runtimeProfileBinding()) {
     const deadline = Date.now() + 20000;
     let lastError = null;
     while (Date.now() < deadline) {
-      const endpoint = resolveExternalEndpoint();
-      if (endpoint && this.canStartOwnedMuxForEndpoint(endpoint)) {
+      const endpoint = resolveExternalEndpoint(binding);
+      if (endpoint && this.canStartOwnedMuxForEndpoint(endpoint, binding)) {
         try {
           await this.connectEndpoint(endpoint);
           return;
@@ -439,7 +501,7 @@ class CodexAppServerClient {
       }
       await new Promise((resolve) => setTimeout(resolve, 300));
     }
-    throw new Error(`Mobile-owned mux endpoint unavailable (${lastError ? lastError.message : `${MUX_ENDPOINT_FILE} not ready`})`);
+    throw new Error(`Mobile-owned mux endpoint unavailable (${lastError ? lastError.message : `${binding.muxEndpointFile} not ready`})`);
   }
 
   async initialize(options = {}) {
@@ -841,6 +903,15 @@ class CodexAppServerClient {
         if (child && child.exitCode === null && child.signalCode === null) child.kill();
       } catch (_) {}
     }
+    if (this.muxChild) {
+      const muxChild = this.muxChild;
+      this.muxChild = null;
+      try {
+        if (muxChild.exitCode === null && muxChild.signalCode === null) muxChild.kill();
+      } catch (_) {}
+    }
+    this.connectedRuntimeBinding = null;
+    this.connectedRuntimeBindingKey = "";
     this.info = null;
     this.failPending(new Error(reason));
     broadcast({ type: "status", status: this.status() });
@@ -889,9 +960,10 @@ class CodexAppServerClient {
   }
 
   isMuxEndpoint() {
+    const binding = this.connectedRuntimeBinding || runtimeProfileBinding();
     return this.transportKind === "external-jsonl-tcp"
       && this.endpoint
-      && normalizeFsPath(this.endpoint.source) === normalizeFsPath(MUX_ENDPOINT_FILE);
+      && sameRuntimePath(this.endpoint.source, binding.muxEndpointFile);
   }
 
   supportsMuxUserMessageEcho() {
@@ -953,6 +1025,11 @@ class CodexAppServerClient {
   }
 
   status() {
+    const binding = runtimeProfileBinding();
+    const connectedBinding = this.connectedRuntimeBinding || null;
+    const profileBindingState = this.ready && this.isTransportOpen() && this.runtimeBindingMismatch()
+      ? "profile_binding_stale"
+      : "aligned";
     return {
       ready: this.ready,
       port: this.port || null,
@@ -966,7 +1043,8 @@ class CodexAppServerClient {
         url: this.endpoint.url || null,
         capabilities: this.endpoint.capabilities || null,
       } : null,
-      muxEndpointFile: MUX_ENDPOINT_FILE,
+      muxEndpointFile: binding.muxEndpointFile,
+      connectedMuxEndpointFile: connectedBinding ? connectedBinding.muxEndpointFile : null,
       maxInboundMessageBytes,
       persistentOwnedMux: PERSIST_MOBILE_OWNED_MUX,
       mobileOwnedMux: this.muxChild ? {
@@ -974,10 +1052,12 @@ class CodexAppServerClient {
         running: this.muxChild.exitCode === null && this.muxChild.signalCode === null,
       } : null,
       codexExe: CODEX_EXE,
-      codexHome: CODEX_HOME,
-      codexHomeSource: CODEX_HOME_RESOLUTION.source,
-      codexHomeEnvIgnored: Boolean(CODEX_HOME_RESOLUTION.envCodexHomeIgnored),
-      codexProfileActiveId: CODEX_HOME_RESOLUTION.activeProfileId,
+      codexHome: binding.codexHome,
+      connectedCodexHome: connectedBinding ? connectedBinding.codexHome : null,
+      codexHomeSource: binding.codexHomeResolution && binding.codexHomeResolution.source,
+      codexHomeEnvIgnored: Boolean(binding.codexHomeResolution && binding.codexHomeResolution.envCodexHomeIgnored),
+      codexProfileActiveId: binding.codexHomeResolution && binding.codexHomeResolution.activeProfileId,
+      profileBindingState,
       runtimeRoot: RUNTIME_ROOT,
       userAgent: this.info ? this.info.userAgent : null,
       lastError: this.lastError,

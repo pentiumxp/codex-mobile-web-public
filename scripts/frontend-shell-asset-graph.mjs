@@ -13,6 +13,7 @@ export const SHELL_MANIFEST_SCHEMA_VERSION = 1;
 export const VITE_SHELL_BUILD_CONTRACT_SCHEMA_VERSION = 1;
 export const VITE_SHELL_ENTRY_SOURCE = "frontend/vite-shell-entry.mjs";
 export const VITE_DEFERRED_ENTRY_SOURCE = "frontend/vite-deferred-entry-topology.mjs";
+export const VITE_SHELL_BUILD_MANIFEST_SOURCE = "virtual:codex-mobile-shell-build-manifest";
 export const VITE_ENTRY_GROUP_SOURCE_PREFIX = "virtual:codex-mobile-shell-entry-group/";
 export const VITE_ENTRY_GROUP_LOADER_SOURCE = "virtual:codex-mobile-shell-entry-group-loader";
 export const VITE_ESM_COMPATIBILITY_SOURCE = "virtual:codex-mobile-esm-compatibility";
@@ -950,28 +951,45 @@ function orderedSubset(orderSource, values) {
   return orderSource.filter((value) => wanted.has(value));
 }
 
-export function collectShellAssetGraph(root = process.cwd()) {
+function buildViteBuildTimeShellManifest(root = process.cwd()) {
+  return buildPublicShellManifest(root, { useExistingViteArtifactCache: false });
+}
+
+function normalizeViteBuildTimeAssetRecord(record) {
+  if (!record || typeof record !== "object") return record;
+  if (record.path !== "/shell-asset-manifest.js" && record.path !== "/shell-asset-manifest.json") return record;
+  return {
+    ...record,
+    bytes: 1,
+    sha256: "0".repeat(64),
+  };
+}
+
+export function collectShellAssetGraph(root = process.cwd(), options = {}) {
   const indexHtml = readText(root, "public/index.html");
   const swSource = readText(root, "public/sw.js");
   const bootstrapSource = readText(root, "public/app-bootstrap.js");
   const serverRuntimeUtilsSource = readText(root, "services/runtime/server-runtime-utils.js");
   const publicManifest = readJson(root, "public/shell-asset-manifest.json");
-  const expectedManifest = buildPublicShellManifest(root);
+  const expectedManifest = options.useExistingViteArtifactCache === false
+    ? buildViteBuildTimeShellManifest(root)
+    : buildPublicShellManifest(root);
+  const effectiveManifest = options.useExistingViteArtifactCache === false ? expectedManifest : publicManifest;
   const indexScriptAssets = extractExternalScriptSrcs(indexHtml);
   const indexLinkAssets = extractLinkHrefs(indexHtml);
   return {
     root,
-    shellCacheName: String(publicManifest.shellCacheName || ""),
-    clientBuildId: String(publicManifest.clientBuildId || ""),
+    shellCacheName: String(effectiveManifest.shellCacheName || ""),
+    clientBuildId: String(effectiveManifest.clientBuildId || ""),
     indexScriptAssets,
     indexLinkAssets,
-    swStaticAssets: Array.isArray(publicManifest.precacheAssets) ? publicManifest.precacheAssets : [],
-    pageShellAssets: Array.isArray(publicManifest.pageShellAssets) ? publicManifest.pageShellAssets : [],
-    serverHashAssets: Array.isArray(publicManifest.hashAssets) ? publicManifest.hashAssets : [],
-    entryGroups: Array.isArray(publicManifest.entryGroups) ? publicManifest.entryGroups : [],
-    classicGlobalExports: Array.isArray(publicManifest.classicGlobalExports) ? publicManifest.classicGlobalExports : [],
-    startupGlobalContracts: startupGlobalContracts(publicManifest),
-    publicManifest,
+    swStaticAssets: Array.isArray(effectiveManifest.precacheAssets) ? effectiveManifest.precacheAssets : [],
+    pageShellAssets: Array.isArray(effectiveManifest.pageShellAssets) ? effectiveManifest.pageShellAssets : [],
+    serverHashAssets: Array.isArray(effectiveManifest.hashAssets) ? effectiveManifest.hashAssets : [],
+    entryGroups: Array.isArray(effectiveManifest.entryGroups) ? effectiveManifest.entryGroups : [],
+    classicGlobalExports: Array.isArray(effectiveManifest.classicGlobalExports) ? effectiveManifest.classicGlobalExports : [],
+    startupGlobalContracts: startupGlobalContracts(effectiveManifest),
+    publicManifest: effectiveManifest,
     expectedManifest,
     swSource,
     bootstrapSource,
@@ -1073,8 +1091,8 @@ export function validateShellAssetGraph(graph) {
   };
 }
 
-export function buildShellAssetManifest(root = process.cwd()) {
-  const graph = collectShellAssetGraph(root);
+export function buildShellAssetManifest(root = process.cwd(), options = {}) {
+  const graph = collectShellAssetGraph(root, options);
   const validation = validateShellAssetGraph(graph);
   const allAssets = uniqueValues([
     ...graph.swStaticAssets,
@@ -1082,7 +1100,7 @@ export function buildShellAssetManifest(root = process.cwd()) {
     ...graph.pageShellAssets,
     ...graph.indexLinkAssets,
   ]);
-  const assetRecords = allAssets.map((assetPath) => {
+  let assetRecords = allAssets.map((assetPath) => {
     const role = graph.indexScriptAssets.includes(assetPath)
       ? "script"
       : assetPath === "/sw.js"
@@ -1090,6 +1108,9 @@ export function buildShellAssetManifest(root = process.cwd()) {
         : "static";
     return assetRecord(root, assetPath, role);
   });
+  if (options.useExistingViteArtifactCache === false) {
+    assetRecords = assetRecords.map(normalizeViteBuildTimeAssetRecord);
+  }
   for (const asset of assetRecords) {
     if (!asset.exists) validation.issues.push({ code: "asset_file_missing", asset: asset.path });
   }
@@ -3442,7 +3463,7 @@ function viteEntryGroupSourceId(groupId) {
 }
 
 export function buildViteEntryGroupInputs(root = process.cwd()) {
-  const manifest = buildPublicShellManifest(root);
+  const manifest = buildViteBuildTimeShellManifest(root);
   const inputs = {};
   for (const group of Array.isArray(manifest.entryGroups) ? manifest.entryGroups : []) {
     const groupId = sanitizeEntryGroupId(group && group.id);
@@ -4136,7 +4157,7 @@ export function createShellAssetGraphPlugin(options = {}) {
   return {
     name: "codex-mobile-shell-asset-graph",
     generateBundle(_outputOptions, bundle) {
-      const manifest = buildShellAssetManifest(root);
+      const manifest = buildShellAssetManifest(root, { useExistingViteArtifactCache: false });
       if (!manifest.validation.ok) {
         const codes = manifest.validation.issues.map((issue) => issue.code).join(", ");
         throw new Error(`codex_mobile_shell_asset_graph_invalid: ${codes}`);
@@ -4176,6 +4197,9 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
       if (String(id || "") === VITE_ESM_COMPATIBILITY_SOURCE) {
         return `\0${VITE_ESM_COMPATIBILITY_SOURCE}`;
       }
+      if (String(id || "") === VITE_SHELL_BUILD_MANIFEST_SOURCE) {
+        return `\0${VITE_SHELL_BUILD_MANIFEST_SOURCE}`;
+      }
       if (String(id || "").startsWith(VITE_ESM_COMPATIBILITY_SHARD_SOURCE_PREFIX)) {
         return `\0${id}`;
       }
@@ -4189,6 +4213,10 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
     },
     load(id) {
       const value = String(id || "");
+      if (value === `\0${VITE_SHELL_BUILD_MANIFEST_SOURCE}`) {
+        const manifest = buildViteBuildTimeShellManifest(root);
+        return `export default ${JSON.stringify(manifest, null, 2)};\n`;
+      }
       if (value === `\0${VITE_ESM_COMPATIBILITY_SOURCE}`) {
         return createEsmCompatibilityVirtualModuleSource(root);
       }
@@ -4203,7 +4231,7 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
         return createEsmCompatibilityShardVirtualModuleSource(root, shard.moduleDefinitions);
       }
       if (value === `\0${VITE_ENTRY_GROUP_LOADER_SOURCE}`) {
-        const manifest = buildPublicShellManifest(root);
+        const manifest = buildViteBuildTimeShellManifest(root);
         const groups = (Array.isArray(manifest.entryGroups) ? manifest.entryGroups : [])
           .map((group) => sanitizeEntryGroupId(group && group.id))
           .filter(Boolean);
@@ -4244,7 +4272,7 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
       const prefix = `\0${VITE_ENTRY_GROUP_SOURCE_PREFIX}`;
       if (!value.startsWith(prefix)) return null;
       const groupId = sanitizeEntryGroupId(value.slice(prefix.length));
-      const manifest = buildPublicShellManifest(root);
+      const manifest = buildViteBuildTimeShellManifest(root);
       const group = (Array.isArray(manifest.entryGroups) ? manifest.entryGroups : [])
         .find((entry) => sanitizeEntryGroupId(entry && entry.id) === groupId);
       if (!group) {
@@ -4252,7 +4280,7 @@ export function createShellEntryGroupVirtualModulePlugin(options = {}) {
       }
       const assets = Array.isArray(group.assets) ? group.assets.slice() : [];
       const classicGlobalExports = classicGlobalExportsForAssets(manifest, assets);
-      const fullManifest = buildShellAssetManifest(root);
+      const fullManifest = buildShellAssetManifest(root, { useExistingViteArtifactCache: false });
       const classicAssetRecords = classicAssetRecordsForAssets(fullManifest, assets);
       const payload = {
         id: group.id,

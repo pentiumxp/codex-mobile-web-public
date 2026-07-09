@@ -1,4 +1,4 @@
-import shellManifest from "../public/shell-asset-manifest.json";
+import shellManifest from "virtual:codex-mobile-shell-build-manifest";
 
 function deferredEntryGroups() {
   return (Array.isArray(shellManifest.entryGroups) ? shellManifest.entryGroups : [])

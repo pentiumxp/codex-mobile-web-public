@@ -839,8 +839,22 @@ function taskCardHasAction(card) {
   ));
 }
 
+function taskCardIsTerminalReturnReceipt(card) {
+  if (!card || typeof card !== "object") return false;
+  const delivery = card.delivery && typeof card.delivery === "object" ? card.delivery : {};
+  const audit = card.audit && typeof card.audit === "object" ? card.audit : {};
+  const terminal = card.terminal === true
+    || delivery.terminal === true
+    || audit.terminal === true;
+  const returnToSource = delivery.returnToSource === true
+    || audit.returnToSource === true
+    || String(card.ackPolicy || delivery.ackPolicy || audit.ackPolicy || "").trim() === "none";
+  return terminal && returnToSource;
+}
+
 function taskCardNeedsFirstPaintActionShape(card) {
   if (taskCardHasAction(card)) return true;
+  if (taskCardIsTerminalReturnReceipt(card)) return true;
   const status = String(card && card.status || "").trim();
   const threadRole = String(card && card.threadRole || "").trim();
   return status === "pending" && threadRole === "target";

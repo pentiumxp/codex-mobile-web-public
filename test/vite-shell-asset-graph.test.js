@@ -256,6 +256,71 @@ test("Vite artifact cache identity is preserved only for the current classic she
   assert.equal(changed.viteArtifactCache, undefined);
 });
 
+test("Vite build-time manifest does not inherit previous artifact cache identity", async () => {
+  const { buildPublicShellManifest } = await loadShellManifestGenerator();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-vite-build-manifest-"));
+  fs.mkdirSync(path.join(root, "public"), { recursive: true });
+  fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ version: "0.1.11" }));
+  fs.writeFileSync(path.join(root, "public", "manifest.json"), JSON.stringify({ icons: [] }));
+  fs.writeFileSync(path.join(root, "public", "styles.css"), ".app{}\n");
+  fs.writeFileSync(path.join(root, "public", "sw.js"), "importScripts(\"/shell-asset-manifest.js\");\n");
+  fs.writeFileSync(path.join(root, "public", "a.js"), "\"use strict\";\nwindow.A = 1;\n");
+  fs.writeFileSync(path.join(root, "public", "index.html"), [
+    "<!doctype html>",
+    "<link rel=\"stylesheet\" href=\"/styles.css\">",
+    "<script src=\"/shell-asset-manifest.js\"></script>",
+    "<script src=\"/a.js\"></script>",
+  ].join("\n"));
+
+  const classic = buildPublicShellManifest(root);
+  const cacheIdentity = {
+    shellCacheName: "codex-mobile-shell-v625-cccccccccccc",
+    clientBuildId: "0.1.11|codex-mobile-shell-v625-cccccccccccc",
+    viteArtifactCache: {
+      schemaVersion: 1,
+      source: "vite-shell-public-artifact",
+      baseShellCacheName: classic.classicShellCacheName,
+      fingerprint: "d".repeat(64),
+      fileCount: 1,
+      byteCount: 20,
+      files: [{ fileName: "assets/a.js", bytes: 20, sha256: "e".repeat(64) }],
+    },
+  };
+  fs.writeFileSync(
+    path.join(root, "public", "shell-asset-manifest.json"),
+    `${JSON.stringify({ ...classic, ...cacheIdentity }, null, 2)}\n`
+  );
+
+  const publicManifest = buildPublicShellManifest(root);
+  const buildTimeManifest = buildPublicShellManifest(root, { useExistingViteArtifactCache: false });
+  const viteEntrySource = fs.readFileSync(path.join(__dirname, "..", "frontend", "vite-shell-entry.mjs"), "utf8");
+  const deferredTopologySource = fs.readFileSync(path.join(__dirname, "..", "frontend", "vite-deferred-entry-topology.mjs"), "utf8");
+
+  assert.equal(publicManifest.shellCacheName, cacheIdentity.shellCacheName);
+  assert.equal(buildTimeManifest.shellCacheName, classic.classicShellCacheName);
+  assert.equal(buildTimeManifest.viteArtifactCache, undefined);
+  assert.match(viteEntrySource, /virtual:codex-mobile-shell-build-manifest/);
+  assert.equal(viteEntrySource.includes("../public/shell-asset-manifest.json"), false);
+  assert.match(deferredTopologySource, /virtual:codex-mobile-shell-build-manifest/);
+  assert.equal(deferredTopologySource.includes("../public/shell-asset-manifest.json"), false);
+});
+
+test("Vite build-time asset graph does not hash previous public shell manifest files", async () => {
+  const { buildShellAssetManifest } = await loadAssetGraphModule();
+  const root = path.resolve(__dirname, "..");
+  const publicGraph = buildShellAssetManifest(root);
+  const buildTimeGraph = buildShellAssetManifest(root, { useExistingViteArtifactCache: false });
+  const publicManifestRecord = publicGraph.assets.find((asset) => asset.path === "/shell-asset-manifest.json");
+  const buildManifestRecord = buildTimeGraph.assets.find((asset) => asset.path === "/shell-asset-manifest.json");
+  const buildManifestScriptRecord = buildTimeGraph.assets.find((asset) => asset.path === "/shell-asset-manifest.js");
+
+  assert.ok(publicManifestRecord && publicManifestRecord.sha256 && publicManifestRecord.sha256 !== "0".repeat(64));
+  assert.equal(buildManifestRecord.bytes, 1);
+  assert.equal(buildManifestRecord.sha256, "0".repeat(64));
+  assert.equal(buildManifestScriptRecord.bytes, 1);
+  assert.equal(buildManifestScriptRecord.sha256, "0".repeat(64));
+});
+
 test("native ESM build refresh policy matches the classic public API", async () => {
   const classicApi = require("../public/build-refresh-policy.js");
   const nativeApi = await import("../frontend/native/build-refresh-policy.mjs");
@@ -1598,7 +1663,8 @@ test("Vite shell entry imports the asset-graph ESM compatibility module", async 
   const root = path.resolve(__dirname, "..");
   const source = fs.readFileSync(path.join(root, "frontend", "vite-shell-entry.mjs"), "utf8");
   assert.match(source, /virtual:codex-mobile-esm-compatibility/);
-  assert.match(source, /import buildTimeShellManifest from "\.\.\/public\/shell-asset-manifest\.json"/);
+  assert.match(source, /import buildTimeShellManifest from "virtual:codex-mobile-shell-build-manifest"/);
+  assert.equal(source.includes("../public/shell-asset-manifest.json"), false);
   assert.match(source, /function runtimeShellManifest\(\)/);
   assert.match(source, /globalThis\.CODEX_MOBILE_SHELL_MANIFEST/);
   assert.match(source, /return buildTimeShellManifest/);

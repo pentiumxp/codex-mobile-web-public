@@ -604,6 +604,12 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     });
   }
 
+  function threadCallableDirectAutoApproveRequested(body = {}) {
+    if (!body || typeof body !== "object") return false;
+    if (body.pending === true || body.direct === false || body.autoApprove === false) return false;
+    return body.direct === true || body.autoApprove === true;
+  }
+
   function taskCardSourceThreadTitle(sourceThreadId, requestedTitle = "", sourceSummary = null) {
     const id = String(sourceThreadId || "").trim();
     const requested = String(requestedTitle || "").trim();
@@ -731,7 +737,8 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     const service = options.threadTaskCardService || threadTaskCardService;
     const cards = await service.createMany(payload);
     const workspaceDelegation = options.workspaceDelegation || workspaceDelegationSettings();
-    const autoApprove = workspaceDelegation.enabled
+    const explicitDirectAutoApprove = threadCallableDirectAutoApproveRequested(body);
+    const autoApprove = (workspaceDelegation.enabled || explicitDirectAutoApprove)
       && body.autoApprove !== false
       && body.direct !== false
       && body.pending !== true;
@@ -749,6 +756,9 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       sourceThreadId: payload.sourceThreadId,
       direct: autoApprove,
       autoApprove,
+      autoApproveReason: autoApprove
+        ? explicitDirectAutoApprove ? "explicit_thread_callable_direct" : "workspace_delegation_enabled"
+        : "",
       workspaceDelegationEnabled: workspaceDelegation.enabled,
       card: publicCards[0] || null,
       cards: publicCards,
@@ -1125,11 +1135,14 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       return dynamicToolJsonResponse({
         ok: true,
         tool: taskCardHeartbeatToolFullName,
-        taskCardId: result && result.heartbeat && result.heartbeat.taskCardId || prepared.taskCardId,
-        targetThreadId: result && result.heartbeat && result.heartbeat.targetThreadId || prepared.actorThreadId,
-        lastHeartbeatAt: result && result.heartbeat && result.heartbeat.at || "",
-        heartbeatStatus: result && result.heartbeat && result.heartbeat.status || "",
-        heartbeatSource: result && result.heartbeat && result.heartbeat.source || "",
+        taskCardId: result && (result.taskCardId || result.heartbeat && result.heartbeat.taskCardId) || prepared.taskCardId,
+        targetThreadId: result && (result.targetThreadId || result.heartbeat && result.heartbeat.targetThreadId) || prepared.actorThreadId,
+        lastHeartbeatAt: result && (result.lastHeartbeatAt || result.heartbeat && result.heartbeat.at) || "",
+        heartbeatStatus: result && (result.status || result.heartbeat && result.heartbeat.status) || "",
+        heartbeatSource: result && (result.source || result.heartbeat && result.heartbeat.source) || "",
+        heartbeatCount: Math.max(0, Math.trunc(Number(result && result.heartbeatCount || 0)) || 0),
+        executionState: result && result.executionState || "",
+        resumeRequired: Boolean(result && result.resumeRequired),
       });
     }
     if (isTaskCardReturnDynamicToolCall(params)) {
@@ -1432,6 +1445,30 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       return { handled: true };
     }
 
+    const sourceThreadTaskCardReturnLedger = url.pathname.match(/^\/api\/threads\/([^/]+)\/task-card-return-ledger$/);
+    if (sourceThreadTaskCardReturnLedger && method === "GET") {
+      try {
+        const sourceThreadId = decodeURIComponent(sourceThreadTaskCardReturnLedger[1]);
+        const limit = url.searchParams.get("limit") || "";
+        const returnLedger = typeof threadTaskCardService.returnLedgerForThread === "function"
+          ? threadTaskCardService.returnLedgerForThread(sourceThreadId, { limit })
+          : [];
+        sendJson(200, {
+          ok: true,
+          threadId: sourceThreadId,
+          returnLedger,
+        });
+      } catch (err) {
+        sendJson(err.statusCode || 500, {
+          ok: false,
+          error: err.message || String(err),
+          code: err.code || err.message || String(err),
+          details: err.details || undefined,
+        });
+      }
+      return { handled: true };
+    }
+
     if (url.pathname === "/api/thread-task-cards" && method === "POST") {
       try {
         const body = await readBody();
@@ -1466,6 +1503,26 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         });
       } catch (err) {
         sendJson(err.statusCode || 500, { ok: false, error: err.message || String(err) });
+      }
+      return { handled: true };
+    }
+
+    const threadTaskCardReturnLedger = url.pathname.match(/^\/api\/thread-task-cards\/([^/]+)\/return-ledger$/);
+    if (threadTaskCardReturnLedger && method === "GET") {
+      try {
+        const cardId = decodeURIComponent(threadTaskCardReturnLedger[1]);
+        const threadId = url.searchParams.get("threadId") || "";
+        const ledger = typeof threadTaskCardService.returnLedgerForCard === "function"
+          ? threadTaskCardService.returnLedgerForCard(cardId, threadId)
+          : null;
+        sendJson(200, { ok: true, ledger });
+      } catch (err) {
+        sendJson(err.statusCode || 500, {
+          ok: false,
+          error: err.message || String(err),
+          code: err.code || err.message || String(err),
+          details: err.details || undefined,
+        });
       }
       return { handled: true };
     }

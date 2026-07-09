@@ -65,6 +65,8 @@ function createServerRouteCompositionService(dependencies = {}) {
     pushSubscriptionPublicStatus: dependencies.pushSubscriptionPublicStatus,
     rateLimitsByModelObject: dependencies.rateLimitsByModelObject,
     reasoningEffortOptions: dependencies.reasoningEffortOptions,
+    remoteManagedWorkspaceRunnerService: dependencies.remoteManagedWorkspaceRunnerService,
+    remoteManagedWorkspaceSettingsService: dependencies.remoteManagedWorkspaceSettingsService,
     refreshAppUpdateStatus: dependencies.refreshAppUpdateStatus,
     refreshGitHubLinkPreview: dependencies.refreshGitHubLinkPreview,
     refreshPublicPullRequestStatus: dependencies.refreshPublicPullRequestStatus,

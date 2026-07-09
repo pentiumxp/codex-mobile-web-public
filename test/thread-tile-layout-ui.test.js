@@ -14,6 +14,7 @@ const indexHtml = fs.readFileSync(path.join(root, "public", "index.html"), "utf8
 const stylesCss = fs.readFileSync(path.join(root, "public", "styles.css"), "utf8");
 const packageJson = fs.readFileSync(path.join(root, "package.json"), "utf8");
 const threadTileRuntimeJs = fs.readFileSync(path.join(root, "public", "thread-tile-runtime.js"), "utf8");
+const nativeThreadTileStateMjs = fs.readFileSync(path.join(root, "frontend", "native", "thread-tile-state.mjs"), "utf8");
 const threadTileVisualFixture = require(path.join(root, "scripts", "codex-mobile-thread-tile-visual-fixture.js"));
 
 const navigationRuntimeFunctionNames = new Set([
@@ -679,6 +680,9 @@ test("thread tile composer targets the active pane without replacing the shared 
   assert.match(functionBody(threadTileRuntimeJs, "renderThreadTilePane"), /visiblePaneIds = threadTileStatePolicy\.uniqueIds/);
   assert.match(functionBody(threadTileRuntimeJs, "renderThreadTilePane"), /threadTileStatePolicy\.threadIdentityColorPlan\(\{ threadId: id, visibleIds: visiblePaneIds \}\)/);
   assert.match(functionBody(threadTileRuntimeJs, "renderThreadTilePane"), /style="\$\{escapeHtml\(identityStyle\)\}"/);
+  assert.match(nativeThreadTileStateMjs, /function threadIdentityColorPlan\(/);
+  assert.match(nativeThreadTileStateMjs, /threadIdentityColorPlan,/);
+  assert.match(nativeThreadTileStateMjs, /export \{[\s\S]*threadIdentityColorPlan,/);
 
   const sendMessageBody = functionBody(composerRuntimeJs, "sendMessage");
   assert.match(sendMessageBody, /const targetThreadId = currentComposerThreadId\(\)/);

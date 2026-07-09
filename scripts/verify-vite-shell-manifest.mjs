@@ -32,7 +32,15 @@ if (!fs.existsSync(manifestPath)) {
   fail(`missing Vite rollup manifest: ${viteManifestPath}`);
 } else {
   const built = readJson(manifestPath);
-  const current = buildShellAssetManifest(root);
+  const verifiesFinalPublishedIdentity = Boolean(
+    built.viteArtifactCache
+      && built.shellCacheName
+      && built.classicShellCacheName
+      && built.shellCacheName !== built.classicShellCacheName
+  );
+  const current = buildShellAssetManifest(root, {
+    useExistingViteArtifactCache: verifiesFinalPublishedIdentity,
+  });
   const mismatch = [];
   for (const key of ["shellCacheName", "clientBuildId"]) {
     if (built[key] !== current[key]) mismatch.push(key);

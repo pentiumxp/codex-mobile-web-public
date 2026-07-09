@@ -482,6 +482,7 @@ async function taskCardHeartbeat(context, args = {}) {
     source: String(result.source || payload.source || ""),
     heartbeatCount: Number(result.heartbeatCount || lease.heartbeatCount || 0),
     lastHeartbeatAt: String(result.lastHeartbeatAt || lease.lastHeartbeatAt || ""),
+    executionState: String(result.executionState || lease.executionState || ""),
     resumeRequired: Boolean(result.resumeRequired || lease.resumeRequired),
   };
 }

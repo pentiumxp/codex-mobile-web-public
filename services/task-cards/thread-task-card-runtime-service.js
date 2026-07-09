@@ -335,6 +335,16 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
       delete externalEvent.returnBody;
       return homeAiAutonomousDeliveryReturnService.send(externalEvent, { workspaceId: "owner" });
     },
+    onTaskCardReturnChanged: async (event) => {
+      const threadId = String(event && (event.returnTargetThreadId || event.sourceThreadId) || "").trim();
+      if (!threadId || typeof dependencies.broadcast !== "function") return { ok: false, reason: "broadcast_unavailable" };
+      dependencies.broadcast({
+        type: "notification",
+        method: "thread/task-card-return/changed",
+        params: Object.assign({}, event || {}, { threadId }),
+      });
+      return { ok: true, threadId };
+    },
     executeApprovedCard: async (card, message) => {
       const requestedReasoningEffort = String(card && card.delivery && card.delivery.reasoningEffort || "").trim();
       const inheritedRuntimeSettings = await dependencies.resolveThreadRuntimeSettings(card.target.threadId);

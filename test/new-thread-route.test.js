@@ -264,12 +264,12 @@ test("server maps quota groups to shared Codex and independent Spark models", ()
 
 test("server hydrates rollout quota snapshots without overwriting live quota", () => {
   assert.match(rateLimitRuntimeServiceJs, /function loadRecentRateLimitsFromRollouts\(/, "server should scan local rollout evidence");
-  assert.match(rateLimitRuntimeServiceJs, /isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)/, "server should only scan account-scoped rollout quota evidence");
+  assert.match(rateLimitRuntimeServiceJs, /isRateLimitRolloutSourceAccountScoped\(currentCodexHome\(\)\)/, "server should only scan account-scoped rollout quota evidence for the active profile");
   assert.match(rateLimitRuntimeServiceJs, /entry && entry\.payload && entry\.payload\.rate_limits/, "server should read native rollout rate_limits");
   assert.match(rateLimitRuntimeServiceJs, /recordRateLimits\(entry\.rateLimits,\s*\{\s*source:\s*"rollout"\s*\}\)/, "rollout scan should write snapshot quota");
-  assert.match(rateLimitRuntimeServiceJs, /function canExposeRateLimitsForActiveHome\(\)[\s\S]*isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)/, "server should gate quota exposure to account-scoped homes");
+  assert.match(rateLimitRuntimeServiceJs, /function canExposeRateLimitsForActiveHome\(\)[\s\S]*isRateLimitRolloutSourceAccountScoped\(currentCodexHome\(\)\)/, "server should gate quota exposure to account-scoped homes");
   assert.match(rateLimitRuntimeServiceJs, /function isTrustedLiveRateLimitSource\([\s\S]*managed-child-live[\s\S]*profile-mux-live/, "owned live quota should be exposable for shared profile homes");
-  assert.match(rateLimitRuntimeServiceJs, /function recordRateLimits\([\s\S]*!isRateLimitRolloutSourceAccountScoped\(CODEX_HOME\)[\s\S]*latestLiveRateLimits = null/, "source-less live quota should be ignored for shared profile homes");
+  assert.match(rateLimitRuntimeServiceJs, /function recordRateLimits\([\s\S]*!isRateLimitRolloutSourceAccountScoped\(currentCodexHome\(\)\)[\s\S]*latestLiveRateLimits = null/, "source-less live quota should be ignored for shared profile homes");
   assert.match(rateLimitRuntimeServiceJs, /function recordRateLimitReadResult\([\s\S]*rateLimitsByLimitId[\s\S]*latestLiveRateLimitsSource = source/, "rate-limit read RPC should hydrate model quota snapshots");
   assert.match(codexAppServerClientServiceJs, /await this\.refreshRateLimits\(\);[\s\S]*this\.ready = true/, "initialize should refresh quota before broadcasting ready status");
   assert.match(codexAppServerClientServiceJs, /async refreshRateLimitsIfMissing\(\)[\s\S]*LIVE_RATE_LIMIT_REFRESH_MIN_INTERVAL_MS/, "server should rehydrate missing live quota after app-server startup");
@@ -278,8 +278,9 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(codexAppServerClientServiceJs, /recordRateLimits\(msg\.params\.rateLimits,\s*\{[\s\S]*source:\s*this\.rateLimitSource\(\)/, "quota notifications should use the same trusted source classifier as quota reads");
   assert.match(serverRuntimeUtilsJs, /function codexAppServerChildEnv\([\s\S]*CODEX_CLI_PATH[\s\S]*CODEX_MUX_/, "managed child app-server env should drop desktop bridge variables");
   assert.match(serverRuntimeUtilsJs, /if \(codexHome\) out\.CODEX_HOME = codexHome;[\s\S]*Object\.assign\(out, extra\);/, "explicit child env should be able to override the active CODEX_HOME for profile preflight");
-  assert.match(codexAppServerClientServiceJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: codexAppServerChildEnv\(\{ CODEX_HOME \}\)/, "managed child app-server should inherit the resolved active CODEX_HOME without desktop bridge env");
-  assert.match(codexAppServerClientServiceJs, /async startOwnedMuxAndConnect\(\)/, "Mobile Web should be able to own a shared mux instead of depending on Desktop");
+  assert.match(codexAppServerClientServiceJs, /spawn\(CODEX_EXE,[\s\S]*\{\s*cwd: APP_ROOT,[\s\S]*env: codexAppServerChildEnv\(\{ CODEX_HOME: binding\.codexHome \}\)/, "managed child app-server should inherit the runtime active CODEX_HOME without desktop bridge env");
+  assert.match(codexAppServerClientServiceJs, /runtimeBindingMismatch\(\)[\s\S]*active_profile_changed/, "message submit and turn requests should rebind when the active profile changes");
+  assert.match(codexAppServerClientServiceJs, /async startOwnedMuxAndConnect\(binding = runtimeProfileBinding\(\)\)/, "Mobile Web should be able to own a shared mux instead of depending on Desktop");
   assert.match(codexAppServerClientServiceJs, /CODEX_MUX_STANDALONE:\s*"1"[\s\S]*CODEX_MUX_KEEP_ALIVE:\s*"1"[\s\S]*CODEX_MUX_PUBLISH_ENDPOINT:\s*"auto"/, "Mobile-owned mux should stay alive after Desktop exits and avoid overwriting a live active profile endpoint");
   assert.match(codexAppServerClientServiceJs, /shared endpoint missing; starting Mobile-owned mux/, "required shared mode should start a Mobile-owned mux when the profile endpoint is absent");
   assert.match(codexAppServerClientServiceJs, /shouldPreserveProfileMuxAfterFailure/, "live profile mux endpoints should be preserved across listener restarts");

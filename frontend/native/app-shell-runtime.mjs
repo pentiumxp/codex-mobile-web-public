@@ -173,6 +173,7 @@ function wireUi() {
   });
   if ($("themeSettingsToggle")) $("themeSettingsToggle").addEventListener("click", () => {
     loadCodexProfiles().catch(showError);
+    loadRemoteManagedWorkspaceSettings().catch(showError);
     setTimeout(() => publishPluginNavigationState({ force: true }), 0);
   });
   const settingsPanel = $("themeSettingsPanel");
@@ -181,6 +182,7 @@ function wireUi() {
     settingsPanel.addEventListener("click", handleThreadTileModeChoice);
     settingsPanel.addEventListener("click", (event) => handleCodexProfileSettingsClick(event).catch(showError));
     settingsPanel.addEventListener("click", (event) => handleWorkspaceDelegationSettingsClick(event).catch(showError));
+    settingsPanel.addEventListener("click", (event) => handleRemoteManagedWorkspaceSettingsClick(event).catch(showError));
   }
   const commandControl = $("composerCommandControl");
   if (commandControl) {
@@ -810,6 +812,7 @@ async function start() {
   state.workspaceCreateRoot = String(config.workspaceCreate && config.workspaceCreate.defaultRoot || "").trim();
   state.workspaceCreateRoots = normalizeOptionList(config.workspaceCreate && config.workspaceCreate.roots || []);
   rememberWorkspaceDelegationConfig(config.workspaceDelegation || null);
+  rememberRemoteManagedWorkspaceConfig(config.remoteManagedWorkspace || null);
   state.publicPrStatus = {
     enabled: state.publicPrEnabled,
     repository: state.publicPrRepository,

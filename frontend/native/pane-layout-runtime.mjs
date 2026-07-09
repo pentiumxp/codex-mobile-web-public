@@ -430,6 +430,7 @@ async function loadThread(threadId, options = {}) {
     threadId,
     detailRenderMode: "first-paint",
     cached: false,
+    fullBackfillPlanned: shouldBackfillFullThreadDetail(result.thread),
     timings: {
       elapsedMs: roundedDurationMs(switchStartedAt),
       apiElapsedMs,
@@ -734,6 +735,7 @@ function applyThreadDetailFirstPaintTelemetryEffect(effect, context = {}) {
       action: String(eventContext.action || ""),
       threadId: String(eventContext.threadId || ""),
       thread: context.thread,
+      fullBackfillPlanned: eventContext.fullBackfillPlanned === true,
     });
     return true;
   }
@@ -1285,8 +1287,23 @@ function turnsArrayFromListResult(result) {
 }
 
 function shouldBackfillFullThreadDetail(thread) {
-  if (thread && thread.mobileDeferredProjectionSeed && typeof thread.mobileDeferredProjectionSeed === "object") return false;
-  return /turns-list-initial/i.test(String(thread && thread.mobileReadMode || ""));
+  if (!thread || typeof thread !== "object") return false;
+  const readMode = String(thread.mobileReadMode || "");
+  const projection = thread.mobileProjection && typeof thread.mobileProjection === "object"
+    ? thread.mobileProjection
+    : {};
+  const timings = thread.mobileDiagnostics
+    && thread.mobileDiagnostics.threadDetailTimings
+    && typeof thread.mobileDiagnostics.threadDetailTimings === "object"
+    ? thread.mobileDiagnostics.threadDetailTimings
+    : {};
+  const readDecision = String(timings.readDecision || "");
+  if (/turns-list-initial/i.test(readMode)) return true;
+  if (projection.partial === true) return true;
+  if (/projection-v?\d*-partial|projection-partial/i.test(readMode)) return true;
+  if (/projection-stale-partial-hit|projection-partial-hit/i.test(readDecision)) return true;
+  if (thread.mobileDeferredProjectionSeed && typeof thread.mobileDeferredProjectionSeed === "object") return false;
+  return false;
 }
 
 function threadHistoryAutoBackfillKey(thread) {
@@ -4855,8 +4872,9 @@ function renderCurrentThread(options = {}) {
   const pluginRefreshNotice = renderPluginRefreshPendingNotice(previousKeys);
   const visibleTurnIds = new Set(turns.map((turn) => turn && turn.id).filter(Boolean).map(String));
   resetCopyTextStore();
-  const turnsHtml = turns.map((turn) => renderTurn(turn, previousKeys)).join("");
+  const turnsHtml = renderThreadConversationFlowWithReturnReceipts(thread, turns, previousKeys, (turn, keys) => renderTurn(turn, keys));
   const liveOperationDock = renderLiveOperationDock(thread, previousKeys);
+  const taskCardReceiptsHtml = "";
   const taskCardsHtml = renderThreadTaskCards(thread, previousKeys);
   const approvalsHtml = renderPendingApprovals(thread, previousKeys, (request) => {
     const turnId = approvalTurnId(request);
@@ -4871,6 +4889,7 @@ function renderCurrentThread(options = {}) {
     taskToolbar,
     omittedBanner,
     readWarning,
+    taskCardReceiptsHtml,
     turnsHtml,
     approvalsHtml,
     taskCardsHtml,

@@ -8,6 +8,7 @@ const {
   authStatusForHome,
   createCodexProfileService,
   normalizeProfileId,
+  publicProfileDisplayFields,
 } = require("../adapters/codex-profile-service");
 
 function usage() {
@@ -103,9 +104,17 @@ function createService(options) {
 
 function safeProfile(profile) {
   const auth = profile.auth || authStatusForHome(profile.codexHome);
+  const display = publicProfileDisplayFields(profile, auth);
   return {
     id: profile.id,
-    label: profile.label,
+    label: display.label,
+    displayName: display.displayName,
+    accountName: display.accountName,
+    accountLabel: display.accountLabel,
+    authStatusLabel: display.authStatusLabel,
+    slotId: display.slotId,
+    slotLabel: display.slotLabel,
+    internalLabel: display.internalLabel,
     codexHome: profile.codexHome,
     active: Boolean(profile.active),
     exists: Boolean(profile.exists),

@@ -108,7 +108,7 @@ test("mobile app-server launchers do not leak desktop bridge env into real CLI",
 
   assert.match(serverRuntimeUtilsJs, /function codexAppServerChildEnv/);
   assert.match(serverRuntimeUtilsJs, /key === "CODEX_CLI_PATH" \|\| key\.startsWith\("CODEX_MUX_"\)/);
-  assert.match(codexAppServerClientServiceJs, /env: codexAppServerChildEnv\(\{ CODEX_HOME \}\)/);
+  assert.match(codexAppServerClientServiceJs, /env: codexAppServerChildEnv\(\{ CODEX_HOME: binding\.codexHome \}\)/);
   assert.match(muxJs, /function realCodexChildEnv/);
   assert.match(muxJs, /key === "CODEX_CLI_PATH" \|\| key\.startsWith\("CODEX_MUX_"\)/);
   assert.match(muxJs, /env: realCodexChildEnv\(\)/);

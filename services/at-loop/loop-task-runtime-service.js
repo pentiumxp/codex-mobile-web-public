@@ -2179,36 +2179,178 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     return "";
   }
 
-  function workerLaneActiveHeartbeatReason(record = {}) {
-    const heartbeat = record.heartbeat && typeof record.heartbeat === "object" ? record.heartbeat : null;
-    if (!heartbeat) return "";
-    const status = compactOneLine(heartbeat.status).toLowerCase();
-    if (/^(completed|complete|done|idle|available|cleared|closed)$/i.test(status)) return "";
-    return "active_heartbeat";
+  function runtimeNowMs() {
+    const value = typeof clock === "function" ? Number(clock()) : Date.now();
+    return Number.isFinite(value) ? value : Date.now();
+  }
+
+  function timestampMs(value) {
+    return Date.parse(compactOneLine(value)) || 0;
+  }
+
+  function workerLaneWatchdogStaleAfterMs(record = {}, card = {}) {
+    const lease = card && card.executionLease && typeof card.executionLease === "object" ? card.executionLease : {};
+    const raw = compactOneLine(
+      lease.watchdogStaleAfterMs
+        || record.watchdogStaleAfterMs
+        || record.heartbeat && record.heartbeat.watchdogStaleAfterMs
+        || "",
+    );
+    if (!raw) return Math.max(0, Math.trunc(Number(staleAfterMs || 0)) || 0);
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return Math.max(0, Math.trunc(Number(staleAfterMs || 0)) || 0);
+    return Math.max(0, Math.trunc(parsed));
+  }
+
+  function activeState(reason, fields = {}) {
+    return Object.assign({
+      unavailable: true,
+      reason,
+      busy: true,
+      executionState: reason,
+      watchdogRequired: false,
+      takeoverAllowed: false,
+    }, fields);
+  }
+
+  function inactiveState(fields = {}) {
+    return Object.assign({
+      unavailable: false,
+      reason: "",
+      busy: false,
+      executionState: "",
+      watchdogRequired: false,
+      takeoverAllowed: false,
+    }, fields);
+  }
+
+  function watchdogRequiredState(reason = "stale_heartbeat_watchdog_required", fields = {}) {
+    return Object.assign({
+      unavailable: false,
+      reason,
+      busy: false,
+      executionState: reason,
+      watchdogRequired: true,
+      takeoverAllowed: true,
+    }, fields);
+  }
+
+  function heartbeatIsFresh(updatedAt, record = {}, card = {}) {
+    const updatedMs = timestampMs(updatedAt);
+    if (!updatedMs) return false;
+    const staleMs = workerLaneWatchdogStaleAfterMs(record, card);
+    if (staleMs <= 0) return true;
+    return runtimeNowMs() - updatedMs < staleMs;
   }
 
   function taskCardIsTerminalForWorkerOwnership(card = {}) {
     const status = compactOneLine(card.status).toLowerCase();
     if (/^(replied|completed|complete|revoked|deleted|rejected|blocked|redirected|partially_completed)$/i.test(status)) return true;
+    const state = compactOneLine(card.executionState).toLowerCase();
+    if (state === "terminal_returned") return true;
     const lease = card.executionLease && typeof card.executionLease === "object" ? card.executionLease : null;
     if (!lease) return /^(done|closed|terminal)$/i.test(status);
     const leaseStatus = compactOneLine(lease.status || lease.executionStatus || lease.terminalStatus).toLowerCase();
     return /^(completed|complete|done|closed|returned|terminal)$/i.test(leaseStatus);
   }
 
-  function workerLaneActiveTaskReason(record = {}) {
-    const taskCardId = compactOneLine(record.lastTaskCardId);
-    if (!taskCardId) return "";
-    if (!readThreadTaskCardForLoopEvidence) return "task_card_state_unavailable";
-    let card = null;
+  function readWorkerTaskCard(taskCardId = "") {
+    const id = compactOneLine(taskCardId);
+    if (!id || !readThreadTaskCardForLoopEvidence) return null;
     try {
-      card = readThreadTaskCardForLoopEvidence(taskCardId);
+      return readThreadTaskCardForLoopEvidence(id);
     } catch (_) {
-      card = null;
+      return null;
     }
-    if (!card) return "";
-    if (taskCardIsTerminalForWorkerOwnership(card)) return "";
-    return "active_task_card";
+  }
+
+  function workerLaneActiveHeartbeatState(record = {}) {
+    const heartbeat = record.heartbeat && typeof record.heartbeat === "object" ? record.heartbeat : null;
+    if (!heartbeat) return inactiveState();
+    const status = compactOneLine(heartbeat.status).toLowerCase();
+    if (/^(completed|complete|done|idle|available|cleared|closed)$/i.test(status)) return inactiveState();
+    const taskCardId = compactOneLine(heartbeat.taskCardId || record.lastTaskCardId);
+    const card = readWorkerTaskCard(taskCardId);
+    if (card && taskCardIsTerminalForWorkerOwnership(card)) return inactiveState({ taskCardId });
+    const updatedAt = compactOneLine(heartbeat.updatedAt || record.updatedAt);
+    if (!heartbeatIsFresh(updatedAt, record, card || {})) {
+      return watchdogRequiredState("stale_heartbeat_watchdog_required", {
+        taskCardId,
+        heartbeatAgeMs: timestampMs(updatedAt) ? Math.max(0, runtimeNowMs() - timestampMs(updatedAt)) : 0,
+        watchdogStaleAfterMs: workerLaneWatchdogStaleAfterMs(record, card || {}),
+      });
+    }
+    return activeState("active_heartbeat", { taskCardId });
+  }
+
+  function workerLaneActiveHeartbeatReason(record = {}) {
+    const state = workerLaneActiveHeartbeatState(record);
+    return state.unavailable ? state.reason : "";
+  }
+
+  function workerTaskCardState(card = {}, record = {}) {
+    if (!card || typeof card !== "object") return inactiveState();
+    if (taskCardIsTerminalForWorkerOwnership(card)) return inactiveState({ taskCardId: compactOneLine(card.id) });
+    const executionState = compactOneLine(card.executionState).toLowerCase();
+    if (executionState === "stale_heartbeat_watchdog_required") {
+      return watchdogRequiredState("stale_heartbeat_watchdog_required", { taskCardId: compactOneLine(card.id) });
+    }
+    if (executionState === "pending_not_started") {
+      return activeState("pending_not_started", { taskCardId: compactOneLine(card.id), busy: false });
+    }
+    const status = compactOneLine(card.status).toLowerCase();
+    if (status === "pending") return activeState("pending_not_started", { taskCardId: compactOneLine(card.id), busy: false });
+    const lease = card.executionLease && typeof card.executionLease === "object" ? card.executionLease : null;
+    if (!lease) return activeState("active_task_card", { taskCardId: compactOneLine(card.id) });
+    const leaseStatus = compactOneLine(lease.status || lease.executionStatus).toLowerCase();
+    if (leaseStatus === "blocked") return watchdogRequiredState("stale_heartbeat_watchdog_required", { taskCardId: compactOneLine(card.id) });
+    const lastHeartbeatAt = compactOneLine(lease.lastHeartbeatAt || lease.lastProgressAt || lease.startedAt || card.updatedAt || card.createdAt);
+    if (!heartbeatIsFresh(lastHeartbeatAt, record, card)) {
+      return watchdogRequiredState("stale_heartbeat_watchdog_required", {
+        taskCardId: compactOneLine(card.id),
+        heartbeatAgeMs: timestampMs(lastHeartbeatAt) ? Math.max(0, runtimeNowMs() - timestampMs(lastHeartbeatAt)) : 0,
+        watchdogStaleAfterMs: workerLaneWatchdogStaleAfterMs(record, card),
+      });
+    }
+    return activeState(executionState === "active_with_heartbeat" ? "active_task_card" : "active_task_card", {
+      taskCardId: compactOneLine(card.id),
+      executionState: executionState || "active_with_heartbeat",
+    });
+  }
+
+  function workerLaneActiveTaskState(record = {}) {
+    const taskCardId = compactOneLine(record.lastTaskCardId);
+    if (!taskCardId) return inactiveState();
+    if (!readThreadTaskCardForLoopEvidence) return inactiveState({ taskCardId });
+    const card = readWorkerTaskCard(taskCardId);
+    if (!card) return inactiveState();
+    return workerTaskCardState(card, record);
+  }
+
+  function workerLaneActiveTaskReason(record = {}) {
+    const state = workerLaneActiveTaskState(record);
+    return state.unavailable ? state.reason : "";
+  }
+
+  function workerLaneActiveTaskDeliverabilityReason(record = {}) {
+    const state = workerLaneActiveTaskState(record);
+    return state.unavailable ? state.reason : "";
+  }
+
+  function workerLaneBusyState(record = {}) {
+    const heartbeatState = workerLaneActiveHeartbeatState(record);
+    if (heartbeatState.unavailable) return heartbeatState;
+    const taskState = workerLaneActiveTaskState(record);
+    if (taskState.unavailable) return taskState;
+    if (taskState.watchdogRequired) return taskState;
+    if (heartbeatState.watchdogRequired) return heartbeatState;
+    return inactiveState();
+  }
+
+  function workerLaneAvailabilityState(record = {}) {
+    const terminal = workerLaneTerminalState(record);
+    if (terminal.unavailable) return terminal;
+    return workerLaneBusyState(record);
   }
 
   function workerLaneContinuationInheritanceBlockReason(record = {}) {
@@ -2304,14 +2446,18 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const requestedPluginId = pluginIdFromLifecycle(input);
     if (requestedCwd && normalizeCwd(record.cwd) !== requestedCwd) return false;
     if (role === "plugin_worker" && requestedPluginId && pluginIdFromLifecycle(record) !== requestedPluginId) return false;
+    const requestedSourceThreadId = compactOneLine(input.sourceThreadId || input.source_thread_id);
+    const recordSourceThreadId = compactOneLine(record.sourceThreadId);
+    if (requestedSourceThreadId && recordSourceThreadId && !sameThreadId(recordSourceThreadId, requestedSourceThreadId)) return false;
     return true;
   }
 
   function workerLaneRecordRank(record = {}) {
-    const lifecycle = workerLaneTerminalState(record);
+    const lifecycle = workerLaneAvailabilityState(record);
     const purpose = workerPurposeFromLifecycle(record);
     let score = 0;
     if (lifecycle.unavailable) score += 1000;
+    if (lifecycle.watchdogRequired) score += 50;
     if (record.legacy === true) score += 100;
     if (purpose && purpose !== "worker_lane" && purpose !== "default") score += 20;
     if (compactOneLine(record.lifecycleStatus || record.status).toLowerCase() === "completed") score += 5;
@@ -2343,7 +2489,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
 
   function publicWorkerLane(record = {}, thread = null, input = {}) {
     const resolvedThread = thread || readThreadSummary(record.threadId) || {};
-    const lifecycle = workerLaneTerminalState(record);
+    const availability = workerLaneAvailabilityState(record);
     const threadShape = resolvedThread && typeof resolvedThread === "object" ? resolvedThread : {};
     const detail = lifecycleThread(Object.assign({}, threadShape, {
       id: record.threadId || threadShape.id || threadShape.threadId,
@@ -2352,13 +2498,26 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       threadRole: threadShape.threadRole || threadShape.thread_role || threadShape.role || record.role || "home_ai_worker",
       status: threadShape.status || record.threadStatus || record.lifecycleStatus || record.status,
     }), Object.assign({}, input, { role: record.role || input.role || "home_ai_worker" }));
-    const deliverable = detail.deliverable && !lifecycle.unavailable;
+    const deliverable = detail.deliverable && !availability.unavailable;
+    const storedLifecycleStatus = compactOneLine(record.lifecycleStatus || record.status || (deliverable ? "available" : "retired"));
+    const projectedLifecycleStatus = availability.watchdogRequired
+      ? "watchdog_required"
+      : availability.reason === "active_heartbeat" || availability.reason === "active_task_card" || availability.reason === "pending_not_started"
+      ? "busy"
+      : storedLifecycleStatus;
     return Object.assign({}, detail, {
       workerLaneId: compactOneLine(record.workerLaneId),
       workerPurpose: workerPurposeFromLifecycle(record),
-      lifecycleStatus: compactOneLine(record.lifecycleStatus || record.status || (deliverable ? "available" : "retired")),
+      lifecycleStatus: projectedLifecycleStatus,
       deliverable,
-      deliverabilityReason: deliverable ? "eligible" : lifecycle.reason || detail.deliverabilityReason || "not_deliverable",
+      deliverabilityReason: deliverable ? availability.reason || "eligible" : availability.reason || detail.deliverabilityReason || "not_deliverable",
+      executionState: availability.executionState || "",
+      busy: availability.busy === true,
+      watchdogRequired: availability.watchdogRequired === true,
+      takeoverAllowed: availability.takeoverAllowed === true,
+      activeTaskCardId: compactOneLine(availability.taskCardId || record.lastTaskCardId),
+      heartbeatAgeMs: Math.max(0, Math.trunc(Number(availability.heartbeatAgeMs || 0)) || 0),
+      watchdogStaleAfterMs: Math.max(0, Math.trunc(Number(availability.watchdogStaleAfterMs || workerLaneWatchdogStaleAfterMs(record)) || 0) || 0),
       pluginId: pluginIdFromLifecycle(record),
       retired: record.retired === true,
       disabled: record.disabled === true,
@@ -2395,7 +2554,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const nonDeliverable = explicitNonDeliverability(thread);
     const workerLanePurpose = classification.purpose === "worker_lane";
     const workerRecord = (isWorkerLifecycleRole(role) || workerLanePurpose) ? workerLaneRecordForThread(thread) : null;
-    const workerLifecycle = workerRecord ? workerLaneTerminalState(workerRecord) : { unavailable: false, reason: "" };
+    const workerLifecycle = workerRecord ? workerLaneAvailabilityState(workerRecord) : { unavailable: false, reason: "" };
     const cwd = compactOneLine(thread.cwd || thread.workspace || thread.targetWorkspace);
     const requestedCwd = compactOneLine(input.cwd || input.workspaceCwd || input.workspace || input.targetWorkspace);
     const cwdMatches = !requestedCwd || normalizeCwd(cwd) === normalizeCwd(requestedCwd);
@@ -2520,23 +2679,30 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     const workerLaneId = exactTarget.workerLaneId;
     const threadId = exactTarget.threadId;
     const requestId = compactWorkerRequestId(input);
+    const excluded = excludedTargetSet(input);
     const lanes = workerLanesState();
     if (workerLaneId) {
       const found = lanes.find((lane) => compactOneLine(lane.workerLaneId) === workerLaneId);
+      if (found && excluded.has(compactOneLine(found.threadId))) return null;
       if (found) return found;
       return null;
     }
     if (threadId) {
       const found = lanes.find((lane) => sameThreadId(lane.threadId, threadId));
+      if (found && excluded.has(compactOneLine(found.threadId))) return null;
       if (found) return found;
       return null;
     }
     if (options.exactOnly === true) return null;
     if (requestId) {
-      const found = lanes.find((lane) => workerRecordHasRequestId(lane, requestId));
+      const found = lanes.find((lane) => workerRecordHasRequestId(lane, requestId) && !excluded.has(compactOneLine(lane.threadId)));
       if (found) return found;
     }
-    const matches = lanes.filter((lane) => workerLaneRecordMatchesInput(lane, input));
+    if (options.requestIdOnly === true) return null;
+    const matches = lanes
+      .filter((lane) => workerLaneRecordMatchesInput(lane, input))
+      .filter((lane) => !excluded.has(compactOneLine(lane.threadId)))
+      .filter((lane) => options.onlyAvailable === true ? !workerLaneAvailabilityState(lane).unavailable : true);
     matches.sort(compareWorkerLaneRecords);
     return matches[0] || null;
   }
@@ -2603,8 +2769,29 @@ function createLoopTaskRuntimeService(dependencies = {}) {
     if (!sourceThreadId) return { ok: false, action, error: "thread_lifecycle_source_thread_required" };
     inheritWorkerLaneOwnershipFromContinuations(Object.assign({}, input, { role, cwd, pluginId }));
     const requestId = compactWorkerRequestId(input);
+    const idempotentExisting = requestId ? findWorkerLaneRecord(input, { requestIdOnly: true }) : null;
+    if (idempotentExisting && workerRecordHasRequestId(idempotentExisting, requestId)) {
+      rememberWorkerRequestId(idempotentExisting, requestId);
+      idempotentExisting.updatedAt = nowIso(clock);
+      saveState();
+      const row = publicWorkerLane(idempotentExisting, workerThreadFromRecord(idempotentExisting), input);
+      return { ok: row.deliverable, action, created: false, thread: row, error: row.deliverable ? "" : "thread_lifecycle_target_not_deliverable" };
+    }
     const existing = findWorkerLaneRecord(input);
-    if (existing && (workerRecordHasRequestId(existing, requestId) || !workerLaneTerminalState(existing).unavailable)) {
+    const existingAvailability = existing ? workerLaneAvailabilityState(existing) : null;
+    const exactExistingTarget = exactWorkerLifecycleTarget(input);
+    if (existing && existingAvailability && existingAvailability.unavailable
+      && (exactExistingTarget.exact || !String(existingAvailability.reason || "").startsWith("lifecycle_"))) {
+      const row = publicWorkerLane(existing, workerThreadFromRecord(existing), input);
+      return {
+        ok: false,
+        action,
+        created: false,
+        thread: row,
+        error: "thread_lifecycle_target_not_deliverable",
+      };
+    }
+    if (existing && (workerRecordHasRequestId(existing, requestId) || !existingAvailability || !existingAvailability.unavailable)) {
       rememberWorkerRequestId(existing, requestId);
       existing.updatedAt = nowIso(clock);
       saveState();
@@ -2677,6 +2864,12 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       record.retired = false;
       record.disabled = false;
       record.archived = false;
+      if (record.heartbeat && typeof record.heartbeat === "object") {
+        record.heartbeat = Object.assign({}, record.heartbeat, {
+          status: nextStatus,
+          updatedAt: timestamp,
+        });
+      }
     }
     if (nextStatus) record.lifecycleStatus = nextStatus;
     record.updatedAt = timestamp;
@@ -2698,6 +2891,7 @@ function createLoopTaskRuntimeService(dependencies = {}) {
       summary: boundedText(input.summary || input.message || "", 240),
       source: boundedText(input.source || input.heartbeatSource || "", 80),
       turnId: boundedText(input.turnId || input.turn_id || "", 120),
+      watchdogStaleAfterMs: workerLaneWatchdogStaleAfterMs(record),
       updatedAt: timestamp,
     };
     if (record.heartbeat.taskCardId) record.lastTaskCardId = record.heartbeat.taskCardId;
@@ -2709,15 +2903,32 @@ function createLoopTaskRuntimeService(dependencies = {}) {
   function workerLifecycleDeliverability(thread = {}) {
     const record = workerLaneRecordForThread(thread);
     if (!record) return { ok: true };
-    const lifecycle = workerLaneTerminalState(record);
-    if (!lifecycle.unavailable) return { ok: true, workerLaneId: record.workerLaneId, role: record.role };
+    const lifecycle = workerLaneAvailabilityState(record);
+    if (!lifecycle.unavailable) {
+      return {
+        ok: true,
+        workerLaneId: record.workerLaneId,
+        role: record.role,
+        lifecycleStatus: lifecycle.watchdogRequired ? "watchdog_required" : record.lifecycleStatus || "",
+        executionState: lifecycle.executionState || "",
+        watchdogRequired: lifecycle.watchdogRequired === true,
+        takeoverAllowed: lifecycle.takeoverAllowed === true,
+        activeTaskCardId: compactOneLine(lifecycle.taskCardId || record.lastTaskCardId),
+      };
+    }
     return {
       ok: false,
       error: `thread_lifecycle_worker_lane_${lifecycle.reason.replace(/^lifecycle_/, "")}`,
-      message: "Target Worker lane is retired, disabled, or archived by lifecycle metadata.",
+      message: lifecycle.reason === "active_heartbeat" || lifecycle.reason === "active_task_card" || lifecycle.reason === "pending_not_started"
+        ? "Target Worker lane is already handling an active task card; wait for heartbeat timeout or terminal return."
+        : "Target Worker lane is retired, disabled, archived, or otherwise not deliverable by lifecycle metadata.",
       workerLaneId: record.workerLaneId,
       role: record.role,
       lifecycleStatus: record.lifecycleStatus || "",
+      executionState: lifecycle.executionState || "",
+      activeTaskCardId: compactOneLine(lifecycle.taskCardId || record.lastTaskCardId),
+      watchdogRequired: lifecycle.watchdogRequired === true,
+      takeoverAllowed: lifecycle.takeoverAllowed === true,
     };
   }
 

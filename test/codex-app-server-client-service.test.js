@@ -146,6 +146,85 @@ test("app-server endpoint resolver reads bounded mux endpoint shapes", () => {
   assert.equal(missingResolver(), null);
 });
 
+test("app-server endpoint resolver follows dynamic profile mux endpoint files", () => {
+  let muxEndpointFile = "/tmp/first-mux-endpoint.json";
+  const reads = [];
+  const resolver = createAppServerEndpointResolver({
+    muxEndpointFile: () => muxEndpointFile,
+    fs: {
+      readFileSync(filePath, encoding) {
+        reads.push(filePath);
+        assert.equal(encoding, "utf8");
+        return JSON.stringify({
+          protocol: "jsonl-tcp",
+          host: "127.0.0.1",
+          port: filePath.includes("second") ? 2345 : 1234,
+        });
+      },
+    },
+  });
+
+  assert.equal(resolver().port, 1234);
+  muxEndpointFile = "/tmp/second-mux-endpoint.json";
+  assert.equal(resolver().port, 2345);
+  assert.deepEqual(reads, ["/tmp/first-mux-endpoint.json", "/tmp/second-mux-endpoint.json"]);
+});
+
+test("turn requests rebind before sending after active profile changes", async () => {
+  let active = {
+    codexHome: "/home/user/.codex",
+    muxEndpointFile: "/home/user/.codex/app-server-mux/endpoint.json",
+    codexHomeResolution: { source: "profile-store", activeProfileId: "default" },
+  };
+  const client = createCodexAppServerClient({
+    runtimeProfileBindingProvider: () => active,
+    normalizeFsPath: (value) => String(value || ""),
+    SAFE_RETRY_METHODS: new Set(),
+    READ_RPC_TIMEOUT_MS: 1000,
+    DEFAULT_RPC_TIMEOUT_MS: 1000,
+  });
+  let closeCount = 0;
+  let startCount = 0;
+  const sent = [];
+  client.ready = true;
+  client.ws = { readyState: 1, close() { closeCount += 1; } };
+  client.rememberRuntimeBinding(active);
+
+  active = {
+    codexHome: "/home/user/.codex-homes/previous",
+    muxEndpointFile: "/home/user/.codex-homes/previous/app-server-mux/endpoint.json",
+    codexHomeResolution: { source: "profile-store", activeProfileId: "previous" },
+  };
+  client.startAndConnect = async () => {
+    startCount += 1;
+    client.ready = true;
+    client.ws = { readyState: 1, close() {} };
+    client.rememberRuntimeBinding(active);
+  };
+  client.sendRpc = async (method, params) => {
+    sent.push({
+      method,
+      params,
+      codexHome: client.status().codexHome,
+      activeProfileId: client.status().codexProfileActiveId,
+      profileBindingState: client.status().profileBindingState,
+    });
+    return { ok: true };
+  };
+
+  await client.request("turn/start", { threadId: "thread-1", input: [] }, { retry: false });
+
+  assert.equal(closeCount, 1);
+  assert.equal(startCount, 1);
+  assert.deepEqual(sent, [{
+    method: "turn/start",
+    params: { threadId: "thread-1", input: [] },
+    codexHome: "/home/user/.codex-homes/previous",
+    activeProfileId: "previous",
+    profileBindingState: "aligned",
+  }]);
+});
+
 test("app-server client preserves a live profile mux when initialize fails", async () => {
   let startOwnedMuxCount = 0;
   const endpoint = {

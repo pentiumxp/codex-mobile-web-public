@@ -654,6 +654,72 @@ test("thread detail self check does not treat submitted user echo collapse as lo
   assert.ok(!codes.includes("thread_detail_refresh_lost_user_input"));
 });
 
+test("thread detail self check does not treat raw-proven projection user overcount collapse as lost input", () => {
+  const first = healthyDetail();
+  first.thread.turns[0].items = [
+    { id: "u1", type: "userMessage", content: [{ type: "text", text: "publish it" }] },
+    { id: "u-anchor", type: "userMessage", content: [{ type: "text", text: "projection anchor overcount" }] },
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+  const second = healthyDetail();
+  second.thread.turns[0].items = [
+    { id: "u1", type: "userMessage", content: [{ type: "text", text: "publish it" }] },
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = compareDetailReadbacks(first, second, {
+    rawLatestCompletedCounts: {
+      checked: true,
+      found: true,
+      turnHash: "unused",
+      rawUserItems: 1,
+      rawUserLikeEvents: 2,
+    },
+  });
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, true);
+  assert.ok(!codes.includes("thread_detail_refresh_lost_user_input"));
+  assert.ok(!codes.includes("thread_detail_refresh_item_downgrade"));
+  assert.ok(codes.includes("thread_detail_refresh_collapsed_user_input_projection_overcount"));
+  const advisory = report.issues.find((issue) => issue.code === "thread_detail_refresh_collapsed_user_input_projection_overcount");
+  assert.equal(advisory.severity, "H3");
+  assert.equal(advisory.rawUserItems, 1);
+  assert.equal(advisory.beforeItems, 2);
+  assert.equal(advisory.afterItems, 1);
+});
+
+test("thread detail self check still blocks real raw-proven user input loss", () => {
+  const first = healthyDetail();
+  first.thread.turns[0].items = [
+    { id: "u1", type: "userMessage", content: [{ type: "text", text: "first" }] },
+    { id: "u2", type: "userMessage", content: [{ type: "text", text: "second" }] },
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+  const second = healthyDetail();
+  second.thread.turns[0].items = [
+    { id: "u1", type: "userMessage", content: [{ type: "text", text: "first" }] },
+    { id: "a1", type: "agentMessage" },
+    { id: "usage1", type: "turnUsageSummary" },
+  ];
+
+  const report = compareDetailReadbacks(first, second, {
+    rawLatestCompletedCounts: {
+      checked: true,
+      found: true,
+      rawUserItems: 2,
+      rawUserLikeEvents: 2,
+    },
+  });
+  const codes = report.issues.map((issue) => issue.code);
+
+  assert.equal(report.ok, false);
+  assert.ok(codes.includes("thread_detail_refresh_lost_user_input"));
+});
+
 test("thread detail self check does not treat assistant progress consolidation as lost assistant output", () => {
   const first = healthyDetail();
   first.thread.turns[0].items = [

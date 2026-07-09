@@ -929,6 +929,7 @@ function recordThreadDetailResponseDiagnostics(performanceEvent = {}, input = {}
     durationBucket,
     thread: source.thread,
     expectedActiveFullRead: source.expectedActiveFullRead,
+    fullBackfillPlanned: source.fullBackfillPlanned === true || performanceEvent.fullBackfillPlanned === true,
   });
   const effectsPlan = threadDiagnosticEventsApi.threadDetailResponseDiagnosticEffects({
     slowPlan,
@@ -1091,8 +1092,23 @@ function visibleRenderableTurnsForConversation(thread) {
     .filter((turn) => turnRendersConversationArticle(turn, thread));
 }
 
+function returnReceiptTurnIdsForConversation(thread, turns = null) {
+  const renderableTurns = Array.isArray(turns) ? turns : visibleRenderableTurnsForConversation(thread);
+  if (typeof threadTaskCardReturnReceiptFlowTurnIds === "function") {
+    return threadTaskCardReturnReceiptFlowTurnIds(thread, renderableTurns).map(String).filter(Boolean);
+  }
+  if (typeof threadTaskCardReturnReceiptTurnIds !== "function") return [];
+  return renderableTurns
+    .map((turn) => String(turn && turn.id || "").trim())
+    .filter(Boolean)
+    .concat(threadTaskCardReturnReceiptTurnIds(thread).map(String).filter(Boolean));
+}
+
 function visibleConversationShape(thread) {
   const turns = visibleRenderableTurnsForConversation(thread);
+  const returnReceiptTurnIds = typeof returnReceiptTurnIdsForConversation === "function"
+    ? returnReceiptTurnIdsForConversation(thread, turns).filter((id) => !turns.some((turn) => String(turn && turn.id || "") === id))
+    : [];
   let visibleItemCount = 0;
   const userMessages = [];
   for (const turn of turns) {
@@ -1113,7 +1129,7 @@ function visibleConversationShape(thread) {
   );
   const duplicateUserMessageCount = Math.max(eventDuplicateUserMessageCount, turnDuplicateUserMessageCount);
   return {
-    visibleTurnCount: turns.length,
+    visibleTurnCount: turns.length + returnReceiptTurnIds.length,
     visibleItemCount,
     duplicateUserMessageCount,
   };
@@ -1345,7 +1361,11 @@ function checkEmptyVisibleDetailMismatchAfterRender(thread, shellPlan = {}, metr
 }
 
 function visibleRenderableTurnIds(thread) {
-  return visibleRenderableTurnsForConversation(thread).map((turn) => String(turn.id));
+  const turns = visibleRenderableTurnsForConversation(thread);
+  if (typeof returnReceiptTurnIdsForConversation === "function") {
+    return returnReceiptTurnIdsForConversation(thread, turns);
+  }
+  return turns.map((turn) => String(turn.id));
 }
 
 function conversationDomTurnIds(conversation = $("conversation")) {

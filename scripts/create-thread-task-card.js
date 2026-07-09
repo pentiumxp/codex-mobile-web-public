@@ -35,7 +35,7 @@ function usage() {
     "  --plugin-id <id>           Optional Home AI plugin id for deployment lane routing.",
     "  --category <value>         Optional bounded task-card category.",
     "  --pending                  Create a normal pending card instead of requesting source-thread direct approval.",
-    "  --auto-approve <bool>      Request direct auto-approval; honored only when Settings -> 跨工作区委派 is enabled.",
+    "  --auto-approve <bool>      Request direct auto-approval on the thread-callable route.",
     "  --json-file <path>         Read request JSON from file. Use '-' for stdin.",
     "  --help                     Show this help.",
   ].join("\n");

@@ -71,6 +71,24 @@ function sampleIsConfirmed(sample = {}) {
   return true;
 }
 
+function sampleReadMode(sample = {}) {
+  return safeLabel(sample.expectedReadMode || sample.readMode || sample.apiReadMode, "");
+}
+
+function sampleReadDecision(sample = {}) {
+  return safeLabel(sample.expectedReadDecision || sample.readDecision || sample.apiReadDecision, "");
+}
+
+function samplePerformancePhase(sample = {}) {
+  return safeLabel(sample.expectedPerformancePhase || sample.performancePhase || sample.apiPerformancePhase, "");
+}
+
+function sampleUsesPartialProjectionFirstPaint(sample = {}) {
+  return /projection-v?\d*-partial|projection-partial/i.test(sampleReadMode(sample))
+    || /projection-stale-partial-hit|projection-partial-hit/i.test(sampleReadDecision(sample))
+    || /warm-projection-partial/i.test(samplePerformancePhase(sample));
+}
+
 function summarizeSamples(samples = []) {
   const normalized = toArray(samples).filter((sample) => sample && typeof sample === "object");
   const turnCounts = normalized.map((sample) => toNumber(sample.turns));
@@ -490,6 +508,47 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     if (!sample || typeof sample !== "object") continue;
     if (!sample.appVisible) issues.push(issue("H2", "browser_app_not_visible", sample));
     if (sample.loginVisible) issues.push(issue("H2", "browser_login_visible", sample));
+    if (sample.probeKind === "startup"
+      && sample.settingsMobileViewportExpected === true
+      && sample.settingsPanelVisualReadyOnMobile !== true) {
+      issues.push(issue("H2", "settings_panel_clipped_on_mobile", sample, {
+        settingsPanelPresent: sample.settingsPanelPresent === true,
+        settingsPanelVisibleHeight: toNumber(sample.settingsPanelVisibleHeight),
+        settingsPanelVisibleWidth: toNumber(sample.settingsPanelVisibleWidth),
+        settingsPanelRectHeight: toNumber(sample.settingsPanelRectHeight),
+        settingsPanelRectWidth: toNumber(sample.settingsPanelRectWidth),
+        settingsPanelLeft: toNumber(sample.settingsPanelLeft),
+        settingsPanelRight: toNumber(sample.settingsPanelRight),
+        settingsPanelVisualProbeWaitMs: toNumber(sample.settingsPanelVisualProbeWaitMs),
+        settingsPanelClientHeight: toNumber(sample.settingsPanelClientHeight),
+        settingsPanelScrollHeight: toNumber(sample.settingsPanelScrollHeight),
+        settingsInitialVisibleTitleCount: toNumber(sample.settingsInitialVisibleTitleCount),
+        settingsPrimarySiblingVisibleCount: toNumber(sample.settingsPrimarySiblingVisibleCount),
+      }));
+    }
+    if (sample.probeKind === "startup"
+      && sample.settingsMobileViewportExpected === true
+      && sample.settingsRmwPanelReachableOnMobile !== true) {
+      issues.push(issue("H2", "settings_rmw_panel_unreachable_on_mobile", sample, {
+        settingsPanelPresent: sample.settingsPanelPresent === true,
+        settingsPanelOverflowScrollable: sample.settingsPanelOverflowScrollable === true,
+        settingsPanelTouchScrollReady: sample.settingsPanelTouchScrollReady === true,
+        settingsPanelScrollable: sample.settingsPanelScrollable === true,
+        settingsPanelScrollMoved: sample.settingsPanelScrollMoved === true,
+        settingsRmwSectionPresent: sample.settingsRmwSectionPresent === true,
+        settingsRmwFieldCount: toNumber(sample.settingsRmwFieldCount),
+        settingsRmwActionCount: toNumber(sample.settingsRmwActionCount),
+        settingsRmwVisibleFieldCount: toNumber(sample.settingsRmwVisibleFieldCount),
+        settingsRmwVisibleActionCount: toNumber(sample.settingsRmwVisibleActionCount),
+        settingsRmwReachableFieldCount: toNumber(sample.settingsRmwReachableFieldCount),
+        settingsRmwReachableActionCount: toNumber(sample.settingsRmwReachableActionCount),
+        settingsRmwWorkspaceRowCount: toNumber(sample.settingsRmwWorkspaceRowCount),
+        settingsRmwVisibleWorkspaceRowCount: toNumber(sample.settingsRmwVisibleWorkspaceRowCount),
+        settingsRmwReachableWorkspaceRowCount: toNumber(sample.settingsRmwReachableWorkspaceRowCount),
+        settingsPanelScrollHeight: toNumber(sample.settingsPanelScrollHeight),
+        settingsPanelClientHeight: toNumber(sample.settingsPanelClientHeight),
+      }));
+    }
     if (toNumber(sample.longTaskMaxDurationMs) >= 1000) {
       issues.push(issue("H2", "browser_main_thread_long_task", sample, {
         longTaskCount: toNumber(sample.longTaskCount),
@@ -557,8 +616,115 @@ function analyzeBrowserRuntimeSamples(input = {}) {
     if (sampleIsConfirmed(sample)
       && toNumber(sample.delayMs) >= minSettledDelayMs
       && !sample.loadingNote
+      && sample.latestTurnMatchesTarget === true
+      && sampleUsesPartialProjectionFirstPaint(sample)
+      && toNumber(sample.clientSubmissionCount) <= 0) {
+      const latestShape = latestTurnShapeForIssue(sample);
+      const completedLatest = latestShape && latestShape.completed === true;
+      const expectedAssistants = Math.max(
+        toNumber(sample.expectedLatestAssistantMessageCount),
+        toNumber(latestShape && latestShape.expectedAssistantMessageCount),
+      );
+      const actualAssistants = Math.max(
+        toNumber(sample.latestTurnAssistantMessageCount),
+        toNumber(latestShape && latestShape.assistantMessageCount),
+      );
+      const expectedItems = Math.max(
+        toNumber(sample.expectedLatestItemCount),
+        toNumber(latestShape && latestShape.expectedItemCount),
+      );
+      const actualItems = Math.max(
+        toNumber(sample.latestTurnItemCount),
+        toNumber(latestShape && latestShape.itemCount),
+        toNumber(latestShape && latestShape.actualItemCount),
+      );
+      if (completedLatest && expectedAssistants > 0 && actualAssistants < expectedAssistants) {
+        issues.push(issue("H2", "thread_detail_reentry_partial_projection_missing_completed_assistant", sample, {
+          readMode: sampleReadMode(sample),
+          readDecision: sampleReadDecision(sample),
+          performancePhase: samplePerformancePhase(sample),
+          expectedLatestAssistantMessageCount: expectedAssistants,
+          currentLatestAssistantMessageCount: actualAssistants,
+          expectedLatestItemCount: expectedItems,
+          currentLatestItemCount: actualItems,
+          latestTurnHash: safeLabel(sample.latestTurnHash, ""),
+          turnShape: safeTurnShape(latestShape),
+        }));
+      }
+    }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
+      && toNumber(sample.returnLedgerDeliveryFailedCount) > 0) {
+      issues.push(issue("H2", "task_card_return_delivery_failed", sample, {
+        returnLedgerCount: toNumber(sample.returnLedgerCount),
+        returnLedgerDeliveryFailedCount: toNumber(sample.returnLedgerDeliveryFailedCount),
+        returnLedgerIssueCodes: toArray(sample.returnLedgerIssueCodes).map((entry) => safeLabel(entry, "")).filter(Boolean).slice(0, 12),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
+      && toNumber(sample.returnLedgerProjectionFailedCount) > 0) {
+      issues.push(issue("H2", "task_card_return_projection_failed", sample, {
+        returnLedgerCount: toNumber(sample.returnLedgerCount),
+        returnLedgerProjectionFailedCount: toNumber(sample.returnLedgerProjectionFailedCount),
+        returnLedgerVisibleCount: toNumber(sample.returnLedgerVisibleCount),
+        returnLedgerIssueCodes: toArray(sample.returnLedgerIssueCodes).map((entry) => safeLabel(entry, "")).filter(Boolean).slice(0, 12),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
+      && toNumber(sample.returnLedgerVisibleCount) > 0
+      && toNumber(sample.returnReceiptVisibleCount) <= 0) {
+      issues.push(issue("H2", "task_card_return_receipt_ui_missing", sample, {
+        returnLedgerCount: toNumber(sample.returnLedgerCount),
+        returnLedgerVisibleCount: toNumber(sample.returnLedgerVisibleCount),
+        returnReceiptVisibleCount: toNumber(sample.returnReceiptVisibleCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
+      && toNumber(sample.returnLedgerVisibleCount) > 0
+      && toNumber(sample.returnReceiptVisibleCount) > 0
+      && toNumber(sample.returnReceiptTurnVisibleCount) <= 0) {
+      issues.push(issue("H2", "task_card_return_receipt_turn_missing", sample, {
+        returnLedgerCount: toNumber(sample.returnLedgerCount),
+        returnLedgerVisibleCount: toNumber(sample.returnLedgerVisibleCount),
+        returnReceiptVisibleCount: toNumber(sample.returnReceiptVisibleCount),
+        returnReceiptTurnVisibleCount: toNumber(sample.returnReceiptTurnVisibleCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
+      && toNumber(sample.returnFollowUpTaskCardCount) > 0
+      && toNumber(sample.returnFollowUpBadgeVisibleCount) <= 0) {
+      issues.push(issue("H2", "task_card_return_followup_badge_missing", sample, {
+        returnFollowUpTaskCardCount: toNumber(sample.returnFollowUpTaskCardCount),
+        returnFollowUpBadgeVisibleCount: toNumber(sample.returnFollowUpBadgeVisibleCount),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
+      && sample.latestTurnMatchesTarget
+      && toNumber(sample.bottomThreadTaskCardReturnCount) > 0) {
+      issues.push(issue("H2", "task_card_return_cards_pollute_thread_bottom", sample, {
+        bottomThreadTaskCardReturnCount: toNumber(sample.bottomThreadTaskCardReturnCount),
+        bottomThreadTaskCardCount: toNumber(sample.bottomThreadTaskCardCount),
+        expectedLatestTurnHash: safeLabel(sample.latestTurnHash || sample.expectedLatestTurnHash, ""),
+        domTurnCount: toNumber(sample.turns),
+      }));
+    }
+    if (sampleIsConfirmed(sample)
+      && toNumber(sample.delayMs) >= minSettledDelayMs
+      && !sample.loadingNote
       && sample.latestTurnMatchesTarget
       && sample.latestTurnAtDomBottom === false
+      && !(sample.returnReceiptTurnAtDomBottom === true && toNumber(sample.returnLedgerVisibleCount) > 0)
       && sample.latestTurnHash
       && sample.actualLatestTurnHash
       && String(sample.latestTurnHash || "") !== String(sample.actualLatestTurnHash || "")) {

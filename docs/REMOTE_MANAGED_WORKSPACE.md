@@ -28,6 +28,20 @@ Remote Codex Mobile node
 
 - `services/remote-managed-workspaces/remote-managed-workspace-node-client-service.js`
   owns remote-node startup validation and outbound client behavior.
+- `services/remote-managed-workspaces/remote-managed-workspace-settings-service.js`
+  owns the local remote-node settings store. It persists non-secret config and
+  connection state under the Codex Mobile runtime root, and writes enrollment
+  credentials only to a separate local secret entry with masked readback.
+- `services/remote-managed-workspaces/remote-managed-workspace-node-runner-service.js`
+  owns the local outbound runner state machine. It registers with Home AI,
+  sends node heartbeat, polls task cards, sends per-card ack/heartbeat/terminal
+  return, tracks idempotency, queues bounded terminal returns while offline, and
+  retries with backoff.
+- `services/remote-managed-workspaces/remote-managed-workspace-local-execution-service.js`
+  owns the remote-card-to-local-Codex bridge. It validates the configured local
+  project root, starts a local Codex thread/turn in that project root, waits for
+  bounded turn completion through the existing app-server RPC surface, and
+  returns zh-CN metadata-only terminal evidence to the runner.
 - `services/remote-managed-workspaces/remote-managed-workspace-service.js`
   is a local Home AI central simulator state store for tests and harnesses. It
   is not production central registry ownership.
@@ -35,7 +49,8 @@ Remote Codex Mobile node
   central simulator route. It only handles `/api/remote-managed-workspaces/*`
   when constructed with `centralSimulator: true`.
 - `scripts/codex-mobile-remote-managed-workspace-harness.js` runs a two-port
-  simulation: Home AI central simulator plus Codex Mobile remote-node simulator.
+  simulation: Home AI central simulator plus Codex Mobile remote-node settings
+  store, runner, and local project simulator.
 
 The production Codex Mobile API dispatcher does not auto-expose
 `/api/remote-managed-workspaces/*` as authoritative central routes. Remote-node
@@ -66,6 +81,22 @@ Remote node config must include `workspaceId`,
 node validates that `projectRoot` exists and is within an allowed root before
 registering.
 
+The Codex Mobile settings panel exposes a simplified authorized local setting at
+`/api/settings/remote-managed-workspace`. The ordinary UI shows only the global
+Home AI central URL plus known local Workspace rows. Choosing `远程受控` for a
+Workspace creates the remote-node config automatically: `workspaceKind`, stable
+workspace id, stable node name, project root, allowed root, default project type,
+HTTP polling fallback metadata, and default local role/capability set are all
+derived by `remote-managed-workspace-settings-service.js`. Internal fields remain
+visible only in the collapsed Advanced/Diagnostics area as bounded metadata.
+Enrollment credentials remain write-only/masked; readback returns only
+configured/ref/masked state and never the raw token.
+
+The preferred connection mode is a persistent outbound abstraction. Until Home
+AI exposes a persistent session endpoint, Codex Mobile reports
+`effectiveConnectionMode=http_polling` and uses HTTP polling fallback. The
+fallback is still remote-to-central outbound only.
+
 Task-card relay is outbound from the remote node to Home AI. `ack`, heartbeat,
 and terminal return are per task card, not per Worker lane. Terminal return
 payloads are normalized to `zh-CN` for Owner-visible receipts.
@@ -74,8 +105,30 @@ payloads are normalized to `zh-CN` for Owner-visible receipts.
 floor and receives effective `xhigh` reasoning. External Worker, audit, and
 deploy roles remain ordinary lanes and are not globally upgraded.
 
+When a task card is received, the runner acks it, starts the local execution
+bridge, sends per-card heartbeats while the local turn is active, and sends one
+bounded terminal return to Home AI central after the local turn completes,
+fails, or times out. The bridge uses Codex Mobile's existing local app-server
+RPCs (`thread/start`, `turn/start`, `thread/turns/list`); it does not expose a
+central shell, broad filesystem read route, or inbound remote-machine
+management surface. If the bridge is unavailable in a custom composition, the
+runner still fails closed with `local_task_card_execution_bridge_unavailable`.
+
 Daily summaries and escalations accept bounded metadata only. Forbidden
 raw/private payload classes such as raw logs, endpoint bodies, secrets, cookies,
 screenshots, provider payloads, private thread bodies, and raw cache data are
 rejected at the simulator/client boundary and must also be rejected by Home AI
 central.
+
+## Local Validation
+
+Focused validation for this boundary:
+
+```bash
+node --test test/remote-managed-workspace-service.test.js \
+  test/remote-managed-workspace-route-service.test.js \
+  test/remote-managed-workspace-settings-service.test.js \
+  test/remote-managed-workspace-node-runner-service.test.js \
+  test/remote-managed-workspace-integration.test.js
+node scripts/codex-mobile-remote-managed-workspace-harness.js
+```

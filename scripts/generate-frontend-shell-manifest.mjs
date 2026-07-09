@@ -465,8 +465,9 @@ export function buildPublicShellManifest(root = process.cwd(), options = {}) {
   ]);
   assertAssetsExist(root, pageShellAssets);
   const classicShellCacheName = shellCacheNameForAssets(root, hashAssets, appVersion);
+  const useExistingViteArtifactCache = options.useExistingViteArtifactCache !== false;
   const cacheIdentity = normalizeShellCacheIdentity(options.cacheIdentity, appVersion, classicShellCacheName)
-    || existingShellCacheIdentity(root, appVersion, classicShellCacheName);
+    || (useExistingViteArtifactCache ? existingShellCacheIdentity(root, appVersion, classicShellCacheName) : null);
   const shellCacheName = cacheIdentity ? cacheIdentity.shellCacheName : classicShellCacheName;
   const classicGlobalExports = buildClassicGlobalExports(root, scriptAssets);
   const startupGlobalContracts = buildStartupGlobalContracts(root, entryGroups, classicGlobalExports);

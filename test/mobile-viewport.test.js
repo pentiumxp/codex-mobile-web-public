@@ -15,6 +15,7 @@ const stylesCss = fs.readFileSync(path.resolve(__dirname, "..", "public", "style
 const swJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "sw.js"), "utf8");
 const shellManifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, "..", "public", "shell-asset-manifest.json"), "utf8"));
 const threadListRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-list-runtime.js"), "utf8");
+const settingsRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "settings-runtime.js"), "utf8");
 const threadTileRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-tile-runtime.js"), "utf8");
 const threadDetailMergeStateJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-detail-merge-state.js"), "utf8");
 const threadDetailRuntimeJs = fs.readFileSync(path.resolve(__dirname, "..", "public", "thread-detail-runtime.js"), "utf8");
@@ -290,6 +291,25 @@ test("mobile viewport and early guards disable page zoom", () => {
   assert.match(platformPointer, /embedded-plugin-keyboard-composer/);
   assert.match(platformPointer, /--plugin-thread-id <thread-id>/);
   assert.match(platformPointer, /development visual check passes/);
+});
+
+test("mobile settings panel scrolls to Remote Managed Workspace controls", () => {
+  assert.match(indexHtml, /id="themeSettingsToggle"[\s\S]*aria-expanded="false"/);
+  assert.match(indexHtml, /id="themeSettingsPanel" class="theme-settings hidden"/);
+  assert.match(indexHtml, /<div class="theme-settings-title">Remote Managed Workspace<\/div>[\s\S]*id="remoteManagedWorkspaceSettings"/);
+  assert.match(stylesCss, /\.theme-settings\s*{[\s\S]*max-height:\s*calc\(var\(--app-height, 100dvh\) - 92px - env\(safe-area-inset-top, 0px\) - env\(safe-area-inset-bottom, 0px\)\);/);
+  assert.match(stylesCss, /\.theme-settings\s*{[\s\S]*overflow-x:\s*hidden;[\s\S]*overflow-y:\s*auto;/);
+  assert.match(stylesCss, /\.theme-settings\s*{[\s\S]*overscroll-behavior:\s*contain;[\s\S]*-webkit-overflow-scrolling:\s*touch;[\s\S]*touch-action:\s*pan-y;/);
+  assert.match(stylesCss, /html\.embed-hermes\.embed-hermes-primary \.sidebar\s*{[\s\S]*overflow:\s*hidden;/);
+  assert.match(stylesCss, /html\.embed-hermes\.embed-hermes-primary \.theme-settings\s*{[\s\S]*flex:\s*1 1 auto;[\s\S]*min-height:\s*0;[\s\S]*max-height:\s*none;/);
+  assert.match(stylesCss, /html\.embed-hermes\.embed-hermes-primary \.theme-settings:not\(\.hidden\) ~ \*\s*{[\s\S]*display:\s*none !important;/);
+  assert.match(stylesCss, /@media \(max-width: 720px\)\s*{[\s\S]*\.remote-managed-workspace-form\s*{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\);/);
+  for (const label of ["Central URL", "Workspace id", "Project root", "Allowed root", "Enrollment token"]) {
+    assert.match(settingsRuntimeJs, new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+  }
+  for (const action of ["save", "test-connection", "register", "poll-once"]) {
+    assert.match(settingsRuntimeJs, new RegExp(`data-rmw-action="${action}"`));
+  }
 });
 
 test("Android composer focused native tap preserves IME focus", () => {

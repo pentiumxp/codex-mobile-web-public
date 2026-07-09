@@ -503,6 +503,33 @@ function summarizeTurn(turn = {}, thread = null) {
   };
 }
 
+function rawCanonicalUserInputCount(rawCounts = null) {
+  if (!rawCounts || rawCounts.checked !== true || rawCounts.found !== true) return 0;
+  return boundedCount(rawCounts.rawUserItems || 0);
+}
+
+function userInputOvercountCollapse(beforeSummary = null, afterSummary = null, rawCounts = null) {
+  if (!beforeSummary || !afterSummary) return null;
+  const rawUserItems = rawCanonicalUserInputCount(rawCounts);
+  if (rawUserItems <= 0) return null;
+  const beforeUniqueUserInputItems = Number.isFinite(Number(beforeSummary.uniqueUserInputItems))
+    ? boundedCount(beforeSummary.uniqueUserInputItems)
+    : beforeSummary.userInputItems;
+  const afterUniqueUserInputItems = Number.isFinite(Number(afterSummary.uniqueUserInputItems))
+    ? boundedCount(afterSummary.uniqueUserInputItems)
+    : afterSummary.userInputItems;
+  if (afterUniqueUserInputItems >= beforeUniqueUserInputItems) return null;
+  if (beforeUniqueUserInputItems <= rawUserItems) return null;
+  if (afterUniqueUserInputItems < rawUserItems) return null;
+  return {
+    rawUserItems,
+    beforeUniqueUserInputItems,
+    afterUniqueUserInputItems,
+    collapsedCount: boundedCount(beforeUniqueUserInputItems - afterUniqueUserInputItems),
+    overcountBefore: boundedCount(beforeUniqueUserInputItems - rawUserItems),
+  };
+}
+
 function turnActivityTimestampMs(turn = {}, thread = null) {
   let value = Math.max(
     turnStartedAtMs(turn),
@@ -915,19 +942,27 @@ function findTurnById(thread = {}, id = "") {
   return safeArray(thread.turns).find((turn) => turnId(turn) === expected) || null;
 }
 
-function pushRefreshTurnDowngradeIssues(issues, beforeSummary, afterSummary, threadHash) {
+function pushRefreshTurnDowngradeIssues(issues, beforeSummary, afterSummary, threadHash, options = {}) {
   if (!beforeSummary || !afterSummary || beforeSummary.turnHash !== afterSummary.turnHash) return;
+  const overcountCollapse = userInputOvercountCollapse(
+    beforeSummary,
+    afterSummary,
+    options.rawLatestCompletedCounts,
+  );
   const beforeComparableItems = Number.isFinite(Number(beforeSummary.comparableItemCount))
     ? boundedCount(beforeSummary.comparableItemCount)
     : beforeSummary.itemCount;
   const afterComparableItems = Number.isFinite(Number(afterSummary.comparableItemCount))
     ? boundedCount(afterSummary.comparableItemCount)
     : afterSummary.itemCount;
-  if (afterComparableItems < beforeComparableItems) {
+  const effectiveBeforeComparableItems = overcountCollapse
+    ? boundedCount(Math.max(0, beforeComparableItems - overcountCollapse.overcountBefore))
+    : beforeComparableItems;
+  if (afterComparableItems < effectiveBeforeComparableItems) {
     pushIssue(issues, "thread_detail_refresh_item_downgrade", "H2", "thread-detail-refresh", {
       threadHash,
       turnHash: afterSummary.turnHash,
-      beforeItems: beforeComparableItems,
+      beforeItems: effectiveBeforeComparableItems,
       afterItems: afterComparableItems,
     });
   }
@@ -937,7 +972,15 @@ function pushRefreshTurnDowngradeIssues(issues, beforeSummary, afterSummary, thr
   const afterUniqueUserInputItems = Number.isFinite(Number(afterSummary.uniqueUserInputItems))
     ? boundedCount(afterSummary.uniqueUserInputItems)
     : afterSummary.userInputItems;
-  if (afterUniqueUserInputItems < beforeUniqueUserInputItems) {
+  if (afterUniqueUserInputItems < beforeUniqueUserInputItems && overcountCollapse) {
+    pushIssue(issues, "thread_detail_refresh_collapsed_user_input_projection_overcount", "H3", "thread-detail-refresh", {
+      threadHash,
+      turnHash: afterSummary.turnHash,
+      beforeItems: beforeUniqueUserInputItems,
+      afterItems: afterUniqueUserInputItems,
+      rawUserItems: overcountCollapse.rawUserItems,
+    });
+  } else if (afterUniqueUserInputItems < beforeUniqueUserInputItems) {
     pushIssue(issues, "thread_detail_refresh_lost_user_input", "H2", "thread-detail-refresh", {
       threadHash,
       turnHash: afterSummary.turnHash,
@@ -1021,13 +1064,13 @@ function compareDetailReadbacks(firstDetail = {}, secondDetail = {}, options = {
       beforeStatus: beforeActiveSummary.status,
       afterStatus: afterActiveSummary.status,
     });
-    pushRefreshTurnDowngradeIssues(issues, beforeActiveSummary, afterActiveSummary, threadHash);
+    pushRefreshTurnDowngradeIssues(issues, beforeActiveSummary, afterActiveSummary, threadHash, options);
   }
   if (firstSummary && secondSummary && firstSummary.turnHash === secondSummary.turnHash) {
-    pushRefreshTurnDowngradeIssues(issues, firstSummary, secondSummary, threadHash);
+    pushRefreshTurnDowngradeIssues(issues, firstSummary, secondSummary, threadHash, options);
   }
   return {
-    ok: issues.length === 0,
+    ok: issues.filter(issueSeverityBlocks).length === 0,
     threadHash,
     before: firstSummary,
     after: secondSummary,

@@ -1048,6 +1048,23 @@ function taskCardStatusLabel(status) {
   }[text] || text;
 }
 
+function taskCardReturnStatusLabel(card) {
+  const text = String(
+    card && card.delivery && card.delivery.returnStatus
+    || card && card.audit && card.audit.returnStatus
+    || card && card.returnStatus
+    || "returned"
+  ).trim().toLowerCase();
+  return {
+    completed: "Completed",
+    partially_completed: "Partial",
+    blocked: "Blocked",
+    redirected: "Redirected",
+    rejected: "Rejected",
+    returned: "Returned",
+  }[text] || (text ? text.replace(/_/g, " ") : "Returned");
+}
+
 function taskCardDirectionLabel(card) {
   if (!card) return "Task card";
   if (card.threadRole === "target") {
@@ -1128,6 +1145,190 @@ function renderThreadTaskCard(card, previousKeys = new Set(), threadId = "") {
     ${renderThreadTaskCardExpandable(summary || detail || (card.message && card.message.title) || "Task card details", detailBlocks, `data-task-card-details data-task-card-id="${escapeHtml(card.id)}" data-task-card-thread-id="${escapeHtml(threadId)}"`)}
     ${renderThreadTaskCardActions(card, threadId)}
   </section>`;
+}
+
+function renderThreadTaskCardReturnReceipt(card, previousKeys = new Set(), threadId = "") {
+  const key = `task-card-return-receipt|${card.id}`;
+  const status = String(card.status || "approved");
+  const detail = taskCardDetailLines(card).join("\n");
+  const summary = threadTaskCardSummaryLine(card.message && card.message.summary ? card.message.summary : "");
+  const body = card.message && card.message.body
+    ? `<pre class="approval-detail">${escapeHtml(card.message.body)}</pre>`
+    : card.message && card.message.bodyOmitted
+      ? `<div class="approval-detail" data-task-card-body-placeholder data-task-card-id="${escapeHtml(card.id)}" data-task-card-thread-id="${escapeHtml(threadId)}">Task card body loads when opened.</div>`
+      : "";
+  const title = card.message && card.message.title || "Return receipt";
+  const detailBlocks = [
+    detail ? `<pre class="approval-detail">${escapeHtml(detail)}</pre>` : "",
+    body,
+  ];
+  return `<section class="item thread-task-card-return-receipt${entryAnimationClass(key, previousKeys)} ${escapeHtml(status)}" data-render-key="${escapeHtml(key)}" data-task-card-return-receipt="${escapeHtml(card.id)}">
+    <div class="item-head thread-task-card-return-head">
+      <span class="thread-task-card-return-heading">
+        <span class="thread-task-card-return-kicker">Return card</span>
+        <span class="thread-task-card-return-title">${escapeHtml(title)}</span>
+      </span>
+      <span class="approval-status thread-task-card-return-status">${escapeHtml(taskCardReturnStatusLabel(card))}</span>
+    </div>
+    ${summary ? `<div class="approval-summary-line">${escapeHtml(summary)}</div>` : ""}
+    ${renderThreadTaskCardExpandable(summary || detail || title, detailBlocks, `data-task-card-details data-task-card-id="${escapeHtml(card.id)}" data-task-card-thread-id="${escapeHtml(threadId)}"`)}
+  </section>`;
+}
+
+function taskCardReturnReceiptTurnId(card) {
+  const cardId = String(card && card.id || "").trim();
+  return cardId ? `task-card-return-receipt|${cardId}` : "";
+}
+
+function taskCardReturnReceiptTimestampMs(value) {
+  if (value == null || value === "") return 0;
+  if (typeof value === "number") {
+    if (!Number.isFinite(value) || value <= 0) return 0;
+    return value < 10000000000 ? value * 1000 : value;
+  }
+  const text = String(value || "").trim();
+  if (!text) return 0;
+  if (/^\d+$/.test(text)) return taskCardReturnReceiptTimestampMs(Number(text));
+  const parsed = Date.parse(text);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function taskCardReturnReceiptFlowTimeMs(card) {
+  const delivery = card && card.delivery && typeof card.delivery === "object" ? card.delivery : {};
+  const audit = card && card.audit && typeof card.audit === "object" ? card.audit : {};
+  const message = card && card.message && typeof card.message === "object" ? card.message : {};
+  return taskCardReturnReceiptTimestampMs(delivery.returnedAtMs)
+    || taskCardReturnReceiptTimestampMs(delivery.returnedAt)
+    || taskCardReturnReceiptTimestampMs(delivery.deliveredAtMs)
+    || taskCardReturnReceiptTimestampMs(delivery.deliveredAt)
+    || taskCardReturnReceiptTimestampMs(audit.returnedAtMs)
+    || taskCardReturnReceiptTimestampMs(audit.returnedAt)
+    || taskCardReturnReceiptTimestampMs(card && card.returnedAtMs)
+    || taskCardReturnReceiptTimestampMs(card && card.returnedAt)
+    || taskCardReturnReceiptTimestampMs(message.createdAtMs)
+    || taskCardReturnReceiptTimestampMs(message.createdAt)
+    || taskCardReturnReceiptTimestampMs(card && card.createdAtMs)
+    || taskCardReturnReceiptTimestampMs(card && card.createdAt)
+    || taskCardReturnReceiptTimestampMs(card && card.updatedAtMs)
+    || taskCardReturnReceiptTimestampMs(card && card.updatedAt);
+}
+
+function taskCardTurnFlowTimeMs(turn) {
+  const direct = taskCardReturnReceiptTimestampMs(turn && turn.completedAtMs)
+    || taskCardReturnReceiptTimestampMs(turn && turn.completedAt)
+    || taskCardReturnReceiptTimestampMs(turn && turn.finishedAtMs)
+    || taskCardReturnReceiptTimestampMs(turn && turn.finishedAt)
+    || taskCardReturnReceiptTimestampMs(turn && turn.updatedAtMs)
+    || taskCardReturnReceiptTimestampMs(turn && turn.updatedAt)
+    || taskCardReturnReceiptTimestampMs(turn && turn.startedAtMs)
+    || taskCardReturnReceiptTimestampMs(turn && turn.startedAt)
+    || taskCardReturnReceiptTimestampMs(turn && turn.createdAtMs)
+    || taskCardReturnReceiptTimestampMs(turn && turn.createdAt);
+  const items = Array.isArray(turn && turn.items) ? turn.items : [];
+  const itemMax = items.reduce((max, item) => Math.max(max,
+    taskCardReturnReceiptTimestampMs(item && item.completedAtMs)
+      || taskCardReturnReceiptTimestampMs(item && item.completedAt)
+      || taskCardReturnReceiptTimestampMs(item && item.updatedAtMs)
+      || taskCardReturnReceiptTimestampMs(item && item.updatedAt)
+      || taskCardReturnReceiptTimestampMs(item && item.startedAtMs)
+      || taskCardReturnReceiptTimestampMs(item && item.startedAt)
+      || taskCardReturnReceiptTimestampMs(item && item.createdAtMs)
+      || taskCardReturnReceiptTimestampMs(item && item.createdAt)
+      || taskCardReturnReceiptTimestampMs(item && item.timestampMs)
+      || taskCardReturnReceiptTimestampMs(item && item.timestamp)
+      || 0), 0);
+  return Math.max(direct || 0, itemMax || 0);
+}
+
+function threadTaskCardReturnReceiptFlowEntries(thread, turns = []) {
+  const safeTurns = Array.isArray(turns) ? turns : [];
+  const turnEntries = safeTurns.map((turn, index) => ({
+    kind: "turn",
+    turn,
+    flowMs: taskCardTurnFlowTimeMs(turn),
+    order: index * 2,
+    index,
+  }));
+  const receipts = typeof threadTaskCardReturnReceiptsForThread === "function"
+    ? threadTaskCardReturnReceiptsForThread(thread)
+    : [];
+  const receiptEntries = receipts.map((card, index) => {
+    const flowMs = taskCardReturnReceiptFlowTimeMs(card);
+    let afterIndex = -1;
+    if (flowMs > 0) {
+      for (const entry of turnEntries) {
+        if (entry.flowMs > 0 && entry.flowMs <= flowMs) afterIndex = entry.index;
+      }
+    } else if (turnEntries.length) {
+      afterIndex = turnEntries[turnEntries.length - 1].index;
+    }
+    const baseOrder = afterIndex >= 0
+      ? turnEntries[afterIndex].order + 1
+      : turnEntries.length
+        ? turnEntries[0].order - 1
+        : 0;
+    return {
+      kind: "return-receipt",
+      card,
+      flowMs,
+      order: baseOrder + index / 1000,
+      index,
+    };
+  });
+  return turnEntries.concat(receiptEntries)
+    .sort((a, b) => {
+      if (a.order !== b.order) return a.order - b.order;
+      if (a.flowMs !== b.flowMs) return a.flowMs - b.flowMs;
+      return a.index - b.index;
+    });
+}
+
+function threadTaskCardReturnReceiptTurnIds(thread) {
+  const receipts = typeof threadTaskCardReturnReceiptsForThread === "function"
+    ? threadTaskCardReturnReceiptsForThread(thread)
+    : [];
+  return receipts.map(taskCardReturnReceiptTurnId).filter(Boolean);
+}
+
+function threadTaskCardReturnReceiptFlowTurnIds(thread, turns = []) {
+  return threadTaskCardReturnReceiptFlowEntries(thread, turns)
+    .map((entry) => {
+      if (entry.kind === "turn") return String(entry.turn && entry.turn.id || "").trim();
+      return taskCardReturnReceiptTurnId(entry.card);
+    })
+    .filter(Boolean);
+}
+
+function renderThreadTaskCardReturnReceiptTurn(card, previousKeys = new Set(), threadId = "") {
+  const turnId = taskCardReturnReceiptTurnId(card);
+  if (!turnId) return "";
+  const key = `task-card-return-turn|${card.id}`;
+  return `<article class="turn thread-task-card-return-turn${entryAnimationClass(key, previousKeys)}" data-turn="${escapeHtml(turnId)}" data-render-key="${escapeHtml(key)}" data-task-card-return-turn="${escapeHtml(card.id)}">
+    ${renderThreadTaskCardReturnReceipt(card, previousKeys, threadId)}
+  </article>`;
+}
+
+function renderThreadTaskCardReturnReceipts(thread, previousKeys = new Set()) {
+  const receipts = typeof threadTaskCardReturnReceiptsForThread === "function"
+    ? threadTaskCardReturnReceiptsForThread(thread)
+    : [];
+  if (!receipts.length) return "";
+  const threadId = String(thread && thread.id || "").trim();
+  return `<div class="thread-task-card-return-receipt-stack">
+    ${receipts.map((card) => renderThreadTaskCardReturnReceiptTurn(card, previousKeys, threadId)).join("")}
+  </div>`;
+}
+
+function renderThreadConversationFlowWithReturnReceipts(thread, turns = [], previousKeys = new Set(), renderTurnHtml = null) {
+  const renderTurnEntry = typeof renderTurnHtml === "function"
+    ? renderTurnHtml
+    : () => "";
+  const threadId = String(thread && thread.id || "").trim();
+  return threadTaskCardReturnReceiptFlowEntries(thread, turns)
+    .map((entry) => entry.kind === "turn"
+      ? renderTurnEntry(entry.turn, previousKeys)
+      : renderThreadTaskCardReturnReceiptTurn(entry.card, previousKeys, threadId))
+    .join("");
 }
 
 function renderThreadTaskCards(thread, previousKeys = new Set()) {
@@ -1358,6 +1559,14 @@ function createTaskCardRuntime() {
   return {
     renderThreadTaskCard: typeof renderThreadTaskCard === "function" ? renderThreadTaskCard : null,
     renderThreadTaskCards: typeof renderThreadTaskCards === "function" ? renderThreadTaskCards : null,
+    renderThreadTaskCardReturnReceipt: typeof renderThreadTaskCardReturnReceipt === "function" ? renderThreadTaskCardReturnReceipt : null,
+    renderThreadTaskCardReturnReceiptTurn: typeof renderThreadTaskCardReturnReceiptTurn === "function" ? renderThreadTaskCardReturnReceiptTurn : null,
+    renderThreadTaskCardReturnReceipts: typeof renderThreadTaskCardReturnReceipts === "function" ? renderThreadTaskCardReturnReceipts : null,
+    renderThreadConversationFlowWithReturnReceipts: typeof renderThreadConversationFlowWithReturnReceipts === "function" ? renderThreadConversationFlowWithReturnReceipts : null,
+    taskCardReturnReceiptTurnId: typeof taskCardReturnReceiptTurnId === "function" ? taskCardReturnReceiptTurnId : null,
+    threadTaskCardReturnReceiptFlowEntries: typeof threadTaskCardReturnReceiptFlowEntries === "function" ? threadTaskCardReturnReceiptFlowEntries : null,
+    threadTaskCardReturnReceiptFlowTurnIds: typeof threadTaskCardReturnReceiptFlowTurnIds === "function" ? threadTaskCardReturnReceiptFlowTurnIds : null,
+    threadTaskCardReturnReceiptTurnIds: typeof threadTaskCardReturnReceiptTurnIds === "function" ? threadTaskCardReturnReceiptTurnIds : null,
     createThreadTaskCardFromCurrent: typeof createThreadTaskCardFromCurrent === "function" ? createThreadTaskCardFromCurrent : null,
     mutateThreadTaskCard: typeof mutateThreadTaskCard === "function" ? mutateThreadTaskCard : null,
     replyTaskCard: typeof replyTaskCard === "function" ? replyTaskCard : null,
@@ -1408,6 +1617,14 @@ function createTaskCardRuntime() {
     renderThreadArchiveDialog,
     renderThreadTaskCard,
     renderThreadTaskCardActions,
+    renderThreadConversationFlowWithReturnReceipts,
+    renderThreadTaskCardReturnReceipt,
+    renderThreadTaskCardReturnReceiptTurn,
+    renderThreadTaskCardReturnReceipts,
+    taskCardReturnReceiptTurnId,
+    threadTaskCardReturnReceiptFlowEntries,
+    threadTaskCardReturnReceiptFlowTurnIds,
+    threadTaskCardReturnReceiptTurnIds,
     renderThreadTaskCardDraft,
     renderThreadTaskCardDraftActions,
     renderThreadTaskCardExpandable,

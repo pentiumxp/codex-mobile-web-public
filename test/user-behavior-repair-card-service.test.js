@@ -182,6 +182,46 @@ test("single active-window downgrade is observed but does not dispatch repair ca
   assert.equal(calls.length, 0);
 });
 
+test("single Home AI proxy active-window case remains below repair-card threshold", async () => {
+  const calls = [];
+  const service = createUserBehaviorRepairCardService({
+    targetRole: "plugin_worker",
+    nowMs: () => Date.parse("2026-07-08T17:05:02.445Z"),
+    createThreadTaskCardsFromSourceThread: async (sourceThreadId, payload) => {
+      calls.push({ sourceThreadId, payload });
+      return { card: { id: "ttc_unexpected_single_case" }, direct: true };
+    },
+  });
+
+  const result = await service.handleClientEvent("home_ai_diagnostic_failure_recorded", {
+    threadId: "019f316b-27cd-7622-9944-0b909fec3c70",
+    path: "/api/hermes-plugins/codex-mobile/proxy/?pluginId=codex-mobile&pluginRoute=root&workspaceId=owner",
+    details: {
+      category: "conversation_projection_mismatch",
+      diagnostic_type: "thread_detail_response_contract_mismatch",
+      error_code: "active-thread-window-downgrade",
+      clientBuildId: "20260708-codex-workspace-console-v1136",
+      routeKind: "embedded-plugin",
+      embedded: true,
+      visibility: "visible",
+      signature: "diagcase_b53925b42711894d0db9",
+      context: {
+        route_kind: "embedded-plugin",
+        build_id: "20260708-codex-workspace-console-v1136",
+        thread_hash: "h_case",
+      },
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.created, false);
+  assert.equal(result.reason, "below_incident_threshold");
+  assert.equal(result.issueCode, "active_thread_window_downgrade");
+  assert.equal(result.occurrenceCount, 1);
+  assert.equal(result.threshold, 2);
+  assert.equal(calls.length, 0);
+});
+
 test("repeated active-window downgrade dispatches exactly once per window", async () => {
   const calls = [];
   let now = Date.parse("2026-07-08T08:00:00.000Z");

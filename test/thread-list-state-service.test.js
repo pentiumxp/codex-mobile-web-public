@@ -53,6 +53,47 @@ test("thread-list state service attaches goals and task-card counts to list summ
   assert.equal("threadTaskCards" in result.data[0], false);
 });
 
+test("thread-list state service exposes return receipt and follow-up counts in summaries", () => {
+  const service = createThreadListStateService({
+    stripThreadListDetailFields: (thread) => {
+      const summary = Object.assign({}, thread);
+      delete summary.threadTaskCards;
+      delete summary.taskCardReturnLedger;
+      return summary;
+    },
+    threadTaskCardService: {
+      summaryCountsForThreads: (threadIds) => new Map(threadIds.map((threadId) => [
+        String(threadId || ""),
+        {
+          pendingTotal: 0,
+          pendingIncoming: 0,
+          pendingOutgoing: 0,
+          returnReceiptTotal: threadId === "source-resting" ? 1 : 0,
+          returnFollowUpTotal: threadId === "source-resting" ? 1 : 0,
+          latestReturnReceiptId: "ttc-return",
+          latestReturnReceiptAt: "2026-07-09T06:00:00.000Z",
+          latestReturnReceiptStatus: "partially_completed",
+          latestReturnFollowUpId: "ttc-return",
+          latestReturnFollowUpAt: "2026-07-09T06:00:00.000Z",
+          latestReturnFollowUpStatus: "partially_completed",
+        },
+      ])),
+    },
+  });
+
+  const result = service.attachThreadListStateToResult({
+    data: [{ id: "source-resting", title: "Source", threadTaskCards: [{}], taskCardReturnLedger: [{}] }],
+  });
+
+  assert.equal("threadTaskCards" in result.data[0], false);
+  assert.equal("taskCardReturnLedger" in result.data[0], false);
+  assert.equal(result.data[0].pendingTaskCardCount, 0);
+  assert.equal(result.data[0].returnReceiptTaskCardCount, 1);
+  assert.equal(result.data[0].returnFollowUpTaskCardCount, 1);
+  assert.equal(result.data[0].returnFollowUpPending, true);
+  assert.equal(result.data[0].latestReturnFollowUpTaskCardId, "ttc-return");
+});
+
 test("thread-list state service upserts rows from result data and alternate threads arrays", () => {
   const upserted = [];
   const service = createThreadListStateService({

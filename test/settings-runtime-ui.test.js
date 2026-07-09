@@ -18,6 +18,7 @@ test("settings runtime preserves CommonJS and legacy global entry points", () =>
     "renderQuotaUsage",
     "renderCodexProfileSettings",
     "renderWorkspaceDelegationSettings",
+    "renderRemoteManagedWorkspaceSettings",
     "rememberRateLimitsFromConfig",
     "rememberCodexProfiles",
   ]) {
@@ -44,4 +45,16 @@ test("settings runtime preserves CommonJS and legacy global entry points", () =>
   assert.match(settingsRuntimeJs, /Object\.assign\(root,/);
   assert.match(settingsRuntimeJs, /root\.CodexSettingsRuntime = settingsRuntimeApi/);
   assert.match(appBootstrapJs, /if \(typeof initializeRestartAutoRecoverThreads === "function"\) \{[\s\S]*initializeRestartAutoRecoverThreads\(\);/);
+  assert.match(settingsRuntimeJs, /function normalizeRemoteManagedWorkspaceConfig/);
+  assert.match(settingsRuntimeJs, /data-rmw-action="save-central"/);
+  assert.match(settingsRuntimeJs, /"enable-workspace"/);
+  assert.match(settingsRuntimeJs, /"disable-workspace"/);
+  assert.match(settingsRuntimeJs, /Advanced \/ Diagnostics/);
+  assert.match(settingsRuntimeJs, /\/api\/settings\/remote-managed-workspace\/workspace/);
+  assert.doesNotMatch(settingsRuntimeJs, /data-rmw-field="workspaceId"/);
+  assert.doesNotMatch(settingsRuntimeJs, /data-rmw-field="nodeName"/);
+  assert.doesNotMatch(settingsRuntimeJs, /data-rmw-field="roles"/);
+  assert.doesNotMatch(settingsRuntimeJs, /data-rmw-field="capabilities"/);
+  assert.match(settingsRuntimeJs, /api\("\/api\/settings\/remote-managed-workspace"/);
+  assert.match(appBootstrapJs, /remoteManagedWorkspace:\s*\{/);
 });

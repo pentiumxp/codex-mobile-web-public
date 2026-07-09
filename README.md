@@ -16,6 +16,35 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-07-09 Public 发布说明（v625 回卡、Worker 生命周期和 iPad 平铺修复）
+
+本次 public 同步 private/production 已验证的 `codex-mobile-shell-v625-b1a27c2e7c44`
+这一组修复，版本仍为 `0.1.11`。重点是让跨线程 task card 的终端回执、
+Worker lane 生命周期、Remote Managed Workspace 设置入口，以及 iPad / tablet
+平铺线程详情在公开源码中保持和当前生产行为一致。
+
+本次发布包含以下公开可复用改动：
+
+- 跨线程 return card 现在会作为 source 线程可见的 conversation turn 参与渲染，
+  使部署、Worker 和诊断回卡不再只停留在后台 ledger 或非显眼 receipt surface。
+- task-card heartbeat 改为 card-scoped readback，并把 Worker lane 忙闲、
+  Watchdog 接管、stale heartbeat 和 terminal return 释放统一到同一组
+  bounded execution state，不再依赖静态 lane 摘要判断是否需要接管。
+- iPad / tablet 平铺模式修复了 thread identity/color plan 初始化和标题/header
+  状态，避免部分线程进入详情后只显示新回执、历史窗口或标题区域不稳定。
+- Remote Managed Workspace 的设置入口、节点 runner/local execution 框架和
+  public-safe harness/test 覆盖同步到公开仓库；相关设置仍通过现有认证和
+  bounded metadata 路径暴露，不发布本机节点 token、私有 endpoint 或执行日志。
+- 线程详情 active/window 投影诊断继续保留真实
+  `active-thread-window-downgrade` 检测，但合法的 active overlay / progressive
+  projection window 不再被误判；公开 self-check 也同步了 return receipt、
+  first-paint、thread detail response budget 和 browser runtime 读回覆盖。
+
+发布边界保持不变：本次 public 同步只包含公开源码、README、docs、scripts、
+tests 和生成前端资产；不包含 `.agent-context`、runtime state、本地密钥、
+access key、launch token、上传内容、VAPID/subscription 数据、私有线程正文、
+原始日志、原始 cache JSON、数据库行或机器特定诊断。
+
 ## 2026-06-30 私有修复说明（v610 active 线程重入绘制保护）
 
 本次私有修复解决 active 大线程在同一线程重复打开或自动重入时，内容区先短暂清空、

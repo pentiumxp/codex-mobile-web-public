@@ -41,7 +41,7 @@ Interpretation:
 | Command row has no detail on macOS | First inspect `/api/threads/:id?mode=recent`: if `commandExecution.command` is empty, the failure layer is server raw-operation projection from rollout `function_call.arguments`; current server code reads `command`/`cmd`/`shellCommand`/`shell_command` from object or JSON-string arguments. If the API has a non-empty command but the dock/bubble is blank, inspect the v394+ frontend `operationCommandText()` path. |
 | Continuation fails because source thread cannot reply | continuation job progress `handoff-fallback`, generated `.agent-context/thread-handoffs/*.md` mode, `/api/status` profile/quota |
 | Profile switch hides workspaces or threads | active `codexProfiles.activeCodexHome`, non-default profile shared-state links, `/api/threads?limit=10` |
-| Quota chips show the previous account after switch | `/api/status.rateLimits`, browser quota localStorage, profile-switch cache clearing, shared `sessions/` quota fallback |
+| Quota chips show the previous account after switch | `/api/status.codexProfileActiveId`, `/api/status.codexHome`, `codexProfiles.runtimeState`, `/api/status.rateLimits`, profile-switch cache clearing, shared `sessions/` quota fallback |
 | Archived projectless thread reappears | session-index fallback, `archived_sessions`, `test/thread-archive.test.js` |
 | After profile switch only a few workspaces or no threads appear | `/api/public-config.codexProfiles.activeCodexHome`, profile state links, and `state_5.sqlite` / `sessions` under the active home |
 | Threads are visible but names/times stay stale | `/api/threads` row `name`/`updatedAt`, state DB `title`/`updated_at`, rollout file mtime, fallback merge tests |
@@ -368,9 +368,17 @@ builds recover the list from live `sessions/rollout-*.jsonl` headers plus
 it does not repair the SQLite file and it does not replace account auth files.
 
 If threads are visible but quota chips still show the previous account, compare
-the browser with authenticated `/api/status.rateLimits`. The frontend clears
-`codexMobileRateLimits` / `codexMobileRateLimitsByModel` when profile switching
-starts, then repopulates them from the restarted server's status/config.
+the browser with authenticated `/api/status`. `codexProfiles.activeProfileId`,
+`/api/status.codexProfileActiveId`, `/api/status.codexHome`, and
+`codexProfiles.runtimeState` must agree after the switch settles. If
+`codexProfiles.activeProfileId` changed but `/api/status.codexProfileActiveId`
+or `/api/status.codexHome` still points at the previous runtime home, the
+listener is still using the old app-server/mux binding; `turn/start` should
+close that stale transport and reconnect to the selected profile's mux before
+sending. The frontend clears `codexMobileRateLimits` /
+`codexMobileRateLimitsByModel` when profile switching starts, and the server
+rate-limit runtime clears old live/snapshot quota when the active profile home
+changes before repopulating status/config from the current app-server.
 
 If threads are visible after a profile switch or state DB recovery but some rows
 keep UUID-like names or old timestamps, compare `/api/threads?limit=...` with the
@@ -1051,6 +1059,16 @@ Cause to check:
   Assistant text duplicates are H2 for completed/resting receipt shapes and H3
   for active progressive shapes where the DOM has newer budgeted assistant
   progress than the API plan and repeated short status fragments are advisory.
+  If a long completed assistant receipt is visible, disappears after re-entering
+  the thread, and returns only after a new user message triggers a refresh,
+  check whether the first paint used `projection-v4-partial`,
+  `projection-partial-hit`, or `projection-stale-partial-hit`. Current clients
+  treat those partial projection first paints like `turns-list-initial` and
+  immediately backfill full thread detail without depending on a new user
+  message. The browser-runtime check reports
+  `thread_detail_reentry_partial_projection_missing_completed_assistant` when a
+  settled re-entry sample still has the expected latest completed turn hash but
+  fewer assistant rows than the bounded API plan.
   Clients after `codex-mobile-shell-v578` split ordinary user-message and
   injected task-card expectations, and also report
   `browser_latest_turn_user_message_below_api_expectation`,

@@ -2843,6 +2843,98 @@ test("thread detail response budget compacts settled task cards to first-paint p
   );
 });
 
+test("thread detail response budget preserves terminal return receipt projection under first-paint pressure", () => {
+  const terminalReturnReceipt = {
+    id: "card-terminal-return",
+    status: "approved",
+    threadRole: "target",
+    terminal: true,
+    requiresReturn: false,
+    ackPolicy: "none",
+    createdAt: "2026-07-09T09:00:00.000Z",
+    updatedAt: "2026-07-09T09:01:00.000Z",
+    source: {
+      threadId: "worker-thread",
+      workspaceId: "plugin",
+      title: "Worker Lane",
+      cwd: "/private/source/should-not-survive",
+    },
+    target: {
+      threadId: "source-thread",
+      workspaceId: "plugin",
+      cwd: "/private/target/should-not-survive",
+    },
+    delivery: {
+      returnToSource: true,
+      terminal: true,
+      returnStatus: "completed",
+      debugPayload: "x".repeat(1200),
+    },
+    audit: {
+      returnToSource: true,
+      terminal: true,
+      replyToCardId: "ttc_original",
+      privateNoise: "z".repeat(1200),
+    },
+    message: {
+      title: "Return: public gate check",
+      summary: "completed with deploy_needed",
+      bodyOmitted: true,
+      bodyChars: 2048,
+    },
+  };
+  const result = {
+    thread: {
+      id: "source-thread",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      threadTaskCards: [terminalReturnReceipt],
+      turns: [
+        {
+          id: "turn-active",
+          status: "active",
+          items: [
+            { id: "u1", type: "userMessage", text: "Question" },
+            { id: "a1", type: "agentMessage", text: "Working" },
+          ],
+        },
+      ],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {
+    compactTurn,
+    activeProgressiveItemThreshold: 1,
+    progressiveActiveFirstPaintThreadByteCeiling: 1200,
+    activeAssistantItems: 4,
+    progressiveActiveAssistantItems: 4,
+    progressiveReplayAssistantItems: 4,
+  });
+
+  const card = compacted.thread.threadTaskCards[0];
+  assert.equal(card.id, "card-terminal-return");
+  assert.equal(card.mobileTaskCardCompacted, true);
+  assert.equal(card.mobileTaskCardSettledCompacted, undefined);
+  assert.equal(card.threadRole, "target");
+  assert.equal(card.status, "approved");
+  assert.equal(card.terminal, true);
+  assert.equal(card.requiresReturn, false);
+  assert.equal(card.ackPolicy, "none");
+  assert.equal(card.message.title, "Return: public gate check");
+  assert.equal(card.message.summary, "completed with deploy_needed");
+  assert.equal(card.message.bodyOmitted, true);
+  assert.equal(card.message.bodyChars, 2048);
+  assert.deepEqual(card.source, { threadId: "worker-thread", workspaceId: "plugin" });
+  assert.deepEqual(card.target, { threadId: "source-thread", workspaceId: "plugin" });
+  assert.equal(card.delivery, undefined);
+  assert.equal(card.audit, undefined);
+
+  const budget = compacted.thread.mobileDetailResponseBudget;
+  assert.equal(budget.progressiveThreadTaskCardBudgetApplied, true);
+  assert.equal(budget.progressiveThreadTaskCardCompactedCount, 1);
+  assert.equal(budget.progressiveThreadTaskCardSettledCompactedCount, 0);
+});
+
 test("thread detail response budget can emit compact HTTP evidence while preserving key counters", () => {
   const result = {
     thread: {

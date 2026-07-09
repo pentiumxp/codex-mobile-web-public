@@ -3,9 +3,11 @@
 const assert = require("node:assert/strict");
 const path = require("node:path");
 const { test } = require("node:test");
+const { pathToFileURL } = require("node:url");
 
 const state = require(path.resolve(__dirname, "..", "public", "thread-tile-state.js"));
 const layout = require(path.resolve(__dirname, "..", "public", "thread-tile-layout.js"));
+const nativeStateUrl = pathToFileURL(path.resolve(__dirname, "..", "frontend", "native", "thread-tile-state.mjs")).href;
 
 test("thread tile state normalizes pane counts and pinned ids", () => {
   assert.equal(state.normalizePaneCount("5.9", { maxPanes: 12 }), 5);
@@ -626,6 +628,32 @@ test("thread tile state owns shared composer target planning", () => {
     targetThreadId: "b",
     hasTargetThread: true,
   }).reason, "new-thread");
+});
+
+test("native thread tile state exports identity color policy used by Vite tile runtime", async () => {
+  const nativeState = await import(nativeStateUrl);
+  assert.equal(typeof nativeState.threadIdentityColorPlan, "function");
+  assert.equal(typeof nativeState.default.threadIdentityColorPlan, "function");
+  assert.equal(Array.isArray(nativeState.THREAD_IDENTITY_COLOR_SCHEMES), true);
+  assert.equal(Array.isArray(nativeState.THREAD_IDENTITY_CONTRAST_ORDER), true);
+  assert.equal(Array.isArray(nativeState.THREAD_IDENTITY_CSS_VARIABLE_NAMES), true);
+
+  const contrastPlan = nativeState.threadIdentityColorPlan({
+    threadId: "b",
+    visibleIds: ["a", "b", "c"],
+  });
+  assert.deepEqual(contrastPlan, nativeState.default.threadIdentityColorPlan({
+    threadId: "b",
+    visibleIds: ["a", "b", "c"],
+  }));
+  assert.equal(contrastPlan.action, "thread-identity-color");
+  assert.equal(contrastPlan.reason, "visible-pane-contrast");
+  assert.equal(contrastPlan.threadId, "b");
+  assert.equal(contrastPlan.slotIndex, 1);
+  assert.equal(contrastPlan.visibleCount, 3);
+  assert.equal(contrastPlan.scheme, "ochre");
+  assert.equal(contrastPlan.cssVariables["--thread-identity-label-dark"], "#efd3a1");
+  assert.equal(nativeState.threadIdentityColorPlan({ threadId: "" }).reason, "missing-thread");
 });
 
 test("thread tile state owns shared composer action control planning", () => {

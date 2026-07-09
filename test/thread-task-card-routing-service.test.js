@@ -166,6 +166,76 @@ test("target routing rejects worker lanes disabled by lifecycle metadata", () =>
   );
 });
 
+test("target routing blocks fresh active worker lane and preserves watchdog takeover metadata", () => {
+  const cwd = "/tmp/codex-mobile-routing/worker-active";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const workerThreadId = "10000000-0000-4000-8000-000000000002";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: workerThreadId, name: "Plugin Worker Lane", cwd, role: "plugin_worker", updatedAt: 200 },
+    ],
+    targetLifecycleDeliverability(thread) {
+      if (thread && thread.id === workerThreadId) {
+        return {
+          ok: false,
+          error: "thread_lifecycle_worker_lane_active_task_card",
+          message: "Target Worker lane is already handling an active task card.",
+          workerLaneId: "worker_active",
+          role: "plugin_worker",
+          lifecycleStatus: "busy",
+          executionState: "active_with_heartbeat",
+          activeTaskCardId: "ttc_active",
+          watchdogRequired: false,
+          takeoverAllowed: false,
+        };
+      }
+      return { ok: true };
+    },
+  });
+
+  assert.throws(
+    () => service.resolveTargetReference(workerThreadId, sourceThreadId),
+    (err) => err
+      && err.code === "thread_lifecycle_worker_lane_active_task_card"
+      && err.statusCode === 409
+      && err.details
+      && err.details.lifecycle
+      && err.details.lifecycle.workerLaneId === "worker_active"
+      && err.details.lifecycle.executionState === "active_with_heartbeat"
+      && err.details.lifecycle.activeTaskCardId === "ttc_active"
+      && err.details.lifecycle.watchdogRequired === false
+      && err.details.lifecycle.takeoverAllowed === false,
+  );
+});
+
+test("target routing allows stale watchdog-required worker lane takeover metadata", () => {
+  const cwd = "/tmp/codex-mobile-routing/worker-stale";
+  const sourceThreadId = "10000000-0000-4000-8000-000000000001";
+  const workerThreadId = "10000000-0000-4000-8000-000000000002";
+  const service = fakeRoutingService({
+    visibleThreads: [
+      { id: workerThreadId, name: "Plugin Worker Lane", cwd, role: "plugin_worker", updatedAt: 200 },
+    ],
+    targetLifecycleDeliverability(thread) {
+      if (thread && thread.id === workerThreadId) {
+        return {
+          ok: true,
+          workerLaneId: "worker_stale",
+          role: "plugin_worker",
+          lifecycleStatus: "watchdog_required",
+          executionState: "stale_heartbeat_watchdog_required",
+          activeTaskCardId: "ttc_stale",
+          watchdogRequired: true,
+          takeoverAllowed: true,
+        };
+      }
+      return { ok: true };
+    },
+  });
+
+  assert.equal(service.resolveTargetReference(workerThreadId, sourceThreadId), workerThreadId);
+});
+
 test("role routing resolves a unique role and fails closed for duplicate role candidates", () => {
   const cwd = "/tmp/codex-mobile-routing/roles";
   const sourceThreadId = "10000000-0000-4000-8000-000000000001";

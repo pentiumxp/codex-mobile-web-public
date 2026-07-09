@@ -581,11 +581,21 @@ test("task-card execution lifecycle callbacks track start, heartbeat, and termin
   assert.equal(lifecycleEvents[0].event.heartbeat.status, "started");
   assert.equal(lifecycleEvents[0].event.heartbeat.turnId, "turn-worker-1");
 
-  await service.heartbeatExecution(created.id, "thread-worker", {
+  const heartbeat = await service.heartbeatExecution(created.id, "thread-worker", {
     status: "validating",
     source: "unit-test",
     turnId: "turn-worker-1",
   });
+  assert.equal(heartbeat.taskCardId, created.id);
+  assert.equal(heartbeat.threadId, "thread-worker");
+  assert.equal(heartbeat.targetThreadId, "thread-worker");
+  assert.equal(heartbeat.status, "validating");
+  assert.equal(heartbeat.source, "unit-test");
+  assert.equal(heartbeat.heartbeatCount, 1);
+  assert.equal(typeof heartbeat.lastHeartbeatAt, "string");
+  assert.equal(heartbeat.executionState, "active_with_heartbeat");
+  assert.equal(heartbeat.executionLease.heartbeatCount, 1);
+  assert.equal(heartbeat.executionLease.lastHeartbeatStatus, "validating");
   assert.equal(lifecycleEvents.length, 2);
   assert.equal(lifecycleEvents[1].type, "heartbeat");
   assert.equal(lifecycleEvents[1].event.heartbeat.status, "validating");
@@ -607,6 +617,10 @@ test("task-card execution lifecycle callbacks track start, heartbeat, and termin
   assert.equal(lifecycleEvents[2].event.returnStatus, "completed");
   assert.equal(lifecycleEvents[2].event.heartbeat.status, "completed");
   assert.equal(lifecycleEvents[2].event.heartbeat.summary, "completed");
+  const released = service.get(created.id, "thread-worker");
+  assert.equal(released.executionState, "terminal_returned");
+  assert.equal(released.executionLease.status, "completed");
+  assert.equal(released.executionLease.resumeRequired, false);
 });
 
 test("task-card execution lifecycle callback failures are recorded as bounded audit metadata", async () => {
@@ -820,6 +834,69 @@ test("execution watchdog treats queued heartbeat as progress and suppresses stal
   const stored = service.get(created.id, "thread-codex-mobile");
   assert.equal(stored.executionLease.lastHeartbeatStatus, "queued");
   assert.equal(stored.executionLease.resumeRequired, true);
+});
+
+test("task-card execution state readback distinguishes pending, active heartbeat, stale watchdog, and terminal return", async () => {
+  let now = Date.parse("2026-07-04T02:00:00.000Z");
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    now: () => now,
+    executeApprovedCard: async (card) => {
+      executions.push(card.id);
+      return { threadId: card.target.threadId, turnId: `turn-exec-${executions.length}` };
+    },
+  });
+  const created = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    targetWorkspaceId: "codex-mobile",
+    targetThreadId: "thread-worker",
+    targetRole: "plugin_worker",
+    idempotencyKey: "execution-state-readback",
+    format: "markdown",
+    title: "Worker task",
+    summary: "Validate execution readback.",
+    body: "Private Worker task body.",
+  });
+
+  assert.equal(service.get(created.id, "thread-worker").executionState, "pending_not_started");
+
+  await service.approveFromSource(created.id, "thread-home");
+  const active = service.get(created.id, "thread-worker");
+  assert.equal(active.executionState, "active_with_heartbeat");
+  assert.equal(active.executionLease.watchdogStaleAfterMs, 30 * 60 * 1000);
+  assert.equal(active.executionLease.resumeRequiredByWatchdog, false);
+
+  now += 10 * 60 * 1000;
+  const heartbeat = await service.heartbeatExecution(created.id, "thread-worker", {
+    status: "working",
+    source: "unit-test",
+    turnId: "turn-exec-1",
+  });
+  assert.equal(heartbeat.executionState, "active_with_heartbeat");
+  assert.equal(heartbeat.heartbeatCount, 1);
+  assert.equal(heartbeat.lastHeartbeatAt, new Date(now).toISOString());
+
+  now += 31 * 60 * 1000;
+  const stale = service.get(created.id, "thread-worker");
+  assert.equal(stale.executionState, "stale_heartbeat_watchdog_required");
+  assert.equal(stale.executionLease.resumeRequiredByWatchdog, true);
+
+  const returned = await service.reply(created.id, "thread-worker", {
+    idempotencyKey: "execution-state-readback:return",
+    format: "markdown",
+    title: "Return: Worker task",
+    status: "completed",
+    summary: "completed",
+    body: "Completed.",
+  });
+  assert.equal(returned.card.executionState, "terminal_returned");
+  assert.equal(service.get(created.id, "thread-worker").executionState, "terminal_returned");
+  const ledger = service.returnLedgerForCard(created.id, "thread-home");
+  assert.equal(ledger.status, "return_visible");
+  assert.equal(ledger.visibilityState, "return_visible");
+  assert.deepEqual(ledger.issueCodes, []);
 });
 
 test("execution watchdog does not repeatedly resume high-pressure stale leases", async () => {
@@ -1175,6 +1252,90 @@ test("source-thread direct approval bypasses target pending approval with audit 
   assert.equal(executions.length, 1);
 });
 
+test("source-thread direct approval recovers approved executable cards missing injected turns", async () => {
+  const storageFile = tempFile("cards.json");
+  const createdAt = "2026-07-08T17:00:00.000Z";
+  fs.writeFileSync(storageFile, JSON.stringify({
+    cards: [{
+      id: "ttc_desktop_approved_without_turn",
+      status: "approved",
+      idempotencyKey: "desktop:approved-without-turn",
+      createdAt,
+      updatedAt: createdAt,
+      source: {
+        workspaceId: "codex-desktop",
+        threadId: "thread-desktop-main",
+        turnId: "turn-desktop",
+        title: "Desktop Main",
+      },
+      target: {
+        workspaceId: "codex-mobile-web",
+        threadId: "thread-plugin-worker",
+        role: "plugin_worker",
+      },
+      message: {
+        format: "markdown",
+        title: "Repair worker task",
+        summary: "Repair and return.",
+        body: "Private task body.",
+      },
+      delivery: {
+        injectOnApprove: true,
+        allowReply: true,
+        allowRevoke: true,
+        approvalMode: "source_thread_direct",
+        targetApprovalBypassed: true,
+        autoRunAfterFirstApproval: true,
+        autoReturnOnCompletion: true,
+        requiresReturn: true,
+        terminal: false,
+        ackPolicy: "auto_return",
+      },
+      workflow: {
+        mode: "autonomous",
+        id: "twf_desktop_compat",
+        authorized: false,
+      },
+      audit: {
+        createdAt,
+        approvedAt: createdAt,
+        directApprovedAt: createdAt,
+        targetApprovalBypassed: true,
+      },
+    }],
+  }), "utf8");
+  const executions = [];
+  const service = createThreadTaskCardService({
+    storageFile,
+    executeApprovedCard: async (card, message) => {
+      executions.push({ card, message });
+      return {
+        threadId: card.target.threadId,
+        turnId: "turn-recovered",
+        result: { turn: { status: "inProgress" } },
+      };
+    },
+  });
+
+  const result = await service.approveFromSource("ttc_desktop_approved_without_turn", "thread-desktop-main");
+
+  assert.equal(result.alreadyApproved, undefined);
+  assert.equal(result.card.status, "approved");
+  assert.equal(result.card.injectedTurnId, "turn-recovered");
+  assert.equal(result.card.injectionResult.turn.status, "inProgress");
+  assert.equal(result.card.executionLease.status, "active");
+  assert.equal(result.card.executionLease.currentTurnId, "turn-recovered");
+  assert.equal(result.card.executionLease.resumeRequired, true);
+  assert.equal(result.card.delivery.targetApprovalBypassed, true);
+  assert.equal(result.card.audit.targetApprovalBypassed, true);
+  assert.equal(executions.length, 1);
+  assert.match(executions[0].message.text, /\[Cross-thread task card sent by source thread\]/);
+
+  const retry = await service.approveFromSource("ttc_desktop_approved_without_turn", "thread-desktop-main");
+  assert.equal(retry.alreadyApproved, true);
+  assert.equal(executions.length, 1);
+});
+
 test("source-thread direct approval rejects non-source actors", async () => {
   const service = createThreadTaskCardService({ storageFile: tempFile("cards.json") });
   const created = await service.create({
@@ -1374,11 +1535,12 @@ test("autonomous workflow auto-returns to the source when the injected target tu
   assert.equal(returned.card.canReply, false);
   assert.equal(returned.card.message.title, "Auto return: Start workflow");
   assert.equal(returned.card.injectedTurnId, "turn-2");
-  assert.match(executions[1].message.text, /Implemented and validated/);
-  assert.match(executions[1].message.text, /Workflow id: auto-return-workflow/);
-  assert.match(executions[1].message.text, /Return policy: terminal receipt/);
-  assert.doesNotMatch(executions[1].message.text, /Return required:/);
-  assert.doesNotMatch(executions[1].message.text, /when this injected turn completes/);
+  assert.equal(returned.card.injectedThreadId, "thread-a");
+  assert.equal(returned.card.delivery.injectOnApprove, true);
+  assert.equal(returned.card.audit.terminalReturnReceiptActivationReason, "terminal_return_receipt_source_turn_started");
+  assert.equal(returned.card.audit.terminalReturnReceiptSourceTurnStarted, true);
+  assert.equal(returned.card.audit.terminalReturnReceiptSourceTurnId, "turn-2");
+  assert.equal(executions.length, 2);
   const original = service.get(first.id, "thread-b");
   assert.equal(original.autoReplyCardId, returned.card.id);
   assert.deepEqual(returnEvents, [{
@@ -1471,8 +1633,10 @@ test("autonomous workflow auto-return can target an explicit reply-to thread", a
   assert.equal(returned.card.terminal, true);
   assert.equal(returned.card.canReply, false);
   assert.equal(returned.card.injectedTurnId, "turn-2");
-  assert.equal(executions[1].card.target.threadId, "thread-origin");
-  assert.match(executions[1].message.text, /Return policy: terminal receipt/);
+  assert.equal(returned.card.injectedThreadId, "thread-origin");
+  assert.equal(returned.card.audit.terminalReturnReceiptActivationReason, "terminal_return_receipt_source_turn_started");
+  assert.equal(returned.card.audit.terminalReturnReceiptSourceTurnId, "turn-2");
+  assert.equal(executions.length, 2);
   assert.deepEqual(returnEvents, [{
     taskCardId: card.id,
     returnCardId: returned.card.id,
@@ -1736,9 +1900,14 @@ test("reply can return an approved implementation card and is idempotent", async
   assert.equal(returned.replyCard.terminal, true);
   assert.equal(returned.replyCard.canReply, false);
   assert.equal(returned.replyCard.injectedTurnId, "turn-approved-return");
+  assert.equal(returned.replyCard.injectedThreadId, "thread-home");
+  assert.equal(returned.replyCard.injectionResult, undefined);
+  assert.equal(returned.replyCard.delivery.injectOnApprove, true);
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptActivationReason, "terminal_return_receipt_source_turn_started");
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptSourceTurnStarted, true);
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptSourceTurnId, "turn-approved-return");
   assert.equal(returned.replyCard.canApprove, false);
-  assert.match(executions[1].message.text, /Return policy: terminal receipt/);
-  assert.doesNotMatch(executions[1].message.text, /Return required:/);
+  assert.equal(executions.length, 2);
   assert.deepEqual(service.pendingCountsForThread("thread-home"), {
     pendingTotal: 0,
     pendingIncoming: 0,
@@ -1755,7 +1924,278 @@ test("reply can return an approved implementation card and is idempotent", async
   });
   assert.equal(duplicate.replyCard.id, returned.replyCard.id);
   assert.equal(duplicate.replyCard.status, "approved");
+  assert.equal(duplicate.replyCard.injectedTurnId, "turn-approved-return");
+  assert.equal(executions.length, 2);
   assert.equal(service.listForThread("thread-home").filter((card) => card.audit && card.audit.replyToCardId === created.id).length, 1);
+  const ledger = service.returnLedgerForCard(created.id, "thread-home");
+  assert.equal(ledger.taskCardId, created.id);
+  assert.equal(ledger.terminalReturnCardId, returned.replyCard.id);
+  assert.equal(ledger.status, "return_visible");
+  assert.equal(ledger.visibilityState, "return_visible");
+  assert.deepEqual(ledger.issueCodes, []);
+  const sourceLedger = service.returnLedgerForThread("thread-home");
+  assert.ok(sourceLedger.some((entry) => entry.taskCardId === created.id && entry.status === "return_visible"));
+});
+
+test("return ledger keeps latest source-thread receipt visible and reports windowed old receipts", () => {
+  const storageFile = tempFile("cards.json");
+  fs.writeFileSync(storageFile, JSON.stringify({
+    version: 1,
+    cards: [
+      {
+        id: "ttc_pending_newer",
+        status: "pending",
+        createdAt: "2026-07-09T10:04:00.000Z",
+        updatedAt: "2026-07-09T10:04:00.000Z",
+        source: { workspaceId: "home", threadId: "thread-home", title: "Home" },
+        target: { workspaceId: "worker", threadId: "thread-worker" },
+        message: { format: "markdown", title: "New task", summary: "New task." },
+        delivery: { requiresReturn: true },
+      },
+      {
+        id: "ttc_new",
+        status: "replied",
+        replyCardId: "ttc_new_return",
+        createdAt: "2026-07-09T10:02:00.000Z",
+        updatedAt: "2026-07-09T10:03:00.000Z",
+        source: { workspaceId: "home", threadId: "thread-home", title: "Home" },
+        target: { workspaceId: "worker", threadId: "thread-worker" },
+        message: { format: "markdown", title: "New completed task", summary: "Task." },
+        delivery: { requiresReturn: true },
+      },
+      {
+        id: "ttc_new_return",
+        status: "approved",
+        createdAt: "2026-07-09T10:03:00.000Z",
+        updatedAt: "2026-07-09T10:03:00.000Z",
+        source: { workspaceId: "worker", threadId: "thread-worker", title: "Worker" },
+        target: { workspaceId: "home", threadId: "thread-home" },
+        message: { format: "markdown", title: "Return: new", summary: "completed", body: "bounded" },
+        delivery: { returnToSource: true, returnStatus: "completed", requiresReturn: false, terminal: true, ackPolicy: "none" },
+        audit: { replyToCardId: "ttc_new", returnToSource: true, terminal: true, ackPolicy: "none" },
+      },
+      {
+        id: "ttc_old",
+        status: "replied",
+        replyCardId: "ttc_old_return",
+        createdAt: "2026-07-09T10:00:00.000Z",
+        updatedAt: "2026-07-09T10:01:00.000Z",
+        source: { workspaceId: "home", threadId: "thread-home", title: "Home" },
+        target: { workspaceId: "worker", threadId: "thread-worker" },
+        message: { format: "markdown", title: "Old completed task", summary: "Task." },
+        delivery: { requiresReturn: true },
+      },
+      {
+        id: "ttc_old_return",
+        status: "approved",
+        createdAt: "2026-07-09T10:01:00.000Z",
+        updatedAt: "2026-07-09T10:01:00.000Z",
+        source: { workspaceId: "worker", threadId: "thread-worker", title: "Worker" },
+        target: { workspaceId: "home", threadId: "thread-home" },
+        message: { format: "markdown", title: "Return: old", summary: "completed", body: "bounded" },
+        delivery: { returnToSource: true, returnStatus: "completed", requiresReturn: false, terminal: true, ackPolicy: "none" },
+        audit: { replyToCardId: "ttc_old", returnToSource: true, terminal: true, ackPolicy: "none" },
+      },
+    ],
+  }), "utf8");
+  const service = createThreadTaskCardService({ storageFile, recentLimit: 1 });
+
+  const cards = service.listForThread("thread-home").map((card) => card.id);
+  assert.deepEqual(cards, ["ttc_pending_newer", "ttc_new_return"]);
+  const ledger = service.returnLedgerForThread("thread-home");
+  const newEntry = ledger.find((entry) => entry.taskCardId === "ttc_new");
+  const oldEntry = ledger.find((entry) => entry.taskCardId === "ttc_old");
+  assert.equal(newEntry.status, "return_visible");
+  assert.equal(oldEntry.status, "returned");
+  assert.equal(oldEntry.visibilityState, "return_projection_pending");
+  assert.ok(oldEntry.issueCodes.includes("return_projection_windowed"));
+  const summary = service.summaryForThread("thread-home");
+  assert.equal(summary.returnLedgerStatusCounts.return_visible, 1);
+  assert.equal(summary.returnLedgerStatusCounts.returned, 1);
+  assert.ok(summary.returnLedgerIssueCodes.includes("return_projection_windowed"));
+});
+
+test("terminal return emits bounded source-thread UI refresh metadata", async () => {
+  const changes = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: "turn-return" }),
+    onTaskCardReturnChanged: async (event) => {
+      changes.push(event);
+      return { ok: true, threadId: event.returnTargetThreadId };
+    },
+  });
+  const card = await service.create({
+    sourceWorkspaceId: "home",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home",
+    targetWorkspaceId: "worker",
+    targetThreadId: "thread-worker",
+    idempotencyKey: "return-ui-refresh:card",
+    format: "markdown",
+    title: "Repair return UI",
+    summary: "Repair and return.",
+    body: "Repair and return.",
+  });
+
+  const returned = await service.reply(card.id, "thread-worker", {
+    idempotencyKey: "return-ui-refresh:reply",
+    format: "markdown",
+    title: "Return: UI repaired",
+    status: "completed",
+    summary: "completed",
+    body: "Completed.",
+    returnToSource: true,
+  });
+
+  assert.equal(changes.length, 1);
+  assert.deepEqual(changes[0], {
+    taskCardId: card.id,
+    returnCardId: returned.replyCard.id,
+    sourceThreadId: "thread-home",
+    targetThreadId: "thread-worker",
+    returnTargetThreadId: "thread-home",
+    status: "return_visible",
+    visibilityState: "return_visible",
+    returnedAt: returned.replyCard.createdAt,
+    reason: "manual-return",
+    returnEventStatus: "",
+    returnEventState: "not_attempted",
+    issueCodes: [],
+    returnEventIssueCodes: [],
+    returnReceiptTaskCardCount: 1,
+    returnFollowUpTaskCardCount: 0,
+    returnFollowUpPending: false,
+    latestReturnReceiptTaskCardId: returned.replyCard.id,
+    latestReturnReceiptAt: returned.replyCard.updatedAt,
+    latestReturnReceiptStatus: "completed",
+    latestReturnFollowUpTaskCardId: "",
+    latestReturnFollowUpAt: "",
+    latestReturnFollowUpStatus: "",
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(changes[0], "returnBody"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(changes[0], "body"), false);
+});
+
+test("terminal return activates resting source summary without creating pending approval", async () => {
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: "turn-return" }),
+  });
+  const card = await service.create({
+    sourceWorkspaceId: "home",
+    sourceThreadId: "thread-resting-source",
+    sourceTurnId: "turn-source",
+    sourceThreadTitle: "Resting source",
+    targetWorkspaceId: "worker",
+    targetThreadId: "thread-worker",
+    idempotencyKey: "resting-source:return:card",
+    format: "markdown",
+    title: "Return to resting source",
+    summary: "Return ordinary completed receipt.",
+    body: "Return ordinary completed receipt.",
+  });
+
+  const returned = await service.reply(card.id, "thread-worker", {
+    idempotencyKey: "resting-source:return:reply",
+    format: "markdown",
+    title: "Return: completed",
+    status: "completed",
+    summary: "completed",
+    body: "Completed.",
+    returnToSource: true,
+  });
+
+  const summary = service.summaryForThread("thread-resting-source");
+  assert.equal(summary.counts.pendingTotal, 0);
+  assert.equal(summary.counts.returnReceiptTotal, 1);
+  assert.equal(summary.counts.returnFollowUpTotal, 0);
+  assert.equal(summary.counts.latestReturnReceiptId, returned.replyCard.id);
+  assert.equal(summary.cards.some((entry) => entry.id === returned.replyCard.id), true);
+  assert.deepEqual(service.pendingCountsForThread("thread-resting-source"), {
+    pendingTotal: 0,
+    pendingIncoming: 0,
+    pendingOutgoing: 0,
+  });
+});
+
+test("terminal return follow-up markers stay source-visible and duplicate returns are idempotent", async () => {
+  const changes = [];
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: "turn-return" }),
+    onTaskCardReturnChanged: async (event) => {
+      changes.push(event);
+      return { ok: true, threadId: event.returnTargetThreadId };
+    },
+  });
+  const card = await service.create({
+    sourceWorkspaceId: "home",
+    sourceThreadId: "thread-source",
+    sourceTurnId: "turn-source",
+    sourceThreadTitle: "Source",
+    targetWorkspaceId: "deploy",
+    targetThreadId: "thread-deploy",
+    idempotencyKey: "follow-up:return:card",
+    format: "markdown",
+    title: "Deploy readback",
+    summary: "Deploy and return.",
+    body: "Deploy and return.",
+  });
+  const replyPayload = {
+    idempotencyKey: "follow-up:return:reply",
+    format: "markdown",
+    title: "Return: deploy blocked",
+    status: "partially_completed",
+    summary: "deploy_needed=true",
+    body: "deploy_needed=true\nblocked_by_deploy_readback",
+    returnToSource: true,
+  };
+
+  const first = await service.reply(card.id, "thread-deploy", replyPayload);
+  const duplicate = await service.reply(card.id, "thread-deploy", replyPayload);
+  assert.equal(first.replyCard.id, duplicate.replyCard.id);
+
+  const sourceSummary = service.summaryForThread("thread-source");
+  assert.equal(sourceSummary.counts.pendingTotal, 0);
+  assert.equal(sourceSummary.counts.returnReceiptTotal, 1);
+  assert.equal(sourceSummary.counts.returnFollowUpTotal, 1);
+  assert.equal(sourceSummary.counts.latestReturnFollowUpId, first.replyCard.id);
+  assert.equal(sourceSummary.cards.filter((entry) => entry.id === first.replyCard.id).length, 1);
+  assert.equal(changes.length, 2);
+  assert.deepEqual(changes.map((event) => event.returnCardId), [first.replyCard.id, first.replyCard.id]);
+  assert.deepEqual(changes.map((event) => event.returnFollowUpTaskCardCount), [1, 1]);
+  assert.deepEqual(changes.map((event) => event.returnFollowUpPending), [true, true]);
+  assert.deepEqual(service.pendingCountsForThread("thread-source"), {
+    pendingTotal: 0,
+    pendingIncoming: 0,
+    pendingOutgoing: 0,
+  });
+});
+
+test("return ledger reports replied task card with missing terminal return as delivery failure", () => {
+  const storageFile = tempFile("cards.json");
+  fs.writeFileSync(storageFile, JSON.stringify({
+    version: 1,
+    cards: [{
+      id: "ttc_missing_return",
+      status: "replied",
+      replyCardId: "ttc_missing_return_receipt",
+      createdAt: "2026-07-09T11:00:00.000Z",
+      updatedAt: "2026-07-09T11:05:00.000Z",
+      source: { workspaceId: "home", threadId: "thread-home", title: "Home" },
+      target: { workspaceId: "worker", threadId: "thread-worker" },
+      message: { format: "markdown", title: "Missing return", summary: "Task." },
+      delivery: { requiresReturn: true },
+    }],
+  }), "utf8");
+  const service = createThreadTaskCardService({ storageFile });
+
+  const ledger = service.returnLedgerForCard("ttc_missing_return", "thread-home");
+  assert.equal(ledger.status, "return_delivery_failed");
+  assert.equal(ledger.visibilityState, "return_delivery_failed");
+  assert.ok(ledger.issueCodes.includes("terminal_return_card_missing"));
 });
 
 test("return_to_source infers target actor from taskCardId when threadId is omitted", async () => {
@@ -1943,7 +2383,9 @@ test("reply can recover an accepted card left in approving after a lost final wr
   assert.equal(returned.replyCard.delivery.terminal, true);
   assert.equal(returned.replyCard.target.threadId, "thread-source");
   assert.equal(returned.replyCard.injectedTurnId, "turn-1");
-  assert.match(executions[0].message.text, /Return policy: terminal receipt/);
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptActivationReason, "terminal_return_receipt_source_turn_started");
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptSourceTurnId, "turn-1");
+  assert.equal(executions.length, 1);
   assert.equal(service.get(created.id, "thread-deploy").status, "replied");
 });
 
@@ -1996,9 +2438,21 @@ test("returnToSource uses explicit reply-to thread for multi-hop supplements", a
   assert.equal(returned.replyCard.audit.returnTargetThreadId, "thread-original-requester");
   assert.equal(returned.replyCard.audit.returnRoutedByReplyTo, true);
   assert.equal(returned.replyCard.injectedTurnId, "turn-2");
-  assert.equal(executions[1].card.target.threadId, "thread-original-requester");
+  assert.equal(returned.replyCard.injectedThreadId, "thread-original-requester");
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptActivationReason, "terminal_return_receipt_source_turn_started");
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptSourceTurnId, "turn-2");
+  assert.equal(executions.length, 2);
   assert.equal(service.listForThread("thread-home-deploy").some((card) => card.id === returned.replyCard.id), false);
   assert.equal(service.listForThread("thread-original-requester").some((card) => card.id === returned.replyCard.id), true);
+  assert.deepEqual(service.returnLedgerForThread("thread-home-deploy"), []);
+  const requesterLedger = service.returnLedgerForThread("thread-original-requester");
+  assert.equal(requesterLedger.length, 1);
+  assert.equal(requesterLedger[0].taskCardId, supplement.id);
+  assert.equal(requesterLedger[0].status, "return_visible");
+  assert.equal(requesterLedger[0].visibilityState, "return_visible");
+  assert.deepEqual(requesterLedger[0].issueCodes, []);
+  assert.equal(service.summaryForThread("thread-home-deploy").returnLedgerStatusCounts.return_delivery_failed, undefined);
+  assert.deepEqual(service.summaryForThread("thread-home-deploy").returnLedgerIssueCodes, []);
 });
 
 test("reply-to can be resolved from an original task-card id", async () => {
@@ -2050,7 +2504,52 @@ test("reply-to can be resolved from an original task-card id", async () => {
 
   assert.equal(returned.replyCard.target.threadId, "thread-origin");
   assert.equal(returned.replyCard.audit.returnRoutedByReplyTo, true);
-  assert.equal(executions[1].card.target.threadId, "thread-origin");
+  assert.equal(returned.replyCard.injectedTurnId, "turn-2");
+  assert.equal(returned.replyCard.injectedThreadId, "thread-origin");
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptActivationReason, "terminal_return_receipt_source_turn_started");
+  assert.equal(executions.length, 2);
+});
+
+test("return ledger does not charge reply-to binding mismatch to ordinary source threads", () => {
+  const storageFile = tempFile("cards.json");
+  fs.writeFileSync(storageFile, JSON.stringify({
+    version: 1,
+    cards: [
+      {
+        id: "ttc_redirected_original",
+        status: "replied",
+        replyCardId: "ttc_redirected_return",
+        createdAt: "2026-07-09T09:00:00.000Z",
+        updatedAt: "2026-07-09T09:05:00.000Z",
+        source: { workspaceId: "ordinary", threadId: "thread-ordinary", title: "Ordinary worker" },
+        target: { workspaceId: "worker", threadId: "thread-worker", title: "Worker" },
+        replyTo: { workspaceId: "home", threadId: "thread-source", title: "Source coordinator" },
+        message: { format: "markdown", title: "Redirected return", summary: "Return to coordinator." },
+        delivery: { requiresReturn: true },
+      },
+      {
+        id: "ttc_redirected_return",
+        status: "approved",
+        createdAt: "2026-07-09T09:05:00.000Z",
+        updatedAt: "2026-07-09T09:05:00.000Z",
+        source: { workspaceId: "worker", threadId: "thread-worker", title: "Worker" },
+        target: { workspaceId: "ordinary", threadId: "thread-ordinary", title: "Ordinary worker" },
+        message: { format: "markdown", title: "Return: redirected", summary: "completed", body: "bounded" },
+        delivery: { returnToSource: true, returnStatus: "completed", requiresReturn: false, terminal: true, ackPolicy: "none" },
+        audit: { replyToCardId: "ttc_redirected_original", returnToSource: true, terminal: true, ackPolicy: "none" },
+      },
+    ],
+  }), "utf8");
+  const service = createThreadTaskCardService({ storageFile });
+
+  assert.deepEqual(service.returnLedgerForThread("thread-ordinary"), []);
+  const ordinarySummary = service.summaryForThread("thread-ordinary");
+  assert.equal(ordinarySummary.returnLedgerStatusCounts.return_delivery_failed, undefined);
+  assert.equal(ordinarySummary.returnLedgerIssueCodes.includes("return_card_source_thread_binding_mismatch"), false);
+  const sourceLedger = service.returnLedgerForThread("thread-source");
+  assert.equal(sourceLedger.length, 1);
+  assert.equal(sourceLedger[0].status, "return_delivery_failed");
+  assert.ok(sourceLedger[0].issueCodes.includes("return_card_source_thread_binding_mismatch"));
 });
 
 test("explicit returnToSource replies are terminal and cannot start acknowledgement loops", async () => {
@@ -2102,8 +2601,23 @@ test("explicit returnToSource replies are terminal and cannot start acknowledgem
   assert.equal(returned.replyCard.terminal, true);
   assert.equal(returned.replyCard.canReply, false);
   assert.equal(returned.replyCard.executionLease, null);
-  assert.match(executions[1].message.text, /Return policy: terminal receipt/);
-  assert.doesNotMatch(executions[1].message.text, /Return required:/);
+  assert.equal(returned.replyCard.injectedTurnId, "turn-2");
+  assert.equal(returned.replyCard.injectedThreadId, "thread-home");
+  assert.equal(returned.replyCard.injectionResult, undefined);
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptActivationReason, "terminal_return_receipt_source_turn_started");
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptSourceTurnId, "turn-2");
+  assert.equal(executions.length, 2);
+  const sourceThreadSummary = service.summaryForThread("thread-home");
+  const projectedReturn = sourceThreadSummary.cards.find((card) => card.id === returned.replyCard.id);
+  assert.ok(projectedReturn, "terminal return receipt should be attached to the source thread projection");
+  assert.equal(projectedReturn.threadRole, "target");
+  assert.equal(projectedReturn.status, "approved");
+  assert.equal(projectedReturn.terminal, true);
+  assert.equal(projectedReturn.requiresReturn, undefined);
+  assert.equal(projectedReturn.ackPolicy, "none");
+  assert.equal(projectedReturn.message.title, "Music repair completed");
+  assert.equal(projectedReturn.message.summary, "completed");
+  assert.equal(projectedReturn.message.bodyOmitted, true);
   assert.deepEqual(returnEvents, [{
     taskCardId: repairCard.id,
     returnCardId: returned.replyCard.id,
@@ -2128,6 +2642,8 @@ test("explicit returnToSource replies are terminal and cannot start acknowledgem
     returnToSource: true,
   });
   assert.equal(duplicateReturn.replyCard.id, returned.replyCard.id);
+  assert.equal(duplicateReturn.replyCard.injectedTurnId, "turn-2");
+  assert.equal(executions.length, 2);
   assert.equal(returnEvents.length, 1);
 
   const terminalDuplicate = await service.reply(returned.replyCard.id, "thread-home", {
@@ -2435,6 +2951,81 @@ test("concurrent return_to_source retry does not send a duplicate terminal retur
   assert.equal(service.get(returned.replyCard.id, "thread-home").audit.homeAiDeliveryReturnEventStatus, "sent");
 });
 
+test("return_to_source retry preserves existing terminal receipt activation state", async () => {
+  const file = tempFile("cards.json");
+  const service = createThreadTaskCardService({
+    storageFile: file,
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: `turn-${card.id}` }),
+  });
+  const card = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "plugin",
+    targetThreadId: "thread-plugin",
+    idempotencyKey: "return-retry-release:card",
+    format: "markdown",
+    title: "Repair plugin",
+    summary: "Repair and return.",
+    body: "Please repair and return.",
+  });
+  await service.approveFromSource(card.id, "thread-home");
+  const returned = await service.reply(card.id, "thread-plugin", {
+    idempotencyKey: "return-retry-release:reply",
+    format: "markdown",
+    title: "Return: plugin repair",
+    status: "completed",
+    summary: "completed",
+    body: "Completed.",
+    returnToSource: true,
+  });
+
+  const store = JSON.parse(fs.readFileSync(file, "utf8"));
+  const storedReply = store.cards.find((entry) => entry.id === returned.replyCard.id);
+  storedReply.delivery.injectOnApprove = true;
+  storedReply.injectedTurnId = "turn-stale-terminal";
+  storedReply.injectedThreadId = "thread-home";
+  storedReply.injectionResult = {
+    turn: {
+      id: "turn-stale-terminal",
+      status: { type: "inProgress" },
+    },
+  };
+  fs.writeFileSync(file, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+
+  const retryService = createThreadTaskCardService({
+    storageFile: file,
+    executeApprovedCard: async () => {
+      throw new Error("terminal retry should not execute");
+    },
+  });
+  const retry = await retryService.reply(card.id, "thread-plugin", {
+    idempotencyKey: "return-retry-release:reply",
+    format: "markdown",
+    title: "Return: plugin repair",
+    status: "completed",
+    summary: "completed",
+    body: "Completed.",
+    returnToSource: true,
+  });
+
+  assert.equal(retry.replyCard.id, returned.replyCard.id);
+  assert.equal(retry.replyCard.injectedTurnId, "turn-stale-terminal");
+  assert.equal(retry.replyCard.injectedThreadId, "thread-home");
+  assert.equal(retry.replyCard.injectionResult.turn.id, "turn-stale-terminal");
+  assert.equal(retry.replyCard.delivery.injectOnApprove, true);
+  assert.equal(retry.replyCard.audit.terminalReturnReceiptActivationReason, "terminal_return_receipt_source_turn_started");
+  assert.equal(retry.replyCard.audit.terminalReturnReceiptDuplicatePreservedActivationAt.length > 0, true);
+  assert.equal(retry.replyCard.audit.terminalReturnReceiptInjectedTurnCleared, false);
+
+  const repairedStore = JSON.parse(fs.readFileSync(file, "utf8"));
+  const repairedReply = repairedStore.cards.find((entry) => entry.id === returned.replyCard.id);
+  assert.equal(repairedReply.injectedTurnId, "turn-stale-terminal");
+  assert.equal(repairedReply.injectedThreadId, "thread-home");
+  assert.equal(repairedReply.injectionResult.turn.id, "turn-stale-terminal");
+});
+
 test("Home AI delivery event 404 is recorded without blocking return-card delivery", async () => {
   const service = createThreadTaskCardService({
     storageFile: tempFile("cards.json"),
@@ -2476,6 +3067,79 @@ test("Home AI delivery event 404 is recorded without blocking return-card delive
   assert.equal(stored.audit.homeAiDeliveryReturnEventHttpStatus, 404);
   assert.equal(stored.delivery.terminal, true);
   assert.equal(stored.requiresReturn, false);
+  assert.equal(stored.injectedTurnId, "turn-return");
+  assert.equal(stored.injectedThreadId, "thread-home");
+  assert.equal(stored.audit.terminalReturnReceiptActivationReason, "terminal_return_receipt_source_turn_started");
+  assert.equal(stored.audit.terminalReturnReceiptSourceTurnId, "turn-return");
+  const ledger = service.returnLedgerForCard(card.id, "thread-home");
+  assert.equal(ledger.status, "return_visible");
+  assert.equal(ledger.visibilityState, "return_visible");
+  assert.deepEqual(ledger.issueCodes, []);
+  assert.equal(ledger.returnEventStatus, "unknown_task_card");
+  assert.equal(ledger.returnEventState, "observer_unknown_task_card");
+  assert.equal(ledger.returnEventStored, true);
+  assert.equal(ledger.returnEventDelivered, false);
+  assert.equal(ledger.returnEventHttpStatus, 404);
+  assert.deepEqual(ledger.returnEventIssueCodes, ["return_observer_event_unknown_task_card"]);
+  const summary = service.summaryForThread("thread-home");
+  assert.equal(summary.returnLedgerStatusCounts.return_visible, 1);
+  assert.equal(summary.returnLedgerIssueCodes.includes("return_delivery_event_failed"), false);
+  assert.equal(summary.returnLedgerIssueCodes.includes("return_observer_event_unknown_task_card"), false);
+});
+
+test("Home AI delivery event transport failure stays separate from local return delivery", async () => {
+  const service = createThreadTaskCardService({
+    storageFile: tempFile("cards.json"),
+    executeApprovedCard: async (card) => ({ threadId: card.target.threadId, turnId: "turn-return" }),
+    onTerminalReturnCard: async () => {
+      const err = new Error("home_ai_return_event_failed");
+      err.statusCode = 502;
+      err.responseStatus = 502;
+      throw err;
+    },
+  });
+  const card = await service.create({
+    sourceWorkspaceId: "home-ai",
+    sourceThreadId: "thread-home",
+    sourceTurnId: "turn-home",
+    sourceThreadTitle: "Home AI",
+    targetWorkspaceId: "plugin",
+    targetThreadId: "thread-plugin",
+    idempotencyKey: "return-event:502",
+    format: "markdown",
+    title: "Repair plugin",
+    summary: "Repair and return.",
+    body: "Please repair and return.",
+  });
+
+  const returned = await service.reply(card.id, "thread-plugin", {
+    idempotencyKey: "return-event:502:reply",
+    format: "markdown",
+    title: "Return: plugin repair",
+    status: "completed",
+    summary: "completed",
+    body: "Completed.",
+    returnToSource: true,
+  });
+
+  assert.equal(returned.replyCard.status, "approved");
+  const stored = service.get(returned.replyCard.id, "thread-home");
+  assert.equal(stored.audit.homeAiDeliveryReturnEventStatus, "failed");
+  assert.equal(stored.audit.homeAiDeliveryReturnEventHttpStatus, 502);
+  const ledger = service.returnLedgerForCard(card.id, "thread-home");
+  assert.equal(ledger.status, "return_visible");
+  assert.equal(ledger.visibilityState, "return_visible");
+  assert.deepEqual(ledger.issueCodes, []);
+  assert.equal(ledger.returnEventStatus, "failed");
+  assert.equal(ledger.returnEventState, "observer_failed");
+  assert.equal(ledger.returnEventStored, true);
+  assert.equal(ledger.returnEventDelivered, false);
+  assert.equal(ledger.returnEventHttpStatus, 502);
+  assert.deepEqual(ledger.returnEventIssueCodes, ["return_observer_event_failed"]);
+  const summary = service.summaryForThread("thread-home");
+  assert.equal(summary.returnLedgerStatusCounts.return_visible, 1);
+  assert.equal(summary.returnLedgerStatusCounts.return_delivery_failed, undefined);
+  assert.deepEqual(summary.returnLedgerIssueCodes, []);
 });
 
 test("return_to_source retry approves a previously pending reverse card", async () => {
@@ -2531,6 +3195,10 @@ test("return_to_source retry approves a previously pending reverse card", async 
   assert.equal(returned.replyCard.terminal, true);
   assert.equal(returned.replyCard.canReply, false);
   assert.equal(returned.replyCard.injectedTurnId, "turn-return-2");
+  assert.equal(returned.replyCard.injectedThreadId, "thread-home");
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptActivationReason, "terminal_return_receipt_source_turn_started");
+  assert.equal(returned.replyCard.audit.terminalReturnReceiptSourceTurnId, "turn-return-2");
+  assert.equal(executions.length, 2);
   assert.deepEqual(service.pendingCountsForThread("thread-home"), {
     pendingTotal: 0,
     pendingIncoming: 0,

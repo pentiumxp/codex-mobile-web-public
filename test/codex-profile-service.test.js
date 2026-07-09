@@ -77,6 +77,47 @@ test("profile service lists default current and previous homes with active accou
   assert.equal(result.activeProfileId, "default");
   assert.deepEqual(result.profiles.map((profile) => profile.id), ["default", "current", "previous"]);
   assert.equal(result.profiles[0].auth.email, "active@example.test");
+  assert.equal(result.profiles[0].accountName, "active@example.test");
+  assert.equal(result.profiles[0].displayName, "active@example.test");
+  assert.equal(result.profiles[0].label, "active@example.test");
+  assert.equal(result.profiles[0].slotLabel, "Default");
+  assert.equal(result.profiles[1].slotLabel, "Current");
+  assert.equal(result.profiles[2].slotLabel, "Previous");
+  assert.deepEqual(result.profiles.map((profile) => profile.active), [true, false, false]);
+  assert.equal(result.profiles.some((profile) => ["Default", "Current", "Previous"].includes(profile.label)), false);
+});
+
+test("profile service keeps no-auth slots out of user-visible account labels", () => {
+  const userHome = tempDir();
+  const runtimeRoot = path.join(userHome, ".codex-mobile-web");
+  const currentHome = path.join(userHome, ".codex-homes", "current");
+  fs.mkdirSync(currentHome, { recursive: true });
+  writeJson(path.join(runtimeRoot, "codex-profiles.json"), {
+    activeProfileId: "current",
+    profiles: [
+      { id: "current", label: "Carrot", codexHome: currentHome },
+    ],
+  });
+
+  const result = createCodexProfileService({
+    userHome,
+    runtimeRoot,
+    activeCodexHome: currentHome,
+    env: {},
+  }).profiles();
+  const current = result.profiles.find((profile) => profile.id === "current");
+
+  assert.ok(current);
+  assert.equal(current.active, true);
+  assert.equal(current.auth.status, "notLoggedIn");
+  assert.equal(current.accountName, "");
+  assert.equal(current.accountLabel, "");
+  assert.equal(current.displayName, "Not logged in");
+  assert.equal(current.label, "Not logged in");
+  assert.equal(current.authStatusLabel, "Not logged in");
+  assert.equal(current.slotLabel, "Carrot");
+  assert.equal(current.internalLabel, "Carrot");
+  assert.doesNotMatch(`${current.label} ${current.displayName} ${current.accountName}`, /current|previous|default|carrot/i);
 });
 
 test("setting active profile persists the selected codex home for restart bootstrap", () => {
@@ -99,6 +140,42 @@ test("setting active profile persists the selected codex home for restart bootst
   const bootstrap = resolveActiveCodexHomeFromStore({ userHome, runtimeRoot, env: {} });
   assert.equal(bootstrap.activeProfileId, "previous");
   assert.equal(bootstrap.codexHome, previousHome);
+});
+
+test("profile state reports selected active home separately from stale runtime home", () => {
+  const userHome = tempDir();
+  const runtimeRoot = path.join(userHome, ".codex-mobile-web");
+  const defaultHome = path.join(userHome, ".codex");
+  const previousHome = path.join(userHome, ".codex-homes", "previous");
+  fs.mkdirSync(defaultHome, { recursive: true });
+  fs.mkdirSync(previousHome, { recursive: true });
+  writeJson(path.join(runtimeRoot, "codex-profiles.json"), {
+    activeProfileId: "previous",
+    profiles: [
+      { id: "default", label: "Default", codexHome: defaultHome },
+      { id: "previous", label: "Previous", codexHome: previousHome },
+    ],
+  });
+
+  let runtimeHome = defaultHome;
+  const service = createCodexProfileService({
+    userHome,
+    runtimeRoot,
+    activeCodexHome: () => runtimeHome,
+    env: {},
+  });
+
+  const stale = service.profiles();
+  assert.equal(stale.activeProfileId, "previous");
+  assert.equal(stale.activeCodexHome, previousHome);
+  assert.equal(stale.runtimeCodexHome, defaultHome);
+  assert.equal(stale.runtimeState, "restart_pending");
+
+  runtimeHome = previousHome;
+  const aligned = service.profiles();
+  assert.equal(aligned.activeCodexHome, previousHome);
+  assert.equal(aligned.runtimeCodexHome, previousHome);
+  assert.equal(aligned.runtimeState, "aligned");
 });
 
 test("effective codex home follows active profile store before stale environment home", () => {

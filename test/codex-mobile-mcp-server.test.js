@@ -169,7 +169,6 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
           status: "approved",
           source: { threadId: "target-1" },
           target: { threadId: "source-1" },
-          injectedTurnId: "turn-return",
           terminal: true,
           requiresReturn: false,
           ackPolicy: "none",
@@ -200,6 +199,7 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
         source: "mcp-test",
         heartbeatCount: 3,
         lastHeartbeatAt: "2026-07-04T09:45:00.000Z",
+        executionState: "active_with_heartbeat",
         resumeRequired: false,
       }));
       return;
@@ -250,7 +250,7 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
   assert.equal(returned.replyCard.id, "ttc_return");
   assert.equal(returned.replyCard.status, "approved");
   assert.equal(returned.replyCard.targetThreadId, "source-1");
-  assert.equal(returned.replyCard.injectedTurnId, "turn-return");
+  assert.equal(returned.replyCard.injectedTurnId, "");
   assert.equal(returned.replyCard.returnToSource, true);
   assert.equal(returned.replyCard.returnStatus, "completed");
   assert.equal(returned.replyCard.terminal, true);
@@ -283,6 +283,7 @@ test("Codex Mobile MCP server calls existing authenticated task-card API", async
   assert.equal(heartbeat.status, "validating");
   assert.equal(heartbeat.source, "mcp-test");
   assert.equal(heartbeat.heartbeatCount, 3);
+  assert.equal(heartbeat.executionState, "active_with_heartbeat");
   assert.equal(heartbeat.resumeRequired, false);
   assert.doesNotMatch(JSON.stringify(heartbeat), /secret|Bearer|body|prompt/i);
   assert.ok(calls.every((call) => call.authorization === "Bearer secret"));

@@ -14,6 +14,15 @@ const {
   createRemoteManagedWorkspaceNodeClientService,
 } = require("../services/remote-managed-workspaces/remote-managed-workspace-node-client-service");
 const {
+  createRemoteManagedWorkspaceNodeRunnerService,
+} = require("../services/remote-managed-workspaces/remote-managed-workspace-node-runner-service");
+const {
+  createRemoteManagedWorkspaceLocalExecutionService,
+} = require("../services/remote-managed-workspaces/remote-managed-workspace-local-execution-service");
+const {
+  createRemoteManagedWorkspaceSettingsService,
+} = require("../services/remote-managed-workspaces/remote-managed-workspace-settings-service");
+const {
   createRemoteManagedWorkspaceRouteService,
 } = require("../server-routes/remote-managed-workspace-route-service");
 
@@ -111,6 +120,13 @@ async function fetchJson(url) {
   return body;
 }
 
+function assertNoRawTokenMaterial(value, token) {
+  const text = JSON.stringify(value || {});
+  if (text.includes(token) || /Bearer\s+[A-Za-z0-9._-]{8,}/i.test(text)) {
+    throw new Error("remote_managed_workspace_raw_token_material_leaked");
+  }
+}
+
 async function runRemoteManagedWorkspaceHarness() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rmw-"));
   const projectRoot = path.join(root, "remote-project");
@@ -128,28 +144,74 @@ async function runRemoteManagedWorkspaceHarness() {
   const central = await startHomeAiCentralSimulator(homeAiCentralService);
   const remoteProject = await startRemoteProjectSimulator();
   const nodeClient = createRemoteManagedWorkspaceNodeClientService({ fs, path, fetch });
-  const remoteConfig = {
+  const settingsService = createRemoteManagedWorkspaceSettingsService({
+    fs,
+    path,
+    settingsFile: path.join(root, "remote-node-settings.json"),
+    stateFile: path.join(root, "remote-node-state.json"),
+    enrollmentTokenFile: path.join(root, "remote-node-enrollment-token"),
+  });
+  const localCodexRequests = [];
+  const localExecutionService = createRemoteManagedWorkspaceLocalExecutionService({
+    fs,
+    path,
+    codex: {
+      request: async (method, params) => {
+        localCodexRequests.push({ method, threadId: params && params.threadId || "", cwd: params && params.cwd || "" });
+        if (method === "thread/start") {
+          await fetchJson(`${remoteProject.url}/status`);
+          return { threadId: "rmw-local-thread", thread: { id: "rmw-local-thread", cwd: params.cwd } };
+        }
+        if (method === "turn/start") {
+          return { turnId: "rmw-local-turn" };
+        }
+        if (method === "thread/turns/list") {
+          return { turns: [{ id: "rmw-local-turn", status: { type: "completed" }, completedAt: "2026-07-08T00:00:00.000Z" }] };
+        }
+        return { ok: true };
+      },
+    },
+    applyPermissionModeOverride: (settings, approvalPolicy, cwd) => Object.assign({}, settings || {}, {
+      approvalPolicy,
+      cwd,
+      sandboxPolicy: { type: "dangerFullAccess" },
+    }),
+    applyStartThreadRuntimeSettings: (params) => params,
+    applyTurnRuntimeSettings: (params, settings) => Object.assign({}, params, { effort: settings.reasoningEffort || "" }),
+    resolveThreadRuntimeSettings: async () => ({ reasoningEffort: "medium" }),
+    readStartThreadDeveloperInstructions: () => "",
+    notifyLocalTurnStarted: () => "rmw-local-turn",
+    rememberStartedThread: () => true,
+    persistThreadTitleToSessionIndex: () => true,
+    tryUpdateThreadTitle: async () => true,
+    completionPollIntervalMs: 10,
+    completionTimeoutMs: 500,
+  });
+  const savedSettings = settingsService.saveSettings({
+    enabled: true,
     workspaceId: "rmw_fixture_workspace",
     workspaceKind: "remote_managed_workspace",
-    projectType: "node",
+    projectType: "vite_game",
     projectRoot,
-    allowedRoots: [root],
+    allowedRoot: root,
     centralUrl: central.url,
     nodeName: "fixture-node",
-    contractVersion: "remote-managed-workspace.v1",
+    connectionMode: "persistent",
     roles: ["external_project_main", "external_project_worker", "external_project_audit", "external_project_deploy"],
     capabilities: ["task-card-relay", "daily-summary", "bounded-escalation"],
     enrollmentToken,
-  };
+  });
+  const runner = createRemoteManagedWorkspaceNodeRunnerService({
+    settingsService,
+    nodeClientService: nodeClient,
+    taskCardExecutor: (card, context) => localExecutionService.execute(card, context),
+    taskCardHeartbeatIntervalMs: 10,
+  });
 
   try {
-    const registered = await nodeClient.register(remoteConfig);
-    const config = registered.config;
-    await nodeClient.nodeHeartbeat(config, {
-      status: "idle",
-      activeTaskCardCount: 0,
-      capabilities: config.capabilities,
-    });
+    const config = settingsService.configForClient();
+    const connectionCheck = await runner.testConnection();
+    const registeredNow = await runner.registerNow();
     const created = homeAiCentralService.enqueueTaskCard(config.workspaceId, {
       taskCardId: "ttc_remote_fixture",
       idempotencyKey: "remote-fixture-card",
@@ -165,19 +227,7 @@ async function runRemoteManagedWorkspaceHarness() {
       summary: "bounded duplicate fixture task",
     }, { skipAuth: true });
 
-    let executeCount = 0;
-    const processed = await nodeClient.processNextTaskCard(config, {
-      execute: async () => {
-        executeCount += 1;
-        await fetchJson(`${remoteProject.url}/status`);
-        return {
-          status: "completed",
-          title: "远程任务完成",
-          summary: "fixture_completed",
-          metadata: { validation: "two_port_harness" },
-        };
-      },
-    });
+    const processed = await runner.runOnce({ force: true });
     const polledAfterReturn = await nodeClient.pollTaskCards(config, { limit: 4 });
     await nodeClient.sendDailySummary(config, {
       date: "2026-07-08",
@@ -201,21 +251,33 @@ async function runRemoteManagedWorkspaceHarness() {
 
     const snapshot = homeAiCentralService.snapshot();
     assertNoForbiddenPayloadClasses(snapshot, "harness_snapshot");
+    assertNoRawTokenMaterial(savedSettings, enrollmentToken);
+    assertNoRawTokenMaterial(settingsService.publicSettings(), enrollmentToken);
     return {
       ok: true,
       centralSimulatorOwner: central.owner,
       centralSimulatorMode: central.mode,
       centralPort: central.port,
       remoteProjectPort: remoteProject.port,
-      registered: registered.result.ok === true,
+      settingsPersisted: savedSettings.enabled === true,
+      settingsTokenMasked: savedSettings.enrollmentTokenConfigured === true && !JSON.stringify(savedSettings).includes(enrollmentToken),
+      connectionCheckOk: connectionCheck.ok === true,
+      registered: registeredNow.ok === true && processed.registered === true,
       createdDuplicateSuppressed: duplicate.duplicate === true,
       createdTaskCardId: created.card.taskCardId,
-      executeCount,
-      processedExecuted: processed.executed === true,
+      runnerConnectionStatus: processed.status.connectionStatus,
+      processedExecuted: processed.processed && processed.processed.processed === true,
       pollCountAfterReturn: polledAfterReturn.count,
       dailySummaryCount: snapshot.dailySummaries.length,
       escalationCount: snapshot.escalations.length,
       terminalStatus: snapshot.taskCards[config.workspaceId][0].terminalStatus,
+      terminalBridge: snapshot.taskCards[config.workspaceId][0].terminalReturn
+        && snapshot.taskCards[config.workspaceId][0].terminalReturn.metadata
+        && snapshot.taskCards[config.workspaceId][0].terminalReturn.metadata.localExecutionBridge || "",
+      localCodexThreadStarted: localCodexRequests.some((entry) => entry.method === "thread/start" && entry.cwd === projectRoot),
+      localCodexTurnStarted: localCodexRequests.some((entry) => entry.method === "turn/start" && entry.threadId === "rmw-local-thread"),
+      localExecutionThreadId: settingsService.publicSettings().lastLocalThreadId,
+      localExecutionTurnId: settingsService.publicSettings().lastLocalTurnId,
       privacyCheck: "passed",
     };
   } finally {

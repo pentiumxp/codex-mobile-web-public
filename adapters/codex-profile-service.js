@@ -107,6 +107,30 @@ function authStatusForHome(codexHome) {
   return Object.assign({ authFile: true }, safeAccountFromAuth(auth));
 }
 
+function accountDisplayNameFromAuth(auth) {
+  if (!auth || auth.status !== "loggedIn") return "";
+  return String(auth.email || auth.name || auth.label || auth.accountId || "Logged in").trim();
+}
+
+function publicProfileDisplayFields(profile, auth) {
+  const slotLabel = String(profile && (profile.label || profile.id) || "").trim() || String(profile && profile.id || "");
+  const accountName = accountDisplayNameFromAuth(auth);
+  const authStatusLabel = auth && auth.status === "error"
+    ? "Auth unreadable"
+    : (auth && auth.status === "loggedIn" ? "Signed in" : "Not logged in");
+  const displayName = accountName || authStatusLabel;
+  return {
+    label: displayName,
+    displayName,
+    accountName,
+    accountLabel: accountName || "",
+    authStatusLabel,
+    slotId: String(profile && profile.id || ""),
+    slotLabel,
+    internalLabel: slotLabel,
+  };
+}
+
 function compactRateLimitWindow(value) {
   if (!value || typeof value !== "object") return null;
   const usedPercent = value.usedPercent ?? value.used_percent;
@@ -429,7 +453,14 @@ function createCodexProfileService(options = {}) {
   const userHome = options.userHome || env.USERPROFILE || env.HOME || process.cwd();
   const runtimeRoot = options.runtimeRoot || env.CODEX_MOBILE_RUNTIME_DIR || path.join(userHome, ".codex-mobile-web");
   const storeFile = options.storeFile || env.CODEX_MOBILE_PROFILE_FILE || path.join(runtimeRoot, DEFAULT_PROFILE_FILE_NAME);
-  const activeCodexHome = options.activeCodexHome || env.CODEX_HOME || path.join(userHome, ".codex");
+  const activeCodexHomeOption = options.activeCodexHome;
+
+  function runtimeActiveCodexHome() {
+    const value = typeof activeCodexHomeOption === "function"
+      ? activeCodexHomeOption()
+      : activeCodexHomeOption;
+    return value || env.CODEX_HOME || path.join(userHome, ".codex");
+  }
 
   function readStore() {
     const store = safeReadJson(storeFile, {});
@@ -443,12 +474,14 @@ function createCodexProfileService(options = {}) {
       const byId = normalized.find((profile) => profile.id === activeProfileId);
       if (byId) return byId;
     }
+    const activeCodexHome = runtimeActiveCodexHome();
     return normalized.find((profile) => normalizePathForCompare(profile.codexHome) === normalizePathForCompare(activeCodexHome))
       || normalized[0]
       || null;
   }
 
   function writeStore(store, patch) {
+    const activeCodexHome = runtimeActiveCodexHome();
     const normalized = normalizeProfiles(store.profiles, userHome, activeCodexHome)
       .map((item) => ({ id: item.id, label: item.label, codexHome: item.codexHome }));
     writeJsonFile(storeFile, Object.assign({}, store, patch, {
@@ -459,9 +492,16 @@ function createCodexProfileService(options = {}) {
 
   function profiles(options = {}) {
     const store = readStore();
-    const normalized = normalizeProfiles(store.profiles, userHome, activeCodexHome);
+    const runtimeCodexHome = runtimeActiveCodexHome();
+    const normalized = normalizeProfiles(store.profiles, userHome, runtimeCodexHome);
     const activeProfile = activeProfileFromStore(store, normalized);
     const activeId = activeProfile ? activeProfile.id : (normalized[0] && normalized[0].id || "");
+    const selectedCodexHome = activeProfile && activeProfile.codexHome
+      ? activeProfile.codexHome
+      : runtimeCodexHome;
+    const runtimeState = normalizePathForCompare(selectedCodexHome) === normalizePathForCompare(runtimeCodexHome)
+      ? "aligned"
+      : "restart_pending";
     const quotaSnapshots = store.quotaSnapshots && typeof store.quotaSnapshots === "object"
       ? Object.assign({}, store.quotaSnapshots)
       : {};
@@ -480,10 +520,12 @@ function createCodexProfileService(options = {}) {
     }
     return {
       activeProfileId: activeId,
-      activeCodexHome,
+      activeCodexHome: selectedCodexHome,
+      runtimeCodexHome,
+      runtimeState,
       storeFile,
       restartRequired: true,
-      switchSupported: profileSwitchSupportedForEnv(env, activeCodexHome),
+      switchSupported: profileSwitchSupportedForEnv(env, runtimeCodexHome),
       profiles: normalized.map((profile) => {
         const rolloutQuota = loadRateLimitSnapshotForHome(profile.codexHome);
         const storedQuota = normalizeQuotaSnapshot(quotaSnapshots[profile.id]);
@@ -494,10 +536,11 @@ function createCodexProfileService(options = {}) {
             : (hasReusableStoredQuotaSnapshot(storedQuota, profile.codexHome)
               ? storedQuota
               : { rateLimits: null, rateLimitsByModel: {}, source: null, updatedAt: null }));
-        return Object.assign({}, profile, {
+        const auth = authStatusForHome(profile.codexHome);
+        return Object.assign({}, profile, publicProfileDisplayFields(profile, auth), {
           active: profile.id === activeId,
           exists: fs.existsSync(profile.codexHome),
-          auth: authStatusForHome(profile.codexHome),
+          auth,
           quota,
         });
       }),
@@ -519,6 +562,7 @@ function createCodexProfileService(options = {}) {
       throw err;
     }
     const store = readStore();
+    const activeCodexHome = runtimeActiveCodexHome();
     const storedProfiles = normalizeProfiles(store.profiles, userHome, activeCodexHome)
       .map((item) => ({ id: item.id, label: item.label, codexHome: item.codexHome }));
     writeJsonFile(storeFile, {
@@ -537,12 +581,14 @@ function createCodexProfileService(options = {}) {
 }
 
 module.exports = {
+  accountDisplayNameFromAuth,
   authStatusForHome,
   createCodexProfileService,
   decodeJwtPayload,
   isRateLimitRolloutSourceAccountScoped,
   loadRateLimitSnapshotForHome,
   normalizeProfileId,
+  publicProfileDisplayFields,
   resolveActiveCodexHomeFromStore,
   resolveEffectiveCodexHome,
   safeAccountFromAuth,

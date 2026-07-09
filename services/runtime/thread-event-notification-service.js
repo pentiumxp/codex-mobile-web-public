@@ -289,7 +289,8 @@ function createThreadEventNotificationService(deps = {}) {
     if (payload.method === "thread/started"
       || payload.method === "thread/status/changed"
       || payload.method === "thread/name/updated"
-      || payload.method === "thread/archived") {
+      || payload.method === "thread/archived"
+      || payload.method === "thread/task-card-return/changed") {
       return true;
     }
     const threadId = notificationThreadId(payload);

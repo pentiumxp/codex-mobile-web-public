@@ -889,9 +889,22 @@ function boundedDiagnosticSamples(samples = []) {
       latestTurnUserMessageCount: Math.max(0, Math.trunc(Number(sample.latestTurnUserMessageCount || 0))),
       expectedLatestAssistantMessageCount: Math.max(0, Math.trunc(Number(sample.expectedLatestAssistantMessageCount || 0))),
       latestTurnAssistantMessageCount: Math.max(0, Math.trunc(Number(sample.latestTurnAssistantMessageCount || 0))),
+      expectedReadMode: boundedToken(sample.expectedReadMode || sample.readMode || "", "", 80),
+      expectedReadDecision: boundedToken(sample.expectedReadDecision || sample.readDecision || "", "", 80),
+      expectedPerformancePhase: boundedToken(sample.expectedPerformancePhase || sample.performancePhase || "", "", 80),
       latestTurnOperationItemCount: Math.max(0, Math.trunc(Number(sample.latestTurnOperationItemCount || 0))),
       latestTurnReasoningItemCount: Math.max(0, Math.trunc(Number(sample.latestTurnReasoningItemCount || 0))),
       clientSubmissionCount: Math.max(0, Math.trunc(Number(sample.clientSubmissionCount || 0))),
+      returnLedgerCount: Math.max(0, Math.trunc(Number(sample.returnLedgerCount || 0))),
+      returnLedgerVisibleCount: Math.max(0, Math.trunc(Number(sample.returnLedgerVisibleCount || 0))),
+      returnLedgerProjectionFailedCount: Math.max(0, Math.trunc(Number(sample.returnLedgerProjectionFailedCount || 0))),
+      returnLedgerDeliveryFailedCount: Math.max(0, Math.trunc(Number(sample.returnLedgerDeliveryFailedCount || 0))),
+      returnLedgerIssueCodes: Array.isArray(sample.returnLedgerIssueCodes) ? sample.returnLedgerIssueCodes.slice(0, 8) : [],
+      returnReceiptVisibleCount: Math.max(0, Math.trunc(Number(sample.returnReceiptVisibleCount || 0))),
+      returnReceiptTurnVisibleCount: Math.max(0, Math.trunc(Number(sample.returnReceiptTurnVisibleCount || 0))),
+      returnReceiptTurnAtDomBottom: sample.returnReceiptTurnAtDomBottom === true,
+      returnFollowUpTaskCardCount: Math.max(0, Math.trunc(Number(sample.returnFollowUpTaskCardCount || 0))),
+      returnFollowUpBadgeVisibleCount: Math.max(0, Math.trunc(Number(sample.returnFollowUpBadgeVisibleCount || 0))),
       latestTurnUserTextDuplicateCount: Math.max(0, Math.trunc(Number(sample.latestTurnUserTextDuplicateCount || 0))),
       allUserEventDuplicateCount: Math.max(0, Math.trunc(Number(sample.allUserEventDuplicateCount || 0))),
       pluginRefreshBannerSeededForThreadEntry: sample.pluginRefreshBannerSeededForThreadEntry === true,
@@ -907,6 +920,11 @@ function safeThreadPlan(ids = []) {
     threadHash: shortHash(id),
     expectedTurnHashCount: 0,
     expectedLatestTurnHash: "",
+    returnLedgerCount: 0,
+    returnLedgerVisibleCount: 0,
+    returnLedgerProjectionFailedCount: 0,
+    returnLedgerDeliveryFailedCount: 0,
+    returnLedgerIssueCodes: [],
   }));
 }
 
@@ -916,6 +934,15 @@ async function loadThreadPlan(options, key, ids) {
     let expectedTurnHashes = [];
     let expectation = latestTurnExpectation();
     let expectedTurnShapes = [];
+    let expectedReadMode = "";
+    let expectedReadDecision = "";
+    let expectedPerformancePhase = "";
+    let returnLedgerCount = 0;
+    let returnLedgerVisibleCount = 0;
+    let returnLedgerProjectionFailedCount = 0;
+    let returnLedgerDeliveryFailedCount = 0;
+    let returnLedgerIssueCodes = [];
+    let returnFollowUpTaskCardCount = 0;
     try {
       const detail = await fetchJson(requestUrl(options, `/api/threads/${encodeURIComponent(id)}`, {
         mode: "recent",
@@ -924,6 +951,43 @@ async function loadThreadPlan(options, key, ids) {
       expectedTurnHashes = visibleTurnIds(detail).map(browserStableHash);
       expectation = latestTurnExpectation(detail);
       expectedTurnShapes = turnShapeExpectation(detail);
+      const thread = detailThread(detail);
+      const timings = thread
+        && thread.mobileDiagnostics
+        && thread.mobileDiagnostics.threadDetailTimings
+        && typeof thread.mobileDiagnostics.threadDetailTimings === "object"
+        ? thread.mobileDiagnostics.threadDetailTimings
+        : {};
+      expectedReadMode = boundedToken(thread && thread.mobileReadMode || "", "", 80);
+      expectedReadDecision = boundedToken(timings.readDecision || "", "", 80);
+      expectedPerformancePhase = boundedToken(timings.performancePhase || "", "", 80);
+      returnFollowUpTaskCardCount = Math.max(0, Number(thread && thread.returnFollowUpTaskCardCount || 0) || 0);
+      const returnLedger = Array.isArray(thread && thread.taskCardReturnLedger)
+        ? thread.taskCardReturnLedger
+        : [];
+      const ledgerStatusCounts = thread
+        && thread.taskCardReturnLedgerStatusCounts
+        && typeof thread.taskCardReturnLedgerStatusCounts === "object"
+        ? thread.taskCardReturnLedgerStatusCounts
+        : {};
+      const ledgerIssueSet = new Set(Array.isArray(thread && thread.taskCardReturnLedgerIssueCodes)
+        ? thread.taskCardReturnLedgerIssueCodes
+        : []);
+      returnLedgerCount = returnLedger.length;
+      returnLedgerVisibleCount = Math.max(0, Number(ledgerStatusCounts.return_visible || 0) || 0);
+      returnLedgerProjectionFailedCount = Math.max(0, Number(ledgerStatusCounts.return_projection_failed || 0) || 0);
+      returnLedgerDeliveryFailedCount = Math.max(0, Number(ledgerStatusCounts.return_delivery_failed || 0) || 0);
+      for (const entry of returnLedger) {
+        const status = boundedToken(entry && entry.status || "", "", 80);
+        if (status === "return_visible") returnLedgerVisibleCount += ledgerStatusCounts.return_visible ? 0 : 1;
+        if (status === "return_projection_failed") returnLedgerProjectionFailedCount += ledgerStatusCounts.return_projection_failed ? 0 : 1;
+        if (status === "return_delivery_failed") returnLedgerDeliveryFailedCount += ledgerStatusCounts.return_delivery_failed ? 0 : 1;
+        for (const code of Array.isArray(entry && entry.issueCodes) ? entry.issueCodes : []) {
+          const issueCode = boundedToken(code, "", 120);
+          if (issueCode) ledgerIssueSet.add(issueCode);
+        }
+      }
+      returnLedgerIssueCodes = Array.from(ledgerIssueSet).slice(0, 12);
     } catch (_) {
       expectedTurnHashes = [];
     }
@@ -943,6 +1007,15 @@ async function loadThreadPlan(options, key, ids) {
       expectedLatestReasoningItemCount: expectation.expectedLatestReasoningItemCount,
       expectedLatestTimestampItemCount: expectation.expectedLatestTimestampItemCount,
       expectedTurnShapes,
+      expectedReadMode,
+      expectedReadDecision,
+      expectedPerformancePhase,
+      returnLedgerCount,
+      returnLedgerVisibleCount,
+      returnLedgerProjectionFailedCount,
+      returnLedgerDeliveryFailedCount,
+      returnLedgerIssueCodes,
+      returnFollowUpTaskCardCount,
     });
   }
   return plan;
@@ -972,6 +1045,14 @@ function snapshotInputForPlanEntry(entry, extra = {}) {
     expectedLatestUserMessageDuplicateCount: entry.expectedLatestUserMessageDuplicateCount,
     expectedLatestTaskCardUserMessageCount: entry.expectedLatestTaskCardUserMessageCount,
     expectedTurnShapes: entry.expectedTurnShapes,
+    expectedReadMode: entry.expectedReadMode,
+    expectedReadDecision: entry.expectedReadDecision,
+    expectedPerformancePhase: entry.expectedPerformancePhase,
+    returnLedgerCount: entry.returnLedgerCount,
+    returnLedgerVisibleCount: entry.returnLedgerVisibleCount,
+    returnLedgerProjectionFailedCount: entry.returnLedgerProjectionFailedCount,
+    returnLedgerDeliveryFailedCount: entry.returnLedgerDeliveryFailedCount,
+    returnLedgerIssueCodes: entry.returnLedgerIssueCodes,
   }, extra);
 }
 
@@ -1282,7 +1363,17 @@ function startupProbeExpression(input = {}) {
       let updateFullClientVersionUsesClassicCache = false;
       let updateFullClientVersionErrorCode = "";
       try {
-        const settingsRuntime = window.CodexSettingsRuntime || null;
+        const settingsRuntime = (() => {
+          const candidate = window.CodexSettingsRuntime || null;
+          if (candidate && typeof candidate.refreshAppUpdateStatus === "function") return candidate;
+          if (typeof window.refreshAppUpdateStatus === "function" || typeof window.renderUpdatePanel === "function") {
+            return {
+              refreshAppUpdateStatus: window.refreshAppUpdateStatus,
+              renderUpdatePanel: window.renderUpdatePanel,
+            };
+          }
+          return candidate;
+        })();
         if (settingsRuntime && typeof settingsRuntime.refreshAppUpdateStatus === "function") {
           const status = await settingsRuntime.refreshAppUpdateStatus({ force: true, silent: true });
           const currentBuild = status && status.currentBuild && typeof status.currentBuild === "object"
@@ -1325,6 +1416,45 @@ function startupProbeExpression(input = {}) {
       } catch (err) {
         updateFullClientVersionErrorCode = String(err && err.message || "update_version_probe_failed").slice(0, 160);
       }
+      if (!updateStatusCurrentBuildIdentityPresent) {
+        try {
+          const selfCheckKey = String(localStorage.getItem("codexMobileKey") || "");
+          if (selfCheckKey) {
+            const response = await fetch("/api/app-update/status?force=1", {
+              headers: { Authorization: "Bearer " + selfCheckKey },
+            });
+            if (response.ok) {
+              const status = await response.json();
+              const currentBuild = status && status.currentBuild && typeof status.currentBuild === "object"
+                ? status.currentBuild
+                : {};
+              const statusClientBuildId = String(currentBuild.clientBuildId || status && status.clientBuildId || "");
+              const statusShellCacheName = String(currentBuild.shellCacheName || status && status.shellCacheName || "");
+              const statusIssueCodes = new Set();
+              for (const values of [currentBuild.issueCodes, status && status.currentBuildIssueCodes, status && status.issueCodes]) {
+                if (!Array.isArray(values)) continue;
+                values.forEach((value) => {
+                  const code = String(value || "").replace(/[^a-z0-9_.:-]+/gi, "_").slice(0, 80);
+                  if (code) statusIssueCodes.add(code);
+                });
+              }
+              updateStatusCurrentBuildIdentityPresent = Boolean(statusClientBuildId && statusShellCacheName);
+              updateStatusCurrentBuildIssueCodes = Array.from(statusIssueCodes).slice(0, 8);
+              updateStatusCurrentClientBuildMatches = ${JSON.stringify(expectedClientBuildId)}
+                ? statusClientBuildId === ${JSON.stringify(expectedClientBuildId)}
+                : Boolean(statusClientBuildId);
+              updateStatusCurrentShellCacheMatches = ${JSON.stringify(expectedShellCacheName)}
+                ? statusShellCacheName === ${JSON.stringify(expectedShellCacheName)}
+                : Boolean(statusShellCacheName);
+              if (updateStatusCurrentBuildIdentityPresent) updateFullClientVersionErrorCode = "";
+            } else {
+              updateFullClientVersionErrorCode = "app_update_status_http_" + String(response.status || 0);
+            }
+          }
+        } catch (err) {
+          updateFullClientVersionErrorCode = String(err && err.message || "app_update_status_probe_failed").slice(0, 160);
+        }
+      }
       const app = document.getElementById("app");
       const login = document.getElementById("loginPanel");
       const bootRecovery = document.getElementById("bootRecovery");
@@ -1354,6 +1484,228 @@ function startupProbeExpression(input = {}) {
         && window.navigator.serviceWorker
         && window.caches
       );
+      let settingsMobileViewportExpected = false;
+      let settingsPanelPresent = false;
+      let settingsPanelOverflowScrollable = false;
+      let settingsPanelTouchScrollReady = false;
+      let settingsPanelScrollable = false;
+      let settingsPanelScrollMoved = false;
+      let settingsRmwSectionPresent = false;
+      let settingsRmwFieldCount = 0;
+      let settingsRmwActionCount = 0;
+      let settingsRmwVisibleFieldCount = 0;
+      let settingsRmwVisibleActionCount = 0;
+      let settingsRmwReachableFieldCount = 0;
+      let settingsRmwReachableActionCount = 0;
+      let settingsRmwWorkspaceRowCount = 0;
+      let settingsRmwVisibleWorkspaceRowCount = 0;
+      let settingsRmwReachableWorkspaceRowCount = 0;
+      let settingsRmwPanelReachableOnMobile = true;
+      let settingsPanelVisualReadyOnMobile = true;
+      let settingsPanelVisibleHeight = 0;
+      let settingsPanelVisibleWidth = 0;
+      let settingsPanelRectHeight = 0;
+      let settingsPanelRectWidth = 0;
+      let settingsPanelLeft = 0;
+      let settingsPanelRight = 0;
+      let settingsInitialVisibleTitleCount = 0;
+      let settingsPrimarySiblingVisibleCount = 0;
+      let settingsPanelScrollHeight = 0;
+      let settingsPanelClientHeight = 0;
+      let settingsPanelVisualProbeWaitMs = 0;
+      try {
+        const settingsPanel = document.getElementById("themeSettingsPanel");
+        const settingsButton = document.getElementById("themeSettingsToggle");
+        const sidebar = document.getElementById("sidebar");
+        const openMenuButton = document.getElementById("openMenu");
+        settingsMobileViewportExpected = Boolean(
+          (window.matchMedia && (window.matchMedia("(max-width: 760px)").matches || window.matchMedia("(pointer: coarse)").matches))
+          || /Android/i.test(String(navigator && navigator.userAgent || ""))
+        );
+        settingsPanelPresent = Boolean(settingsPanel);
+        if (settingsPanel) {
+          const embeddedPrimaryBeforeOpen = document.documentElement.classList.contains("embed-hermes-primary");
+          const originalSidebarOpen = Boolean(sidebar && sidebar.classList.contains("open"));
+          const originalSidebarEdgeDragging = Boolean(sidebar && sidebar.classList.contains("edge-dragging"));
+          const originalSidebarTransform = sidebar && sidebar.style ? sidebar.style.transform || "" : "";
+          let openedSidebarForSettings = false;
+          if (settingsMobileViewportExpected && !embeddedPrimaryBeforeOpen && sidebar) {
+            if (!sidebar.classList.contains("open") && openMenuButton) openMenuButton.click();
+            openedSidebarForSettings = true;
+            await wait(0);
+            if (!sidebar.classList.contains("open")) sidebar.classList.add("open");
+            if (sidebar.style) sidebar.style.setProperty("transform", "translateX(0px)", "important");
+          }
+          const wasHidden = settingsPanel.classList.contains("hidden");
+          const originalTop = settingsPanel.scrollTop || 0;
+          const originalExpanded = settingsButton ? settingsButton.getAttribute("aria-expanded") : null;
+          const ensureSettingsPanelProbeOpen = () => {
+            settingsPanel.classList.remove("hidden");
+            if (settingsButton) settingsButton.setAttribute("aria-expanded", "true");
+            if (!openedSidebarForSettings || !sidebar) return;
+            sidebar.classList.add("open");
+            sidebar.classList.remove("edge-dragging");
+            if (sidebar.style) sidebar.style.setProperty("transform", "translateX(0px)", "important");
+          };
+          settingsPanel.scrollTop = 0;
+          ensureSettingsPanelProbeOpen();
+          await wait(0);
+          ensureSettingsPanelProbeOpen();
+          const style = typeof getComputedStyle === "function" ? getComputedStyle(settingsPanel) : {};
+          const titleNodes = Array.from(settingsPanel.querySelectorAll(".theme-settings-title"));
+          const rmwTitle = titleNodes
+            .find((node) => /Remote Managed Workspace/i.test(String(node && node.textContent || "")));
+          const rmwSettings = document.getElementById("remoteManagedWorkspaceSettings");
+          const rmwAnchor = rmwTitle || rmwSettings;
+          settingsRmwSectionPresent = Boolean(rmwAnchor);
+          const rmwFields = Array.from(settingsPanel.querySelectorAll("[data-rmw-field]"));
+          const rmwActions = Array.from(settingsPanel.querySelectorAll("[data-rmw-action]"));
+          const currentRmwWorkspaceRows = () => Array.from(settingsPanel.querySelectorAll(".remote-managed-workspace-item"))
+            .filter((node) => node && node.isConnected !== false);
+          let rmwWorkspaceRows = currentRmwWorkspaceRows();
+          settingsRmwFieldCount = rmwFields.length;
+          settingsRmwActionCount = rmwActions.length;
+          settingsRmwWorkspaceRowCount = rmwWorkspaceRows.length;
+          settingsPanelScrollHeight = Math.trunc(Number(settingsPanel.scrollHeight || 0));
+          settingsPanelClientHeight = Math.trunc(Number(settingsPanel.clientHeight || 0));
+          settingsPanelScrollable = settingsPanelScrollHeight > settingsPanelClientHeight + 4;
+          settingsPanelOverflowScrollable = /auto|scroll/i.test(String(style.overflowY || style.overflow || ""));
+          settingsPanelTouchScrollReady = /pan-y|auto|manipulation/i.test(String(style.touchAction || ""));
+          const viewportWidth = Math.max(0, Math.trunc(Number(window.innerWidth || document.documentElement.clientWidth || 0)));
+          const viewportHeight = Math.max(0, Math.trunc(Number(window.innerHeight || document.documentElement.clientHeight || 0)));
+          const minimumUsefulVisibleWidth = Math.min(280, Math.max(180, Math.round(viewportWidth * 0.58)));
+          const visibleWidthForRect = (rect) => Math.max(0, Math.trunc(
+            Math.min(Number(rect && rect.right || 0), viewportWidth)
+            - Math.max(Number(rect && rect.left || 0), 0)
+          ));
+          const visibleWithinViewport = (node) => {
+            if (!node || typeof node.getBoundingClientRect !== "function") return false;
+            const rect = node.getBoundingClientRect();
+            return rect.bottom > 0 && rect.top < viewportHeight && rect.right > 0 && rect.left < viewportWidth && rect.width > 0 && rect.height > 0;
+          };
+          if (settingsMobileViewportExpected && !embeddedPrimaryBeforeOpen) {
+            const startedAt = Date.now();
+            for (let attempt = 0; attempt < 8; attempt += 1) {
+              ensureSettingsPanelProbeOpen();
+              const rect = settingsPanel.getBoundingClientRect();
+              if (visibleWidthForRect(rect) >= minimumUsefulVisibleWidth) break;
+              await wait(40);
+            }
+            ensureSettingsPanelProbeOpen();
+            settingsPanelVisualProbeWaitMs = Math.max(0, Math.round(Date.now() - startedAt));
+          }
+          const initialPanelRect = settingsPanel.getBoundingClientRect();
+          settingsPanelRectHeight = Math.max(0, Math.trunc(Number(initialPanelRect.height || 0)));
+          settingsPanelRectWidth = Math.max(0, Math.trunc(Number(initialPanelRect.width || 0)));
+          settingsPanelLeft = Math.trunc(Number(initialPanelRect.left || 0));
+          settingsPanelRight = Math.trunc(Number(initialPanelRect.right || 0));
+          settingsPanelVisibleHeight = Math.max(0, Math.trunc(
+            Math.min(Number(initialPanelRect.bottom || 0), viewportHeight)
+            - Math.max(Number(initialPanelRect.top || 0), 0)
+          ));
+          settingsPanelVisibleWidth = Math.max(0, Math.trunc(
+            Math.min(Number(initialPanelRect.right || 0), viewportWidth)
+            - Math.max(Number(initialPanelRect.left || 0), 0)
+          ));
+          settingsInitialVisibleTitleCount = titleNodes.filter(visibleWithinViewport).length;
+          const embeddedPrimary = document.documentElement.classList.contains("embed-hermes-primary");
+          if (embeddedPrimary && settingsPanel.parentElement) {
+            const siblings = Array.from(settingsPanel.parentElement.children || []);
+            const startIndex = siblings.indexOf(settingsPanel);
+            settingsPrimarySiblingVisibleCount = siblings
+              .slice(Math.max(0, startIndex + 1))
+              .filter((node) => {
+                if (!node || node.hidden || node.classList && node.classList.contains("hidden")) return false;
+                const siblingStyle = typeof getComputedStyle === "function" ? getComputedStyle(node) : {};
+                if (siblingStyle.display === "none" || siblingStyle.visibility === "hidden") return false;
+                return visibleWithinViewport(node);
+              }).length;
+          }
+          const maxTop = Math.max(0, settingsPanel.scrollHeight - settingsPanel.clientHeight);
+          const anchorTop = rmwAnchor && Number.isFinite(Number(rmwAnchor.offsetTop)) ? Number(rmwAnchor.offsetTop) : maxTop;
+          const targetTop = Math.max(0, Math.min(maxTop, anchorTop - 12));
+          settingsPanel.scrollTop = targetTop;
+          await wait(0);
+          settingsPanelScrollMoved = maxTop <= 2 || Math.abs(Number(settingsPanel.scrollTop || 0) - targetTop) <= 2;
+          const visibleWithinPanel = (node, panelRect) => {
+            if (!node || typeof node.getBoundingClientRect !== "function") return false;
+            const rect = node.getBoundingClientRect();
+            return rect.bottom <= panelRect.bottom + 2 && rect.top >= panelRect.top - 2 && rect.width > 0 && rect.height > 0;
+          };
+          const scrollNodeIntoPanel = async (node, alignFraction = 0.18) => {
+            if (!node || typeof node.getBoundingClientRect !== "function") return false;
+            const beforePanelRect = settingsPanel.getBoundingClientRect();
+            const beforeRect = node.getBoundingClientRect();
+            const relativeTop = beforeRect.top - beforePanelRect.top + Number(settingsPanel.scrollTop || 0);
+            const target = Math.max(0, Math.min(maxTop, relativeTop - Math.round(settingsPanel.clientHeight * alignFraction)));
+            settingsPanel.scrollTop = target;
+            await wait(0);
+            const afterPanelRect = settingsPanel.getBoundingClientRect();
+            return visibleWithinPanel(node, afterPanelRect);
+          };
+          const panelRect = settingsPanel.getBoundingClientRect();
+          settingsRmwVisibleFieldCount = rmwFields.filter((node) => visibleWithinPanel(node, panelRect)).length;
+          settingsRmwVisibleActionCount = rmwActions.filter((node) => visibleWithinPanel(node, panelRect)).length;
+          rmwWorkspaceRows = currentRmwWorkspaceRows();
+          settingsRmwWorkspaceRowCount = rmwWorkspaceRows.length;
+          settingsRmwVisibleWorkspaceRowCount = rmwWorkspaceRows.filter((node) => visibleWithinPanel(node, panelRect)).length;
+          for (const field of rmwFields) {
+            if (await scrollNodeIntoPanel(field, 0.18)) settingsRmwReachableFieldCount += 1;
+          }
+          for (const action of rmwActions) {
+            if (await scrollNodeIntoPanel(action, 0.72)) settingsRmwReachableActionCount += 1;
+          }
+          rmwWorkspaceRows = currentRmwWorkspaceRows();
+          settingsRmwWorkspaceRowCount = Math.max(settingsRmwWorkspaceRowCount, rmwWorkspaceRows.length);
+          for (const row of rmwWorkspaceRows) {
+            if (await scrollNodeIntoPanel(row, 0.28)) settingsRmwReachableWorkspaceRowCount += 1;
+          }
+          if (settingsMobileViewportExpected) {
+            settingsRmwPanelReachableOnMobile = Boolean(
+              rmwAnchor
+              && settingsPanelOverflowScrollable
+              && settingsPanelTouchScrollReady
+              && settingsPanelScrollMoved
+              && settingsRmwReachableFieldCount >= 1
+              && settingsRmwReachableActionCount >= 3
+              && (settingsRmwWorkspaceRowCount === 0
+                || settingsRmwVisibleWorkspaceRowCount >= 1
+                || settingsRmwReachableWorkspaceRowCount >= 1)
+            );
+          }
+          if (settingsMobileViewportExpected) {
+            const minimumUsefulVisibleHeight = Math.min(480, Math.max(280, Math.round(viewportHeight * 0.62)));
+            settingsPanelVisualReadyOnMobile = Boolean(
+              settingsPanelVisibleHeight >= minimumUsefulVisibleHeight
+              && settingsPanelVisibleWidth >= minimumUsefulVisibleWidth
+              && settingsInitialVisibleTitleCount >= 2
+              && settingsPrimarySiblingVisibleCount === 0
+            );
+          }
+          settingsPanel.scrollTop = originalTop;
+          if (wasHidden) settingsPanel.classList.add("hidden");
+          if (settingsButton) {
+            if (originalExpanded === null) settingsButton.removeAttribute("aria-expanded");
+            else settingsButton.setAttribute("aria-expanded", originalExpanded);
+          }
+          if (openedSidebarForSettings && sidebar) {
+            sidebar.classList.toggle("open", originalSidebarOpen);
+            sidebar.classList.toggle("edge-dragging", originalSidebarEdgeDragging);
+            if (sidebar.style) {
+              if (originalSidebarTransform) sidebar.style.setProperty("transform", originalSidebarTransform);
+              else sidebar.style.removeProperty("transform");
+            }
+          }
+        } else if (settingsMobileViewportExpected) {
+          settingsRmwPanelReachableOnMobile = false;
+          settingsPanelVisualReadyOnMobile = false;
+        }
+      } catch (_) {
+        if (settingsMobileViewportExpected) {
+          settingsRmwPanelReachableOnMobile = false;
+          settingsPanelVisualReadyOnMobile = false;
+        }
+      }
       return {
         label: "startup",
         probeKind: "startup",
@@ -1392,6 +1744,35 @@ function startupProbeExpression(input = {}) {
         updateFullClientVersionUsesClassicCache,
         updateFullClientVersionErrorCode,
         pluginRefreshBannerVisibleAfterBuildSettled,
+        settingsMobileViewportExpected,
+        settingsPanelPresent,
+        settingsPanelOverflowScrollable,
+        settingsPanelTouchScrollReady,
+        settingsPanelScrollable,
+        settingsPanelScrollMoved,
+        settingsRmwSectionPresent,
+        settingsRmwFieldCount,
+        settingsRmwActionCount,
+        settingsRmwVisibleFieldCount,
+        settingsRmwVisibleActionCount,
+        settingsRmwReachableFieldCount,
+        settingsRmwReachableActionCount,
+        settingsRmwWorkspaceRowCount,
+        settingsRmwVisibleWorkspaceRowCount,
+        settingsRmwReachableWorkspaceRowCount,
+        settingsRmwPanelReachableOnMobile,
+        settingsPanelVisualReadyOnMobile,
+        settingsPanelVisibleHeight,
+        settingsPanelVisibleWidth,
+        settingsPanelRectHeight,
+        settingsPanelRectWidth,
+        settingsPanelLeft,
+        settingsPanelRight,
+        settingsPanelVisualProbeWaitMs,
+        settingsInitialVisibleTitleCount,
+        settingsPrimarySiblingVisibleCount,
+        settingsPanelScrollHeight,
+        settingsPanelClientHeight,
       };
     })();
   `;
@@ -2070,7 +2451,17 @@ function viteAppPreviewProbeExpression(input = {}) {
       let updateFullClientVersionUsesClassicCache = false;
       let updateFullClientVersionErrorCode = "";
       try {
-        const settingsRuntime = window.CodexSettingsRuntime || null;
+        const settingsRuntime = (() => {
+          const candidate = window.CodexSettingsRuntime || null;
+          if (candidate && typeof candidate.refreshAppUpdateStatus === "function") return candidate;
+          if (typeof window.refreshAppUpdateStatus === "function" || typeof window.renderUpdatePanel === "function") {
+            return {
+              refreshAppUpdateStatus: window.refreshAppUpdateStatus,
+              renderUpdatePanel: window.renderUpdatePanel,
+            };
+          }
+          return candidate;
+        })();
         if (settingsRuntime && typeof settingsRuntime.refreshAppUpdateStatus === "function") {
           const appUpdateStatus = await settingsRuntime.refreshAppUpdateStatus({ force: true, silent: true });
           const currentBuild = appUpdateStatus && appUpdateStatus.currentBuild && typeof appUpdateStatus.currentBuild === "object"
@@ -2112,6 +2503,44 @@ function viteAppPreviewProbeExpression(input = {}) {
         }
       } catch (err) {
         updateFullClientVersionErrorCode = String(err && err.message || "update_version_probe_failed").slice(0, 160);
+      }
+      if (!updateStatusCurrentBuildIdentityPresent) {
+        try {
+          if (localStorageKey) {
+            const response = await fetch("/api/app-update/status?force=1", {
+              headers: { Authorization: "Bearer " + localStorageKey },
+            });
+            if (response.ok) {
+              const appUpdateStatus = await response.json();
+              const currentBuild = appUpdateStatus && appUpdateStatus.currentBuild && typeof appUpdateStatus.currentBuild === "object"
+                ? appUpdateStatus.currentBuild
+                : {};
+              const statusClientBuildId = String(currentBuild.clientBuildId || appUpdateStatus && appUpdateStatus.clientBuildId || "");
+              const statusShellCacheName = String(currentBuild.shellCacheName || appUpdateStatus && appUpdateStatus.shellCacheName || "");
+              const statusIssueCodes = new Set();
+              for (const values of [currentBuild.issueCodes, appUpdateStatus && appUpdateStatus.currentBuildIssueCodes, appUpdateStatus && appUpdateStatus.issueCodes]) {
+                if (!Array.isArray(values)) continue;
+                values.forEach((value) => {
+                  const code = String(value || "").replace(/[^a-z0-9_.:-]+/gi, "_").slice(0, 80);
+                  if (code) statusIssueCodes.add(code);
+                });
+              }
+              updateStatusCurrentBuildIdentityPresent = Boolean(statusClientBuildId && statusShellCacheName);
+              updateStatusCurrentBuildIssueCodes = Array.from(statusIssueCodes).slice(0, 8);
+              updateStatusCurrentClientBuildMatches = ${JSON.stringify(expectedClientBuildId)}
+                ? statusClientBuildId === ${JSON.stringify(expectedClientBuildId)}
+                : Boolean(statusClientBuildId);
+              updateStatusCurrentShellCacheMatches = ${JSON.stringify(expectedShellCacheName)}
+                ? statusShellCacheName === ${JSON.stringify(expectedShellCacheName)}
+                : Boolean(statusShellCacheName);
+              if (updateStatusCurrentBuildIdentityPresent) updateFullClientVersionErrorCode = "";
+            } else {
+              updateFullClientVersionErrorCode = "app_update_status_http_" + String(response.status || 0);
+            }
+          }
+        } catch (err) {
+          updateFullClientVersionErrorCode = String(err && err.message || "app_update_status_probe_failed").slice(0, 160);
+        }
       }
       const pluginRefreshPending = document.querySelector(".plugin-refresh-pending");
       const connectionStateText = String(document.getElementById("connectionState") && document.getElementById("connectionState").textContent || "");
@@ -2641,6 +3070,14 @@ function snapshotExpression(input = {}) {
   const expectedLatestUserMessageDuplicateCount = Math.max(0, Number(input.expectedLatestUserMessageDuplicateCount || 0) || 0);
   const expectedLatestTaskCardUserMessageCount = Math.max(0, Number(input.expectedLatestTaskCardUserMessageCount || 0) || 0);
   const expectedTurnShapes = Array.isArray(input.expectedTurnShapes) ? input.expectedTurnShapes.slice(-20) : [];
+  const expectedReadMode = boundedToken(input.expectedReadMode || "", "", 80);
+  const expectedReadDecision = boundedToken(input.expectedReadDecision || "", "", 80);
+  const expectedPerformancePhase = boundedToken(input.expectedPerformancePhase || "", "", 80);
+  const returnLedgerCount = Math.max(0, Number(input.returnLedgerCount || 0) || 0);
+  const returnLedgerVisibleCount = Math.max(0, Number(input.returnLedgerVisibleCount || 0) || 0);
+  const returnLedgerProjectionFailedCount = Math.max(0, Number(input.returnLedgerProjectionFailedCount || 0) || 0);
+  const returnLedgerDeliveryFailedCount = Math.max(0, Number(input.returnLedgerDeliveryFailedCount || 0) || 0);
+  const returnLedgerIssueCodes = Array.isArray(input.returnLedgerIssueCodes) ? input.returnLedgerIssueCodes.slice(0, 12) : [];
   const dynamicThreadPlan = input.dynamicThreadPlan === true;
   const label = String(input.label || "");
   const delayMs = Math.max(0, Number(input.delayMs || 0) || 0);
@@ -2660,6 +3097,14 @@ function snapshotExpression(input = {}) {
       const expectedLatestUserMessageDuplicateCount = ${JSON.stringify(expectedLatestUserMessageDuplicateCount)};
       const expectedLatestTaskCardUserMessageCount = ${JSON.stringify(expectedLatestTaskCardUserMessageCount)};
       const expectedTurnShapes = ${JSON.stringify(expectedTurnShapes)};
+      const expectedReadMode = ${JSON.stringify(expectedReadMode)};
+      const expectedReadDecision = ${JSON.stringify(expectedReadDecision)};
+      const expectedPerformancePhase = ${JSON.stringify(expectedPerformancePhase)};
+      const returnLedgerCount = ${JSON.stringify(returnLedgerCount)};
+      const returnLedgerVisibleCount = ${JSON.stringify(returnLedgerVisibleCount)};
+      const returnLedgerProjectionFailedCount = ${JSON.stringify(returnLedgerProjectionFailedCount)};
+      const returnLedgerDeliveryFailedCount = ${JSON.stringify(returnLedgerDeliveryFailedCount)};
+      const returnLedgerIssueCodes = ${JSON.stringify(returnLedgerIssueCodes)};
       const dynamicThreadPlan = ${JSON.stringify(dynamicThreadPlan)};
       const label = ${JSON.stringify(label)};
       const delayMs = ${JSON.stringify(delayMs)};
@@ -2738,6 +3183,7 @@ function snapshotExpression(input = {}) {
       const latestTurnNode = latestTurnIndex >= 0 ? turnNodes[latestTurnIndex] : null;
       const latestTurnHash = latestTurnIndex >= 0 ? String(turnHashes[latestTurnIndex] || "") : "";
       const actualLatestTurnNode = turnNodes.length ? turnNodes[turnNodes.length - 1] : null;
+      const actualLatestTurnIsReturnReceipt = Boolean(actualLatestTurnNode && actualLatestTurnNode.matches && actualLatestTurnNode.matches("article.turn[data-task-card-return-turn]"));
       const actualLatestUserNodes = actualLatestTurnNode ? Array.from(actualLatestTurnNode.querySelectorAll(".item.userMessage")) : [];
       const actualLatestTaskCardNodes = actualLatestTurnNode ? Array.from(actualLatestTurnNode.querySelectorAll(".item.thread-task-card-injected[data-thread-task-card-item]")) : [];
       const actualLatestAssistantNodes = actualLatestTurnNode ? Array.from(actualLatestTurnNode.querySelectorAll(".item.agentMessage, .item.plan")) : [];
@@ -3032,6 +3478,15 @@ function snapshotExpression(input = {}) {
       const submittedKey = submittedNode
         ? String(submittedNode.getAttribute("data-client-submission-hash") || "") + "|" + String(submittedNode.getAttribute("data-render-key") || "")
         : "";
+      const bottomThreadTaskCardNodes = latestTurnNode
+        ? Array.from(renderRoot.querySelectorAll(".thread-task-card-stack .thread-task-card[data-task-card]"))
+          .filter((node) => Boolean(latestTurnNode.compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING))
+        : [];
+      const bottomThreadTaskCardReturnNodes = bottomThreadTaskCardNodes.filter((node) => {
+        const method = node.querySelector(".approval-method");
+        const text = String(method && method.textContent || "").replace(/\\s+/g, " ").trim();
+        return !node.classList.contains("pending") && /^Return:/i.test(text);
+      });
       return {
         label,
         threadHash,
@@ -3066,6 +3521,18 @@ function snapshotExpression(input = {}) {
         expectedLatestAssistantMessageCount,
         expectedLatestUserMessageDuplicateCount,
         expectedLatestTaskCardUserMessageCount,
+        expectedReadMode,
+        expectedReadDecision,
+        expectedPerformancePhase,
+        returnLedgerCount,
+        returnLedgerVisibleCount,
+        returnLedgerProjectionFailedCount,
+        returnLedgerDeliveryFailedCount,
+        returnLedgerIssueCodes,
+        returnReceiptVisibleCount: document.querySelectorAll("[data-task-card-return-receipt]").length,
+        returnReceiptTurnVisibleCount: document.querySelectorAll("article.turn[data-task-card-return-turn] [data-task-card-return-receipt]").length,
+        returnReceiptTurnAtDomBottom: actualLatestTurnIsReturnReceipt,
+        returnFollowUpBadgeVisibleCount: document.querySelectorAll(".thread-card-return-badge.follow-up").length,
         dynamicThreadPlan,
         expectedTurnShapes,
         domTurnShapes,
@@ -3087,6 +3554,8 @@ function snapshotExpression(input = {}) {
         latestTurnUserNodeDetails: latestUserNodeDetails,
         latestTurnAssistantTextDuplicateCount: duplicateCount(latestAssistantTextHashes),
         latestTurnUsageCount: latestUsageCount,
+        bottomThreadTaskCardCount: bottomThreadTaskCardNodes.length,
+        bottomThreadTaskCardReturnCount: bottomThreadTaskCardReturnNodes.length,
         latestTimestampExpectedItems: timestampExpectedNodes.length,
         latestTimestampMissingItems: timestampMissingNodes.length,
         latestTimestampMissingKindCounts: countTimestampMissingKinds(timestampMissingNodes),
@@ -3388,6 +3857,16 @@ async function run(options = parseArgs(), deps = {}) {
       expectedLatestOperationItemCount: entry.expectedLatestOperationItemCount,
       expectedLatestReasoningItemCount: entry.expectedLatestReasoningItemCount,
       expectedLatestTimestampItemCount: entry.expectedLatestTimestampItemCount,
+      returnLedgerCount: entry.returnLedgerCount,
+      returnLedgerVisibleCount: entry.returnLedgerVisibleCount,
+      returnLedgerProjectionFailedCount: entry.returnLedgerProjectionFailedCount,
+      returnLedgerDeliveryFailedCount: entry.returnLedgerDeliveryFailedCount,
+      returnLedgerIssueCodes: Array.isArray(entry.returnLedgerIssueCodes) ? entry.returnLedgerIssueCodes.slice(0, 8) : [],
+      returnReceiptVisibleCount: entry.returnReceiptVisibleCount,
+      returnReceiptTurnVisibleCount: entry.returnReceiptTurnVisibleCount,
+      returnReceiptTurnAtDomBottom: entry.returnReceiptTurnAtDomBottom === true,
+      returnFollowUpTaskCardCount: entry.returnFollowUpTaskCardCount,
+      returnFollowUpBadgeVisibleCount: entry.returnFollowUpBadgeVisibleCount,
     })),
     browserReport: null,
     vitePreview: null,
@@ -3516,7 +3995,8 @@ async function run(options = parseArgs(), deps = {}) {
       }));
       if (appPreviewOnly) samples.push(report.viteAppPreview);
     }
-    const startupSample = (options.vitePreviewOnly || appPreviewOnly) ? null : await evaluate(cdp, startupProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
+    const shouldRunStartupProbe = !options.vitePreviewOnly && (!appPreviewOnly || options.startupOnly);
+    const startupSample = !shouldRunStartupProbe ? null : await evaluate(cdp, startupProbeExpression(report.publicConfig), options.timeoutMs).catch((err) => ({
       label: "startup",
       probeKind: "startup",
       appVisible: false,
@@ -3557,6 +4037,20 @@ async function run(options = parseArgs(), deps = {}) {
           && startupSample.threadTileRuntimeReady === true,
         loadThreadReady: startupSample.loadThreadReady === true,
         shellRefreshReady: startupSample.shellRefreshContractReady === true,
+        settingsPanelVisualReadyOnMobile: startupSample.settingsPanelVisualReadyOnMobile === true,
+        settingsRmwPanelReachableOnMobile: startupSample.settingsRmwPanelReachableOnMobile === true,
+        settingsPanelVisibleHeight: Math.max(0, Math.trunc(Number(startupSample.settingsPanelVisibleHeight || 0))),
+        settingsPanelVisibleWidth: Math.max(0, Math.trunc(Number(startupSample.settingsPanelVisibleWidth || 0))),
+        settingsPanelLeft: Math.trunc(Number(startupSample.settingsPanelLeft || 0)),
+        settingsPanelRight: Math.trunc(Number(startupSample.settingsPanelRight || 0)),
+        settingsPanelClientHeight: Math.max(0, Math.trunc(Number(startupSample.settingsPanelClientHeight || 0))),
+        settingsPanelScrollHeight: Math.max(0, Math.trunc(Number(startupSample.settingsPanelScrollHeight || 0))),
+        settingsInitialVisibleTitleCount: Math.max(0, Math.trunc(Number(startupSample.settingsInitialVisibleTitleCount || 0))),
+        settingsPrimarySiblingVisibleCount: Math.max(0, Math.trunc(Number(startupSample.settingsPrimarySiblingVisibleCount || 0))),
+        settingsRmwReachableFieldCount: Math.max(0, Math.trunc(Number(startupSample.settingsRmwReachableFieldCount || 0))),
+        settingsRmwReachableActionCount: Math.max(0, Math.trunc(Number(startupSample.settingsRmwReachableActionCount || 0))),
+        settingsRmwWorkspaceRowCount: Math.max(0, Math.trunc(Number(startupSample.settingsRmwWorkspaceRowCount || 0))),
+        settingsRmwReachableWorkspaceRowCount: Math.max(0, Math.trunc(Number(startupSample.settingsRmwReachableWorkspaceRowCount || 0))),
       };
     }
     if (!browserOnly) {

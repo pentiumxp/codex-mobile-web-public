@@ -708,6 +708,39 @@ test("thread performance metrics accept active projection partials with budget e
   assert.equal(planned.responseBudgetRetainedItemCount, 35);
 });
 
+test("thread performance metrics accept active partial first-paint with full backfill planned", () => {
+  const planned = metrics.planThreadDetailResponseContractDiagnostic({
+    source: "thread-detail-load",
+    readMode: "projection-v4-partial",
+    performancePhase: "warm-projection-partial",
+    status: "running",
+    fullBackfillPlanned: true,
+    detailShape: {
+      turns: 4,
+      items: 35,
+      visibleItems: 35,
+      activeTurns: 1,
+      completedTurns: 3,
+    },
+    turns: 4,
+  }, {
+    action: "thread-detail-load",
+    threadHash: "h_codex",
+    fullBackfillPlanned: true,
+    contract: {
+      projectionPartial: true,
+      projectionSource: "partial",
+    },
+  });
+
+  assert.equal(planned.shouldReport, false);
+  assert.equal(planned.reason, "ok");
+  assert.equal(planned.projectionPartial, true);
+  assert.equal(planned.fullBackfillPlanned, true);
+  assert.equal(planned.responseBudgetApplied, false);
+  assert.equal(planned.responseBudgetActiveTurnCount, 0);
+});
+
 test("thread performance metrics accept active overlay projection windows with visible evidence", () => {
   const planned = metrics.planThreadDetailResponseContractDiagnostic({
     source: "thread-tile",

@@ -3011,9 +3011,22 @@ test("thread lifecycle supports plugin worker lanes distinct from plugin loop an
     includeIneligible: true,
   });
   assert.equal(listed.ok, true);
-  assert.equal(listed.threads.some((thread) => thread.id === ensured.thread.id && thread.deliverable), true);
+  const busyWorker = listed.threads.find((thread) => thread.id === ensured.thread.id);
+  assert.equal(busyWorker.deliverable, false);
+  assert.equal(busyWorker.lifecycleStatus, "busy");
+  assert.equal(busyWorker.deliverabilityReason, "active_heartbeat");
+  assert.equal(busyWorker.lastTaskCardId, "ttc_plugin_worker");
   assert.equal(listed.threads.some((thread) => thread.id === "movie-loop-implementation"), false);
   assert.equal(listed.threads.some((thread) => thread.id === "movie-deploy"), false);
+
+  const available = await runtime.threadLifecycle({
+    action: "mark_available",
+    role: "plugin_worker",
+    targetThreadId: ensured.thread.id,
+  });
+  assert.equal(available.ok, true);
+  assert.equal(available.thread.deliverable, true);
+  assert.equal(available.thread.lifecycleStatus, "available");
 
   const retired = await runtime.threadLifecycle({
     action: "retire",
@@ -3022,6 +3035,272 @@ test("thread lifecycle supports plugin worker lanes distinct from plugin loop an
   });
   assert.equal(retired.ok, true);
   assert.equal(retired.thread.deliverable, false);
+});
+
+test("thread lifecycle blocks duplicate worker takeover before watchdog timeout and reuses stale lane after timeout", async () => {
+  const cwd = "/workspace/codex-mobile-web";
+  const evidenceCards = new Map();
+  let createdCount = 0;
+  const { createdThreads, runtime, setNow } = makeRuntime({
+    name: "thread-lifecycle-worker-takeover-watchdog",
+    visibleThreads: [{
+      id: "codex-main",
+      title: "codex mobile 07-04",
+      cwd,
+    }],
+    readThreadTaskCardForLoopEvidence: (cardId) => evidenceCards.get(cardId) || null,
+    createLoopRoleThread: async ({ role, cwd: threadCwd, title, threadRole }) => {
+      createdCount += 1;
+      const id = `plugin-worker-${createdCount}`;
+      const thread = { id, title, cwd: threadCwd, threadRole: threadRole || role };
+      createdThreads.push(thread);
+      return thread;
+    },
+  });
+
+  const first = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    sourceThreadId: "codex-main",
+    cwd,
+    purpose: "implementation",
+    requestId: "worker-first",
+  });
+  assert.equal(first.ok, true);
+  assert.equal(first.created, true);
+
+  await runtime.threadLifecycle({
+    action: "heartbeat",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    targetThreadId: first.thread.id,
+    taskCardId: "ttc_busy_worker",
+    status: "working",
+    source: "unit-test",
+  });
+  evidenceCards.set("ttc_busy_worker", {
+    id: "ttc_busy_worker",
+    status: "approved",
+    executionLease: { status: "active" },
+  });
+
+  const listedBusy = await runtime.threadLifecycle({
+    action: "list",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    cwd,
+    includeIneligible: true,
+  });
+  const busy = listedBusy.threads.find((thread) => thread.id === first.thread.id);
+  assert.equal(busy.deliverable, false);
+  assert.equal(busy.lifecycleStatus, "busy");
+  assert.equal(busy.deliverabilityReason, "active_heartbeat");
+  assert.equal(busy.executionState, "active_heartbeat");
+  assert.equal(busy.busy, true);
+  assert.equal(busy.watchdogRequired, false);
+  assert.equal(busy.takeoverAllowed, false);
+  assert.equal(busy.lastTaskCardId, "ttc_busy_worker");
+
+  const prematureTakeover = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    sourceThreadId: "codex-main",
+    cwd,
+    purpose: "implementation",
+    requestId: "worker-second",
+  });
+  assert.equal(prematureTakeover.ok, false);
+  assert.equal(prematureTakeover.created, false);
+  assert.equal(prematureTakeover.error, "thread_lifecycle_target_not_deliverable");
+  assert.equal(prematureTakeover.thread.id, first.thread.id);
+  assert.equal(prematureTakeover.thread.deliverabilityReason, "active_heartbeat");
+  assert.equal(prematureTakeover.thread.watchdogRequired, false);
+  assert.equal(createdThreads.length, 1);
+
+  setNow(Date.parse("2026-07-03T00:00:02.000Z"));
+  const stale = await runtime.threadLifecycle({
+    action: "resolve",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    sourceThreadId: "codex-main",
+    cwd,
+    includeIneligible: true,
+  });
+  assert.equal(stale.ok, true);
+  assert.equal(stale.thread.id, first.thread.id);
+  assert.equal(stale.thread.deliverable, true);
+  assert.equal(stale.thread.lifecycleStatus, "watchdog_required");
+  assert.equal(stale.thread.deliverabilityReason, "stale_heartbeat_watchdog_required");
+  assert.equal(stale.thread.executionState, "stale_heartbeat_watchdog_required");
+  assert.equal(stale.thread.watchdogRequired, true);
+  assert.equal(stale.thread.takeoverAllowed, true);
+  assert.equal(stale.thread.activeTaskCardId, "ttc_busy_worker");
+
+  const allowedTakeover = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    sourceThreadId: "codex-main",
+    cwd,
+    purpose: "implementation",
+    requestId: "worker-third",
+  });
+  assert.equal(allowedTakeover.ok, true);
+  assert.equal(allowedTakeover.created, false);
+  assert.equal(allowedTakeover.thread.id, first.thread.id);
+  assert.equal(allowedTakeover.thread.watchdogRequired, true);
+  assert.equal(allowedTakeover.thread.takeoverAllowed, true);
+  assert.equal(createdThreads.length, 1);
+
+  evidenceCards.set("ttc_busy_worker", {
+    id: "ttc_busy_worker",
+    status: "replied",
+    executionState: "terminal_returned",
+    executionLease: { status: "completed" },
+  });
+  const released = await runtime.threadLifecycle({
+    action: "mark_available",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    targetThreadId: first.thread.id,
+  });
+  assert.equal(released.ok, true);
+  assert.equal(released.thread.deliverable, true);
+  assert.equal(released.thread.lifecycleStatus, "available");
+  assert.equal(released.thread.watchdogRequired, false);
+
+  const duplicateAfterRelease = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    sourceThreadId: "codex-main",
+    cwd,
+    purpose: "implementation",
+    requestId: "worker-third",
+  });
+  assert.equal(duplicateAfterRelease.ok, true);
+  assert.equal(duplicateAfterRelease.created, false);
+  assert.equal(duplicateAfterRelease.thread.id, first.thread.id);
+  assert.equal(createdThreads.length, 1);
+});
+
+test("thread lifecycle expires stale active heartbeat without task-card evidence instead of permanently busying lane", async () => {
+  const cwd = "/workspace/codex-mobile-web";
+  const { runtime, setNow } = makeRuntime({
+    name: "thread-lifecycle-stale-heartbeat-no-card",
+    now: Date.parse("2026-07-08T00:00:00.000Z"),
+    visibleThreads: [{
+      id: "codex-main",
+      title: "codex mobile 07-04",
+      cwd,
+    }],
+    readThreadTaskCardForLoopEvidence: () => null,
+  });
+
+  const worker = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    sourceThreadId: "codex-main",
+    cwd,
+    requestId: "worker-stale-heartbeat",
+  });
+  assert.equal(worker.ok, true);
+  await runtime.threadLifecycle({
+    action: "heartbeat",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    targetThreadId: worker.thread.id,
+    taskCardId: "ttc_old_heartbeat",
+    status: "working",
+    source: "unit-test",
+  });
+
+  setNow(Date.parse("2026-07-09T00:00:00.000Z"));
+  const stale = await runtime.threadLifecycle({
+    action: "status",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    targetThreadId: worker.thread.id,
+    includeIneligible: true,
+  });
+  assert.equal(stale.ok, true);
+  assert.equal(stale.thread.deliverable, true);
+  assert.equal(stale.thread.lifecycleStatus, "watchdog_required");
+  assert.equal(stale.thread.deliverabilityReason, "stale_heartbeat_watchdog_required");
+  assert.equal(stale.thread.watchdogRequired, true);
+  assert.equal(stale.thread.takeoverAllowed, true);
+  assert.equal(stale.thread.activeTaskCardId, "ttc_old_heartbeat");
+});
+
+test("thread lifecycle uses active task-card evidence when heartbeat is already terminal", async () => {
+  const cwd = "/workspace/codex-mobile-web";
+  const evidenceCards = new Map();
+  const { runtime } = makeRuntime({
+    name: "thread-lifecycle-worker-active-task-card-evidence",
+    visibleThreads: [{
+      id: "codex-main",
+      title: "codex mobile 07-04",
+      cwd,
+    }],
+    readThreadTaskCardForLoopEvidence: (cardId) => evidenceCards.get(cardId) || null,
+  });
+
+  const worker = await runtime.threadLifecycle({
+    action: "ensure",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    sourceThreadId: "codex-main",
+    cwd,
+    requestId: "worker-active-card",
+  });
+  assert.equal(worker.ok, true);
+  await runtime.threadLifecycle({
+    action: "heartbeat",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    targetThreadId: worker.thread.id,
+    taskCardId: "ttc_active_card",
+    status: "completed",
+  });
+  evidenceCards.set("ttc_active_card", {
+    id: "ttc_active_card",
+    status: "approved",
+    executionState: "active_with_heartbeat",
+    executionLease: {
+      status: "active",
+      lastHeartbeatAt: "2026-07-03T00:00:00.000Z",
+      watchdogStaleAfterMs: 1000,
+    },
+  });
+
+  const status = await runtime.threadLifecycle({
+    action: "status",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    targetThreadId: worker.thread.id,
+    includeIneligible: true,
+  });
+  assert.equal(status.ok, false);
+  assert.equal(status.thread.deliverable, false);
+  assert.equal(status.thread.lifecycleStatus, "busy");
+  assert.equal(status.thread.deliverabilityReason, "active_task_card");
+
+  evidenceCards.set("ttc_active_card", {
+    id: "ttc_active_card",
+    status: "replied",
+    executionLease: { status: "completed" },
+  });
+  const released = await runtime.threadLifecycle({
+    action: "mark_available",
+    role: "plugin_worker",
+    pluginId: "codex-mobile-web",
+    targetThreadId: worker.thread.id,
+  });
+  assert.equal(released.ok, true);
+  assert.equal(released.thread.deliverable, true);
 });
 
 test("thread lifecycle reuses canonical plugin worker lane across task purposes", async () => {

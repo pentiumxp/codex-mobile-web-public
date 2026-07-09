@@ -308,6 +308,9 @@ test("thread detail summaries strip detail-only state before entering thread lis
     turns: [{ id: "turn-private" }],
     runtimeSettings: { model: "private" },
     threadTaskCards: [{ id: "ttc-private" }],
+    taskCardReturnLedger: [{ taskCardId: "ttc-private" }],
+    taskCardReturnLedgerStatusCounts: { return_visible: 1 },
+    taskCardReturnLedgerIssueCodes: ["return_projection_failed"],
     mobileLoading: true,
     mobileLoadError: "private error",
     mobileReadWarning: "private warning",
@@ -330,6 +333,9 @@ test("thread detail summaries strip detail-only state before entering thread lis
     "turns",
     "runtimeSettings",
     "threadTaskCards",
+    "taskCardReturnLedger",
+    "taskCardReturnLedgerStatusCounts",
+    "taskCardReturnLedgerIssueCodes",
     "mobileDetailLoaded",
     "mobileLoading",
     "mobileLoadError",
@@ -614,6 +620,9 @@ test("thread detail state plans open-thread loading shell from summary without d
       status: { type: "active" },
       turns: [{ id: "stale-turn" }],
       threadTaskCards: [{ id: "private-card" }],
+      taskCardReturnLedger: [{ taskCardId: "private-card" }],
+      taskCardReturnLedgerStatusCounts: { return_visible: 1 },
+      taskCardReturnLedgerIssueCodes: [],
       runtimeSettings: { effort: "xhigh" },
       mobileDiagnostics: { private: "detail" },
       mobileDetailLoaded: true,
@@ -634,6 +643,9 @@ test("thread detail state plans open-thread loading shell from summary without d
   assert.equal(plan.thread.mobileLoading, true);
   assert.equal(plan.thread.mobileLoadError, "");
   assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "threadTaskCards"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "taskCardReturnLedger"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "taskCardReturnLedgerStatusCounts"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "taskCardReturnLedgerIssueCodes"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "runtimeSettings"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "mobileDiagnostics"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(plan.thread, "mobileDetailLoaded"), false);
@@ -667,6 +679,9 @@ test("thread detail summary merge cannot preserve stale detail fields", () => {
     mobileReadMode: "stale",
     mobileDiagnostics: { detail: "stale" },
     threadTaskCards: [{ id: "stale" }],
+    taskCardReturnLedger: [{ taskCardId: "stale" }],
+    taskCardReturnLedgerStatusCounts: { pending: 1 },
+    taskCardReturnLedgerIssueCodes: ["stale_issue"],
   }, {
     id: "thread-hidden",
     hidden: true,
@@ -676,6 +691,9 @@ test("thread detail summary merge cannot preserve stale detail fields", () => {
     turns: [{ id: "turn-1" }],
     runtimeSettings: { model: "private" },
     threadTaskCards: [{ id: "new" }],
+    taskCardReturnLedger: [{ taskCardId: "new" }],
+    taskCardReturnLedgerStatusCounts: { return_visible: 1 },
+    taskCardReturnLedgerIssueCodes: [],
     mobileDetailLoaded: true,
     mobileReadMode: "recent",
   }, {
@@ -690,6 +708,9 @@ test("thread detail summary merge cannot preserve stale detail fields", () => {
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "turns"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "runtimeSettings"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "threadTaskCards"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "taskCardReturnLedger"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "taskCardReturnLedgerStatusCounts"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "taskCardReturnLedgerIssueCodes"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileDetailLoaded"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileReadMode"), false);
   assert.equal(Object.prototype.hasOwnProperty.call(result.threads[0], "mobileDiagnostics"), false);
@@ -716,6 +737,8 @@ test("thread detail empty-history recovery plans bounded detail refresh evidence
     hasActiveTurnEvidence: false,
     taskCardCount: 1,
     pendingTaskCardCount: 0,
+    returnReceiptTaskCardCount: 0,
+    returnFollowUpTaskCardCount: 0,
   });
 
   const plan = planEmptyDetailHistoryRecovery({
@@ -779,6 +802,15 @@ test("thread detail empty-history recovery fails closed for weak or cooling evid
   assert.equal(taskCardEvidence.shouldRecover, false);
   assert.equal(taskCardEvidence.reason, "task-card-only-evidence");
   assert.equal(taskCardEvidence.evidence.taskCardCount, 1);
+
+  const returnReceiptEvidence = planEmptyDetailHistoryRecovery({
+    thread: { id: "t", returnReceiptTaskCardCount: 1, returnFollowUpTaskCardCount: 1 },
+    nowMs: 100,
+  });
+  assert.equal(returnReceiptEvidence.shouldRecover, false);
+  assert.equal(returnReceiptEvidence.reason, "task-card-only-evidence");
+  assert.equal(returnReceiptEvidence.evidence.returnReceiptTaskCardCount, 1);
+  assert.equal(returnReceiptEvidence.evidence.returnFollowUpTaskCardCount, 1);
 
   const cooling = planEmptyDetailHistoryRecovery({
     thread: { id: "t", rolloutSizeBytes: 1 },

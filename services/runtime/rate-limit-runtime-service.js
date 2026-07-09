@@ -12,16 +12,55 @@ function createRateLimitRuntimeService(options = {}) {
     modelOptions = [],
     sessionsDir,
   } = options;
-  const ARCHIVED_SESSIONS_DIR = archivedSessionsDir;
-  const CODEX_HOME = codexHome;
+  const codexHomeProvider = typeof codexHome === "function" ? codexHome : () => codexHome;
+  const archivedSessionsDirProvider = typeof archivedSessionsDir === "function" ? archivedSessionsDir : () => archivedSessionsDir;
+  const sessionsDirProvider = typeof sessionsDir === "function" ? sessionsDir : () => sessionsDir;
   const MODEL_OPTIONS = Array.isArray(modelOptions) ? modelOptions : [];
-  const SESSIONS_DIR = sessionsDir;
   let latestLiveRateLimits = null;
   let latestLiveRateLimitsSource = null;
   let latestSnapshotRateLimits = null;
   const latestLiveRateLimitsByModel = new Map();
   const latestSnapshotRateLimitsByModel = new Map();
   let lastRolloutRateLimitScanAt = 0;
+  let activeCodexHomeKey = null;
+
+  function currentCodexHome() {
+    return String(codexHomeProvider() || "");
+  }
+
+  function currentSessionsDir() {
+    return sessionsDirProvider() || path.join(currentCodexHome(), "sessions");
+  }
+
+  function currentArchivedSessionsDir() {
+    return archivedSessionsDirProvider() || path.join(currentCodexHome(), "archived_sessions");
+  }
+
+  function codexHomeKey() {
+    const home = currentCodexHome();
+    return home ? path.resolve(home).toLowerCase() : "";
+  }
+
+  function resetRateLimitSnapshots() {
+    latestLiveRateLimits = null;
+    latestLiveRateLimitsSource = null;
+    latestSnapshotRateLimits = null;
+    latestLiveRateLimitsByModel.clear();
+    latestSnapshotRateLimitsByModel.clear();
+    lastRolloutRateLimitScanAt = 0;
+  }
+
+  function resetIfActiveCodexHomeChanged() {
+    const key = codexHomeKey();
+    if (activeCodexHomeKey === null) {
+      activeCodexHomeKey = key;
+      return false;
+    }
+    if (key === activeCodexHomeKey) return false;
+    activeCodexHomeKey = key;
+    resetRateLimitSnapshots();
+    return true;
+  }
 
   function compactRateLimitWindow(value) {
     if (!value || typeof value !== "object") return null;
@@ -120,6 +159,7 @@ function createRateLimitRuntimeService(options = {}) {
   }
 
   function recordRateLimits(value, options = {}) {
+    resetIfActiveCodexHomeChanged();
     const compacted = compactRateLimits(value);
     if (!compacted || !hasCurrentRateLimitWindow(compacted)) return null;
     const source = String(options.source || "live");
@@ -127,7 +167,7 @@ function createRateLimitRuntimeService(options = {}) {
       latestSnapshotRateLimits = compacted;
       return storeRateLimits(compacted, latestSnapshotRateLimitsByModel);
     }
-    if (!isRateLimitRolloutSourceAccountScoped(CODEX_HOME) && !isTrustedLiveRateLimitSource(source)) {
+    if (!isRateLimitRolloutSourceAccountScoped(currentCodexHome()) && !isTrustedLiveRateLimitSource(source)) {
       latestLiveRateLimits = null;
       latestLiveRateLimitsSource = null;
       latestLiveRateLimitsByModel.clear();
@@ -139,9 +179,10 @@ function createRateLimitRuntimeService(options = {}) {
   }
 
   function recordRateLimitReadResult(value, options = {}) {
+    resetIfActiveCodexHomeChanged();
     if (!value || typeof value !== "object") return null;
     const source = String(options.source || "live");
-    if (source !== "rollout" && !isRateLimitRolloutSourceAccountScoped(CODEX_HOME) && !isTrustedLiveRateLimitSource(source)) {
+    if (source !== "rollout" && !isRateLimitRolloutSourceAccountScoped(currentCodexHome()) && !isTrustedLiveRateLimitSource(source)) {
       latestLiveRateLimits = null;
       latestLiveRateLimitsSource = null;
       latestLiveRateLimitsByModel.clear();
@@ -180,7 +221,8 @@ function createRateLimitRuntimeService(options = {}) {
   }
 
   function canExposeRateLimitsForActiveHome() {
-    return isRateLimitRolloutSourceAccountScoped(CODEX_HOME) || isTrustedLiveRateLimitSource(latestLiveRateLimitsSource);
+    resetIfActiveCodexHomeChanged();
+    return isRateLimitRolloutSourceAccountScoped(currentCodexHome()) || isTrustedLiveRateLimitSource(latestLiveRateLimitsSource);
   }
 
   function activeRateLimits() {
@@ -271,14 +313,15 @@ function createRateLimitRuntimeService(options = {}) {
   }
 
   function loadRecentRateLimitsFromRollouts(options = {}) {
+    resetIfActiveCodexHomeChanged();
     const now = Date.now();
     const force = options.force === true;
     if (!force && now - lastRolloutRateLimitScanAt < 60000) return;
     lastRolloutRateLimitScanAt = now;
-    if (!isRateLimitRolloutSourceAccountScoped(CODEX_HOME)) return;
+    if (!isRateLimitRolloutSourceAccountScoped(currentCodexHome())) return;
     const files = [
-      ...collectRecentRolloutFiles(SESSIONS_DIR, { maxFiles: 140 }),
-      ...collectRecentRolloutFiles(ARCHIVED_SESSIONS_DIR, { maxFiles: 60, maxDepth: 1 }),
+      ...collectRecentRolloutFiles(currentSessionsDir(), { maxFiles: 140 }),
+      ...collectRecentRolloutFiles(currentArchivedSessionsDir(), { maxFiles: 60, maxDepth: 1 }),
     ].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 180);
     const latestByGroup = new Map();
     for (const file of files) {
@@ -334,9 +377,13 @@ function createRateLimitRuntimeService(options = {}) {
     compareRecentRolloutDirents,
     collectRecentRolloutFiles,
     readRolloutTailForRateLimits,
+    resetRateLimitSnapshots,
     loadRecentRateLimitsFromRollouts,
     rateLimitsByModelObject,
-    latestLiveRateLimits: () => latestLiveRateLimits,
+    latestLiveRateLimits: () => {
+      resetIfActiveCodexHomeChanged();
+      return latestLiveRateLimits;
+    },
   };
 }
 

@@ -12,6 +12,9 @@
     "turns",
     "runtimeSettings",
     "threadTaskCards",
+    "taskCardReturnLedger",
+    "taskCardReturnLedgerStatusCounts",
+    "taskCardReturnLedgerIssueCodes",
     "mobileDetailLoaded",
     "mobileLoading",
     "mobileLoadError",
@@ -253,12 +256,17 @@
       ? thread.threadTaskCards.length
       : 0;
     const pendingTaskCardCount = boundedCount(thread && thread.pendingTaskCardCount);
+    const returnReceiptTaskCardCount = boundedCount(thread && thread.returnReceiptTaskCardCount);
+    const returnFollowUpTaskCardCount = boundedCount(thread && thread.returnFollowUpTaskCardCount);
     const hasActiveTurnEvidence = Boolean(thread && (thread.activeTurnId || thread.mobileRolloutActiveTurn));
     const hasConversationEvidence = rolloutSizeBytes > 0
       || omittedTurns > 0
       || visibleItemKeyCount > 0
       || hasActiveTurnEvidence;
-    const hasTaskCardEvidence = taskCardCount > 0 || pendingTaskCardCount > 0;
+    const hasTaskCardEvidence = taskCardCount > 0
+      || pendingTaskCardCount > 0
+      || returnReceiptTaskCardCount > 0
+      || returnFollowUpTaskCardCount > 0;
     return {
       hasEvidence: hasConversationEvidence,
       hasConversationEvidence,
@@ -269,6 +277,8 @@
       hasActiveTurnEvidence,
       taskCardCount,
       pendingTaskCardCount,
+      returnReceiptTaskCardCount,
+      returnFollowUpTaskCardCount,
     };
   }
 

@@ -184,6 +184,53 @@ function scheduleRenderCurrentThread() {
 function scheduleRenderThreads(...args) {
   return threadListRuntime.scheduleRenderThreads(...args);
 }
+
+function boundedTaskCardReturnCount(value) {
+  return Math.max(0, Math.trunc(Number(value || 0)) || 0);
+}
+
+function applyTaskCardReturnSummaryToThread(thread, params = {}) {
+  if (!thread) return false;
+  thread.returnReceiptTaskCardCount = boundedTaskCardReturnCount(params.returnReceiptTaskCardCount);
+  thread.returnFollowUpTaskCardCount = boundedTaskCardReturnCount(params.returnFollowUpTaskCardCount);
+  thread.returnFollowUpPending = thread.returnFollowUpTaskCardCount > 0;
+  thread.latestReturnReceiptTaskCardId = String(params.latestReturnReceiptTaskCardId || "");
+  thread.latestReturnReceiptAt = String(params.latestReturnReceiptAt || params.returnedAt || "");
+  thread.latestReturnReceiptStatus = String(params.latestReturnReceiptStatus || params.status || "");
+  thread.latestReturnFollowUpTaskCardId = String(params.latestReturnFollowUpTaskCardId || "");
+  thread.latestReturnFollowUpAt = String(params.latestReturnFollowUpAt || "");
+  thread.latestReturnFollowUpStatus = String(params.latestReturnFollowUpStatus || "");
+  return true;
+}
+
+function applyTaskCardReturnSummaryToLocalThreads(threadId, params = {}) {
+  const id = String(threadId || "").trim();
+  if (!id) return false;
+  const seen = new Set();
+  let changed = false;
+  const apply = (thread) => {
+    if (!thread || String(thread.id || "") !== id || seen.has(thread)) return;
+    seen.add(thread);
+    changed = applyTaskCardReturnSummaryToThread(thread, params) || changed;
+  };
+  apply(state.currentThread);
+  apply(state.threadTileDetails && state.threadTileDetails.get(id));
+  for (const thread of state.threads || []) apply(thread);
+  if (!seen.size && boundedTaskCardReturnCount(params.returnReceiptTaskCardCount) > 0) {
+    const returnedAt = String(params.returnedAt || params.latestReturnReceiptAt || "").trim();
+    const summary = {
+      id,
+      title: id,
+      updatedAt: returnedAt || new Date().toISOString(),
+    };
+    applyTaskCardReturnSummaryToThread(summary, params);
+    state.threads = [summary, ...(state.threads || []).filter((thread) => String(thread && thread.id || "") !== id)];
+    changed = true;
+  }
+  if (changed) scheduleRenderThreads();
+  return changed;
+}
+
 function upsertServerRequest(request, fallbackThreadId = "") {
   if (!request || request.id === null || request.id === undefined) return;
   const key = String(request.id);
@@ -302,6 +349,19 @@ function applyNotification(method, params) {
     if (index >= 0) state.threads[index] = Object.assign({}, state.threads[index], params.thread);
     else state.threads.unshift(params.thread);
     scheduleRenderThreads();
+    return;
+  }
+  if (method === "thread/task-card-return/changed") {
+    const threadId = String(params.threadId || params.returnTargetThreadId || params.sourceThreadId || "").trim();
+    if (!threadId) return;
+    applyTaskCardReturnSummaryToLocalThreads(threadId, params);
+    if (state.currentThread && String(state.currentThread.id || "") === threadId) {
+      refreshCurrentThread({ source: "task-card-return", force: true }).catch(showError);
+    } else if (state.threadTileMode && threadTilePaneIsVisible(threadId)) {
+      loadThreadTileDetail(threadId, { force: true, background: true, source: "task-card-return" }).catch(showError);
+    } else {
+      loadThreads({ silent: true, allowDuringDetail: true }).catch(showError);
+    }
     return;
   }
   if (method === "thread/status/changed") {

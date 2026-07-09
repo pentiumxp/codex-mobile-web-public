@@ -46,6 +46,18 @@ const { createThreadTaskCardRuntimeService } = require("./services/task-cards/th
 const {
   createRemoteManagedWorkspaceService,
 } = require("./services/remote-managed-workspaces/remote-managed-workspace-service");
+const {
+  createRemoteManagedWorkspaceNodeClientService,
+} = require("./services/remote-managed-workspaces/remote-managed-workspace-node-client-service");
+const {
+  createRemoteManagedWorkspaceNodeRunnerService,
+} = require("./services/remote-managed-workspaces/remote-managed-workspace-node-runner-service");
+const {
+  createRemoteManagedWorkspaceLocalExecutionService,
+} = require("./services/remote-managed-workspaces/remote-managed-workspace-local-execution-service");
+const {
+  createRemoteManagedWorkspaceSettingsService,
+} = require("./services/remote-managed-workspaces/remote-managed-workspace-settings-service");
 const { createThreadSideChatService } = require("./adapters/thread-side-chat-service");
 const {
   continuationGoalMigrationPlan,
@@ -124,7 +136,13 @@ const serverRuntimeUtils = createServerRuntimeUtils({
   appRoot: APP_ROOT,
   publicRoot: PUBLIC_ROOT,
   userHome: USER_HOME,
-  getCodexHome: () => CODEX_HOME,
+  getCodexHome: () => {
+    try {
+      return resolveCurrentCodexRuntimeBinding().codexHome;
+    } catch (_) {
+      return process.env.CODEX_HOME || path.join(USER_HOME, ".codex");
+    }
+  },
   getAppVersion: () => APP_VERSION,
 });
 const {
@@ -341,6 +359,35 @@ const {
   MUX_REPLAY_NOTIFICATION_LIMIT,
   SAFE_RETRY_METHODS,
 } = serverRuntimeConfigService.resolve();
+
+function resolveCurrentCodexRuntimeBinding() {
+  const bootstrap = resolveActiveCodexHomeFromStore({
+    userHome: USER_HOME,
+    runtimeRoot: RUNTIME_ROOT,
+    env: process.env,
+  });
+  const codexHomeResolution = resolveEffectiveCodexHome({
+    userHome: USER_HOME,
+    runtimeRoot: RUNTIME_ROOT,
+    env: process.env,
+    defaultCodexHome: DEFAULT_CODEX_HOME,
+    bootstrap,
+  });
+  const codexHome = codexHomeResolution.codexHome || CODEX_HOME;
+  const muxEndpointFile = serverRuntimeUtils.resolveMuxEndpointFile(
+    process.env,
+    codexHome,
+    codexHomeResolution,
+  ) || MUX_ENDPOINT_FILE;
+  return {
+    codexHome,
+    codexHomeResolution,
+    muxEndpointFile,
+    sessionsDir: path.join(codexHome, "sessions"),
+    archivedSessionsDir: path.join(codexHome, "archived_sessions"),
+  };
+}
+
 const serverHttpRuntimeService = createServerHttpRuntimeService({
   fs,
   path,
@@ -350,7 +397,7 @@ const serverHttpRuntimeService = createServerHttpRuntimeService({
   disableAuth: DISABLE_AUTH,
   getAuthKey: () => AUTH_KEY,
   getHermesPluginService: () => hermesPluginService,
-  getCodexHome: () => CODEX_HOME,
+  getCodexHome: () => resolveCurrentCodexRuntimeBinding().codexHome,
   getMobileWebLogFile: () => MOBILE_WEB_LOG_FILE,
   getMobileWebLogMaxBytes: () => MOBILE_WEB_LOG_MAX_BYTES,
   getMobileWebLogKeepBytes: () => MOBILE_WEB_LOG_KEEP_BYTES,
@@ -432,7 +479,7 @@ const mobileArchiveIndexService = createMobileArchiveIndexService({
 const codexProfileService = createCodexProfileService({
   userHome: USER_HOME,
   runtimeRoot: RUNTIME_ROOT,
-  activeCodexHome: CODEX_HOME,
+  activeCodexHome: () => resolveCurrentCodexRuntimeBinding().codexHome,
 });
 const publicConfigRuntimeCache = createPublicConfigRuntimeCache();
 const runtimeWorkspaceBootstrapService = createRuntimeWorkspaceBootstrapService({
@@ -855,6 +902,7 @@ const threadTaskCardRuntimeService = createThreadTaskCardRuntimeService({
   readThreadListFallback: (...args) => readThreadListFallback(...args),
   listWorkspaces: (...args) => listWorkspaces(...args),
   pushThreadId,
+  broadcast,
   shortIdentifier,
   compactOneLine,
   workspaceDelegationGuardExemptCwds: WORKSPACE_DELEGATION_GUARD_EXEMPT_CWDS,
@@ -971,6 +1019,50 @@ const remoteManagedWorkspaceService = REMOTE_MANAGED_WORKSPACE_CENTRAL_SIMULATOR
     requireEnrollmentToken: true,
   })
   : null;
+const remoteManagedWorkspaceSettingsService = createRemoteManagedWorkspaceSettingsService({
+  fs,
+  path,
+  env: process.env,
+  settingsFile: process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_NODE_SETTINGS_FILE
+    || path.join(RUNTIME_ROOT, "remote-managed-workspace-node-settings.json"),
+  stateFile: process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_NODE_STATE_FILE
+    || path.join(RUNTIME_ROOT, "remote-managed-workspace-node-state.json"),
+  enrollmentTokenFile: process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_ENROLLMENT_TOKEN_FILE
+    || path.join(RUNTIME_ROOT, "remote-managed-workspace-enrollment-token"),
+  defaultAllowedRoot: process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_ALLOWED_ROOT || "",
+});
+const remoteManagedWorkspaceNodeClientService = createRemoteManagedWorkspaceNodeClientService({
+  fs,
+  path,
+  fetch,
+});
+const remoteManagedWorkspaceLocalExecutionService = createRemoteManagedWorkspaceLocalExecutionService({
+  fs,
+  path,
+  codex: { request: (...args) => codex.request(...args) },
+  applyPermissionModeOverride,
+  applyStartThreadRuntimeSettings,
+  applyTurnRuntimeSettings,
+  resolveThreadRuntimeSettings,
+  readStartThreadDeveloperInstructions: (...args) => readStartThreadDeveloperInstructions(...args),
+  threadIdFromStartResult: (...args) => threadIdFromStartResult(...args),
+  notifyLocalTurnStarted,
+  rememberStartedThread: (...args) => rememberStartedThread(...args),
+  persistThreadTitleToSessionIndex: (...args) => persistThreadTitleToSessionIndex(...args),
+  tryUpdateThreadTitle: (...args) => tryUpdateThreadTitle(...args),
+  mutationRpcTimeoutMs: MUTATION_RPC_TIMEOUT_MS,
+  readRpcTimeoutMs: READ_RPC_TIMEOUT_MS,
+  completionTimeoutMs: Number(process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_EXECUTION_TIMEOUT_MS || 0) || undefined,
+  completionPollIntervalMs: Number(process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_EXECUTION_POLL_MS || 0) || undefined,
+  logger: console,
+});
+const remoteManagedWorkspaceRunnerService = createRemoteManagedWorkspaceNodeRunnerService({
+  settingsService: remoteManagedWorkspaceSettingsService,
+  nodeClientService: remoteManagedWorkspaceNodeClientService,
+  taskCardExecutor: (card, context) => remoteManagedWorkspaceLocalExecutionService.execute(card, context),
+  taskCardHeartbeatIntervalMs: Number(process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_TASK_HEARTBEAT_MS || 0) || undefined,
+  logger: console,
+});
 const userBehaviorRepairCardService = createUserBehaviorRepairCardService({
   createThreadTaskCardsFromSourceThread,
   disabled: USER_BEHAVIOR_REPAIR_CARDS_DISABLED,
@@ -1355,12 +1447,12 @@ function threadListSummaryTimestampMs(...args) { return callThreadListServerBoun
 function sortThreadListSummaries(...args) { return callThreadListServerBoundary("sortThreadListSummaries", args); }
 
 const rateLimitRuntimeService = createRateLimitRuntimeService({
-  archivedSessionsDir: ARCHIVED_SESSIONS_DIR,
-  codexHome: CODEX_HOME,
+  archivedSessionsDir: () => resolveCurrentCodexRuntimeBinding().archivedSessionsDir,
+  codexHome: () => resolveCurrentCodexRuntimeBinding().codexHome,
   incrementBoundedDiagnosticCounter,
   isRateLimitRolloutSourceAccountScoped,
   modelOptions: MODEL_OPTIONS,
-  sessionsDir: SESSIONS_DIR,
+  sessionsDir: () => resolveCurrentCodexRuntimeBinding().sessionsDir,
 });
 const {
   compactRateLimitWindow,
@@ -1500,7 +1592,7 @@ const {
 
 const resolveExternalEndpoint = createAppServerEndpointResolver({
   fs,
-  muxEndpointFile: MUX_ENDPOINT_FILE,
+  muxEndpointFile: () => resolveCurrentCodexRuntimeBinding().muxEndpointFile,
   externalAppServerWs: EXTERNAL_APP_SERVER_WS,
   externalAppServerTcp: EXTERNAL_APP_SERVER_TCP,
 });
@@ -1518,6 +1610,7 @@ const codex = createCodexAppServerClient({
   CODEX_HOME_RESOLUTION,
   RUNTIME_ROOT,
   PERSIST_MOBILE_OWNED_MUX,
+  runtimeProfileBindingProvider: resolveCurrentCodexRuntimeBinding,
   MUX_REPLAY_NOTIFICATION_LIMIT,
   READ_RPC_TIMEOUT_MS,
   DEFAULT_RPC_TIMEOUT_MS,
@@ -1971,7 +2064,9 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   readThreadListCachedFallback,
   readThreadListFallback,
   remoteManagedWorkspaceCentralSimulator: REMOTE_MANAGED_WORKSPACE_CENTRAL_SIMULATOR_ENABLED,
+  remoteManagedWorkspaceRunnerService,
   remoteManagedWorkspaceService,
+  remoteManagedWorkspaceSettingsService,
   rememberStartedThread,
   removeEventClient,
   requestAuthToken,
@@ -2052,6 +2147,9 @@ process.on("SIGTERM", () => shutdown());
 
 function shutdown() {
   try {
+    remoteManagedWorkspaceRunnerService.stop();
+  } catch (_) {}
+  try {
     clearTaskCardExecutionWatchdog();
   } catch (_) {}
   try {
@@ -2080,6 +2178,9 @@ function startServer() {
     scheduleStartupAppUpdateCheck();
     scheduleThreadListFallbackPrewarm();
     scheduleTaskCardExecutionWatchdog();
+    if (remoteManagedWorkspaceSettingsService.publicSettings().enabled) {
+      remoteManagedWorkspaceRunnerService.start();
+    }
   });
 }
 

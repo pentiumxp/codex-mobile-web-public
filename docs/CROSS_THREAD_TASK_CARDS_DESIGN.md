@@ -223,9 +223,12 @@ callers.
 This route is for Codex-thread/tool initiated delegation, not for the normal
 browser task-card composer. It infers the source thread from the URL, accepts
 the same `targetThreadId` / `targetThreadIds` shape plus exact target-thread
-titles, and creates cards in the same task-card store. Direct source-thread
-approval is behind the runtime Settings switch `跨工作区委派` and is off by
-default. When the switch is off, the route creates pending target cards.
+titles, and creates cards in the same task-card store. Runtime Settings switch
+`跨工作区委派` enables source-thread auto-approval for the dynamic in-thread
+delegation tool. Desktop/CLI/MCP compatibility callers that explicitly send
+`direct:true` or `autoApprove:true` also request source-direct approval from
+this thread-callable route, so the target Worker receives an injected turn
+instead of only a pending card.
 
 The normal create route above remains pending by default. The thread-callable
 route can also be forced back to pending behavior with `pending:true`,

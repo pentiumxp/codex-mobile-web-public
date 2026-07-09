@@ -91,6 +91,83 @@ function createThreadDetailActiveTurnEvidenceService(dependencies = {}) {
     return Boolean(item && item.type === "reasoning");
   }
 
+  function textContentFromValue(value) {
+    if (value == null) return "";
+    if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value);
+    if (Array.isArray(value)) return value.map(textContentFromValue).join("\n");
+    if (typeof value !== "object") return "";
+    return [
+      value.text,
+      value.markdown,
+      value.content,
+      value.summary,
+      value.input,
+      value.value,
+    ].map(textContentFromValue).filter(Boolean).join("\n");
+  }
+
+  function itemVisibleText(item) {
+    if (!item || typeof item !== "object") return "";
+    return [
+      item.text,
+      item.markdown,
+      item.content,
+      item.summary,
+    ].map(textContentFromValue).filter(Boolean).join("\n");
+  }
+
+  function isTerminalReturnReceiptItem(item) {
+    if (!isUserQuestionItem(item)) return false;
+    const text = itemVisibleText(item);
+    return /\[Cross-thread task card(?: sent by source thread| approved)?\]/i.test(text)
+      && /Return policy:\s*terminal receipt/i.test(text);
+  }
+
+  function isTerminalReturnReceiptTurn(turn) {
+    if (!turn || !isLiveTurn(turn) || isEndedTurn(turn)) return false;
+    const items = Array.isArray(turn.items) ? turn.items : [];
+    if (!items.some(isTerminalReturnReceiptItem)) return false;
+    return !items.some((item) => {
+      if (!item || typeof item !== "object") return false;
+      if (isTerminalReturnReceiptItem(item)) return false;
+      if (isReasoningOnlyItem(item) || isTurnUsageSummaryItem(item)) return false;
+      if (isOperationalItem(item) || isAssistantReceiptItem(item) || isVisualReceiptItem(item) || isTurnDiagnosticItem(item)) return true;
+      return isUserQuestionItem(item) && !isTerminalReturnReceiptItem(item);
+    });
+  }
+
+  function releaseTerminalReturnReceiptLiveTurns(thread) {
+    if (!thread || !Array.isArray(thread.turns)) return { releasedTurnIds: [] };
+    const releasedTurnIds = [];
+    for (const turn of thread.turns) {
+      if (!isTerminalReturnReceiptTurn(turn)) continue;
+      const turnId = turnIdentifier(turn);
+      if (turnId) releasedTurnIds.push(turnId);
+      turn.status = Object.assign(completedSupersededStatus(turn.status), {
+        mobileTerminalReturnReceiptReleased: true,
+      });
+      turn.mobileTerminalReturnReceiptReleased = true;
+      turn.mobileSupersededLive = true;
+    }
+    if (!releasedTurnIds.length) return { releasedTurnIds };
+    const released = new Set(releasedTurnIds);
+    if (released.has(String(thread.activeTurnId || ""))) delete thread.activeTurnId;
+    if (released.has(String(thread.mobileActiveTurnId || ""))) delete thread.mobileActiveTurnId;
+    if (thread.mobileLocalActiveStatus && released.has(String(thread.mobileLocalActiveStatus.turnId || ""))) {
+      delete thread.mobileLocalActiveStatus;
+    }
+    if (thread.mobileRolloutActiveTurn && released.has(String(thread.mobileRolloutActiveTurn.turnId || ""))) {
+      delete thread.mobileRolloutActiveTurn;
+    }
+    if (!thread.turns.some(isLiveTurn) && isThreadListLiveStatus(thread.status)) {
+      thread.status = Object.assign(completedSupersededStatus(thread.status), {
+        mobileTerminalReturnReceiptReleased: true,
+      });
+    }
+    thread.mobileTerminalReturnReceiptReleasedTurnIds = releasedTurnIds.slice(0, 8);
+    return { releasedTurnIds };
+  }
+
   function isMeaningfulSupersededLiveItem(item) {
     if (!item || typeof item !== "object") return false;
     if (userMessageHasVisualAttachment(item)) return true;
@@ -203,6 +280,7 @@ function createThreadDetailActiveTurnEvidenceService(dependencies = {}) {
 
   function itemLooksLikeActiveRuntime(item) {
     if (!item || typeof item !== "object" || isCompletedStatus(item.status)) return false;
+    if (isTerminalReturnReceiptItem(item)) return false;
     if (item.type === "reasoning" || isOperationalItem(item)) return true;
     if (item.type === "agentMessage" || item.type === "plan") return true;
     return isUserQuestionItem(item) || userMessageHasVisualAttachment(item);
@@ -272,13 +350,20 @@ function createThreadDetailActiveTurnEvidenceService(dependencies = {}) {
 
   function reconcileThreadActiveTurnWithRolloutEvidence(thread, options = {}) {
     if (!thread || typeof thread !== "object" || !Array.isArray(thread.turns)) return thread;
+    const terminalRelease = releaseTerminalReturnReceiptLiveTurns(thread);
+    const releasedTerminalTurnIds = new Set(terminalRelease.releasedTurnIds);
     const turns = thread.turns;
     const shouldReconcile = isThreadListLiveStatus(thread.status)
       || Boolean(thread.activeTurnId)
       || Boolean(thread.mobileLocalActiveStatus)
       || turns.some(isLiveTurn);
     if (!shouldReconcile) return thread;
-    const evidence = activeRuntimeEvidenceForThread(thread, options);
+    let evidence = activeRuntimeEvidenceForThread(thread, options);
+    if (evidence && releasedTerminalTurnIds.has(String(evidence.turnId || "").trim())
+      && !evidence.hasAssistant
+      && !evidence.hasOperation) {
+      evidence = null;
+    }
     const unmaterializedShellIds = new Set(
       turns.filter(isUnmaterializedLiveTurnShell)
         .map(turnIdentifier)
@@ -349,6 +434,8 @@ function createThreadDetailActiveTurnEvidenceService(dependencies = {}) {
     activeStatusFromRuntimeEvidence,
     completedSupersededStatus,
     isCompletedStatus,
+    isTerminalReturnReceiptItem,
+    isTerminalReturnReceiptTurn,
     isLiveTurn,
     isMeaningfulSupersededLiveItem,
     isReasoningOnlyItem,
@@ -358,6 +445,7 @@ function createThreadDetailActiveTurnEvidenceService(dependencies = {}) {
     latestMaterializedActiveTurnCandidate,
     normalizeSupersededLiveTurns,
     pruneSupersededLiveShellTurns,
+    releaseTerminalReturnReceiptLiveTurns,
     reconcileThreadActiveTurnWithRolloutEvidence,
     rolloutEvidenceHasRuntimeActivity,
     rolloutEvidenceIsRecent,
