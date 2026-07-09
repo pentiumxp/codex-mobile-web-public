@@ -68,6 +68,65 @@ test("external project main is a workspace-main role without promoting worker au
   assert.equal(service.mainCandidate({ id: "external-deploy", title: "External Deploy Lane", cwd, threadRole: "external_project_deploy" }, { cwd }), null);
 });
 
+test("main resolver refreshes stale RMW external main cwd from active workspace binding", () => {
+  const staleCwd = "C:\\Users\\steph\\Documents\\Gun_Battle";
+  const currentCwd = "C:\\Users\\steven\\Documents\\Gun_Battle";
+  const service = createWorkspaceMainThreadRoutingService({
+    visibleThreads: () => [
+      {
+        id: "gun-battle-main",
+        title: "Gun Battle",
+        cwd: staleCwd,
+        threadRole: "external_project_main",
+        updatedAt: 20,
+      },
+    ],
+    workspaceBindingAliases: () => [{
+      workspaceKind: "remote_managed_workspace",
+      role: "external_project_main",
+      projectRoot: currentCwd,
+      source: "remote_managed_workspace_settings",
+    }],
+    readThreadSummary: () => ({ updatedAt: 20 }),
+  });
+
+  const resolved = service.resolve({ cwd: currentCwd, role: "external_project_main" });
+
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.thread.id, "gun-battle-main");
+  assert.equal(resolved.thread.cwd, currentCwd);
+  assert.equal(resolved.thread.originalCwd, staleCwd);
+  assert.equal(resolved.thread.bindingSource, "remote_managed_workspace_settings");
+  assert.equal(resolved.thread.deliverabilityReason, "eligible");
+});
+
+test("main resolver does not use RMW basename binding for non-external-main lanes", () => {
+  const staleCwd = "C:\\Users\\steph\\Documents\\Gun_Battle";
+  const currentCwd = "C:\\Users\\steven\\Documents\\Gun_Battle";
+  const service = createWorkspaceMainThreadRoutingService({
+    visibleThreads: () => [
+      {
+        id: "gun-battle-worker",
+        title: "Gun Battle Worker",
+        cwd: staleCwd,
+        threadRole: "external_project_worker",
+        updatedAt: 20,
+      },
+    ],
+    workspaceBindingAliases: () => [{
+      workspaceKind: "remote_managed_workspace",
+      role: "external_project_main",
+      projectRoot: currentCwd,
+    }],
+    readThreadSummary: () => ({ updatedAt: 20 }),
+  });
+
+  const resolved = service.resolve({ cwd: currentCwd, role: "external_project_main" });
+
+  assert.equal(resolved.ok, false);
+  assert.equal(resolved.error, "thread_lifecycle_main_target_not_found");
+});
+
 test("main resolver prefers a live continuation over the old source thread", () => {
   const threads = [
     { id: "home-old", title: "Home AI 06-22", cwd: HOME_AI_CWD, status: { type: "completed" }, updatedAt: 10 },

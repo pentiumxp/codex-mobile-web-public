@@ -579,6 +579,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
       return threadTaskCardService.get(cardId, "");
     },
     loopTargetAliases: dependencies.atLoopTargetAliases,
+    workspaceBindingAliases: dependencies.workspaceBindingAliases,
     listWorkspaces: dependencies.listWorkspaces,
     maxIterations: dependencies.atLoopMaxIterations,
     watchdogStaleMs: dependencies.atLoopWatchdogStaleMs,

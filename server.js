@@ -902,6 +902,7 @@ const threadTaskCardRuntimeService = createThreadTaskCardRuntimeService({
   readGlobalState: (...args) => readGlobalState(...args),
   readThreadListFallback: (...args) => readThreadListFallback(...args),
   listWorkspaces: (...args) => listWorkspaces(...args),
+  workspaceBindingAliases: (...args) => remoteManagedWorkspaceBindingAliases(...args),
   pushThreadId,
   broadcast,
   shortIdentifier,
@@ -1064,6 +1065,19 @@ const remoteManagedWorkspaceRunnerService = createRemoteManagedWorkspaceNodeRunn
   taskCardHeartbeatIntervalMs: Number(process.env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_TASK_HEARTBEAT_MS || 0) || undefined,
   logger: console,
 });
+
+function remoteManagedWorkspaceBindingAliases() {
+  if (!remoteManagedWorkspaceSettingsService || typeof remoteManagedWorkspaceSettingsService.publicSettings !== "function") return [];
+  const settings = remoteManagedWorkspaceSettingsService.publicSettings();
+  if (!settings || !settings.enabled || !settings.projectRoot) return [];
+  return [{
+    workspaceKind: "remote_managed_workspace",
+    role: "external_project_main",
+    projectRoot: settings.projectRoot,
+    source: "remote_managed_workspace_settings",
+  }];
+}
+
 const userBehaviorRepairCardService = createUserBehaviorRepairCardService({
   createThreadTaskCardsFromSourceThread,
   disabled: USER_BEHAVIOR_REPAIR_CARDS_DISABLED,

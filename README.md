@@ -16,6 +16,34 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-07-09 Public 发布说明（RMW lifecycle cwd binding 修复）
+
+本次 Public 热修复同步私有提交 `f7c463e` 的 Remote Managed Workspace
+本地 lifecycle 绑定修复。真实远程节点 smoke 中，Windows 机器的历史主线程
+仍记录旧用户目录下的项目路径，而当前 RMW 设置里的 active workspace root
+已经指向新的项目路径，导致 queued task card 在本地 lifecycle 路由阶段被判定为
+`workspace_mismatch`，没有进入可信执行和回卡链路。
+
+修复后，Codex Mobile 会从 active RMW 设置导出一个 bounded workspace binding
+alias：只有当前 RMW `projectRoot`、项目名匹配、且目标线程角色是
+`external_project_main` 时，workspace-main resolver 才会把旧 cwd 主线程重新绑定
+到当前 workspace root。该绑定不会提升 worker/deploy/audit 等非 main lane，也不会
+扩大普通线程可投递范围。
+
+验证范围：
+
+```sh
+node --test test/workspace-main-thread-routing-service.test.js
+node --test test/remote-managed-workspace-node-runner-service.test.js test/thread-task-card-runtime-service.test.js
+npm test
+npm run check
+git diff --check
+```
+
+Public 仓库仍只同步公开源码、README 和测试；不包含 `.agent-context`、
+runtime state、上传内容、私有线程正文、原始日志、缓存数据库、截图或本机
+私有配置。
+
 ## 2026-07-09 Public 发布说明（RMW persisted request 重试修复）
 
 本次 Public 热修复同步私有提交 `39e9648e` 的 Remote Managed Workspace

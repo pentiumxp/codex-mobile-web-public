@@ -21,6 +21,12 @@ function normalizeCwd(value, pathModule = defaultPath) {
   }
 }
 
+function pathBasename(value) {
+  const text = compactOneLine(value).replace(/\\/g, "/").replace(/\/+$/g, "");
+  const parts = text.split("/").filter(Boolean);
+  return compactOneLine(parts[parts.length - 1] || "").toLowerCase();
+}
+
 function threadIdOf(thread = {}) {
   return compactOneLine(thread && (thread.id || thread.threadId || thread.thread_id));
 }
@@ -156,13 +162,15 @@ function publicMainThread(thread = {}, details = {}) {
   return {
     id: threadIdOf(thread),
     title: threadTitle(thread),
-    cwd: compactOneLine(thread.cwd || thread.workspace || details.cwd || ""),
+    cwd: compactOneLine(details.cwd || thread.cwd || thread.workspace || ""),
     role,
     threadRole: threadRole(thread),
     purpose: classifyThreadPurpose(thread),
     status: compactOneLine(thread.status && (thread.status.type || thread.status.status) || thread.status),
     deliverable: !nonDeliverable,
     deliverabilityReason: nonDeliverable || "eligible",
+    bindingSource: compactOneLine(details.bindingSource || ""),
+    originalCwd: compactOneLine(details.originalCwd || ""),
     sourceThreadId: compactOneLine(details.sourceThreadId || ""),
     lineageSourceThreadId: compactOneLine(details.lineageSourceThreadId || ""),
     lineageCreatedAt: compactOneLine(details.lineageCreatedAt || ""),
@@ -177,13 +185,39 @@ function createWorkspaceMainThreadRoutingService(deps = {}) {
     : (cwd) => readContinuationLineageEntries(cwd, { fs, path: pathModule });
   const readThreadSummary = typeof deps.readThreadSummary === "function" ? deps.readThreadSummary : () => null;
   const visibleThreads = typeof deps.visibleThreads === "function" ? deps.visibleThreads : () => [];
+  const workspaceBindingAliases = typeof deps.workspaceBindingAliases === "function"
+    ? deps.workspaceBindingAliases
+    : () => [];
+
+  function bindingAliasForThread(thread = {}, input = {}, threadCwd = "", wantedCwd = "") {
+    if (!wantedCwd || !threadCwd || threadCwd === wantedCwd) return null;
+    const role = inferredWorkspaceMainRole(thread, { cwd: input.cwd, path: pathModule });
+    if (role !== "external_project_main") return null;
+    const aliases = Array.isArray(workspaceBindingAliases(input)) ? workspaceBindingAliases(input) : [];
+    for (const alias of aliases) {
+      const source = alias && typeof alias === "object" && !Array.isArray(alias) ? alias : {};
+      if (normalizeWorkspaceMainRole(source.role || source.threadRole || "external_project_main") !== "external_project_main") continue;
+      const projectRoot = compactOneLine(source.projectRoot || source.cwd || source.workspaceCwd || source.workspace || "");
+      if (!projectRoot || normalizeCwd(projectRoot, pathModule) !== wantedCwd) continue;
+      if (source.workspaceKind && compactOneLine(source.workspaceKind) !== "remote_managed_workspace") continue;
+      if (pathBasename(projectRoot) && pathBasename(thread.cwd || thread.workspace) === pathBasename(projectRoot)) {
+        return {
+          cwd: projectRoot,
+          source: compactOneLine(source.source || source.bindingSource || "remote_managed_workspace_settings"),
+          originalCwd: compactOneLine(thread.cwd || thread.workspace),
+        };
+      }
+    }
+    return null;
+  }
 
   function mainCandidate(thread = {}, input = {}) {
     const id = threadIdOf(thread);
     if (!id) return null;
     const wantedCwd = normalizeCwd(input.cwd || input.workspaceCwd || input.workspace || input.targetWorkspace, pathModule);
     const threadCwd = normalizeCwd(thread.cwd || thread.workspace, pathModule);
-    if (wantedCwd && threadCwd !== wantedCwd) return null;
+    const bindingAlias = bindingAliasForThread(thread, input, threadCwd, wantedCwd);
+    if (wantedCwd && threadCwd !== wantedCwd && !bindingAlias) return null;
     const nonDeliverable = explicitNonDeliverability(thread);
     const role = inferredWorkspaceMainRole(thread, { cwd: input.cwd, path: pathModule });
     if (!role) return null;
@@ -192,7 +226,12 @@ function createWorkspaceMainThreadRoutingService(deps = {}) {
     const purpose = classifyThreadPurpose(thread);
     if (purpose !== "workspace_main") return null;
     if (input.includeIneligible !== true && nonDeliverable) return null;
-    return publicMainThread(thread, { role, cwd: input.cwd });
+    return publicMainThread(thread, {
+      role,
+      cwd: bindingAlias ? bindingAlias.cwd : input.cwd,
+      bindingSource: bindingAlias ? bindingAlias.source : "",
+      originalCwd: bindingAlias ? bindingAlias.originalCwd : "",
+    });
   }
 
   function visibleCandidateMap(input = {}) {
@@ -297,5 +336,6 @@ module.exports = {
   isWorkspaceMainRole,
   normalizeContinuationLineageEntry,
   normalizeWorkspaceMainRole,
+  pathBasename,
   readContinuationLineageEntries,
 };
