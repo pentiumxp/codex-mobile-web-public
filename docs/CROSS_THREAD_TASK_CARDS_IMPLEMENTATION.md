@@ -50,7 +50,9 @@ layout and test strategy.
   - fallback `thread/turns/list` detail mode must still run task-card draft
     materialization before attaching visible cards
   - source-thread direct task-card route for model/tool initiated delegation
-  - app-server dynamic tool injection for Codex-thread initiated delegation
+  - Codex MCP server registration plus runtime fallback instructions for
+    Codex-thread initiated delegation; MCP-prefixed tools are not sent as
+    app-server `dynamicTools`
   - disabled compatibility route for the removed local cross-workspace
     delegation preflight
   - SSE/broadcast integration only
@@ -354,17 +356,21 @@ read back as `requestedReasoningEffort: high` with effective
 keep their requested or inherited reasoning policy unless another local policy
 explicitly changes it.
 
-Server-side `thread/start` and `turn/start` also receive the exact MCP-prefixed
-return tool:
+Task-card target turns also receive runtime guidance for the exact
+MCP-prefixed return tool:
 
 ```text
 mcp__codex_mobile.return_to_source
 ```
 
 This tool is independent of the `跨工作区委派` switch because it closes work that
-was already delivered to the current target thread. It requires the original
-`taskCardId`, a return title, and a Markdown body; the current thread id is
-inferred from app-server metadata or the recent turn/thread map when possible.
+was already delivered to the current target thread. It is provided by the
+registered Codex Mobile MCP server or by the documented script fallback; Mobile
+Web must not send `mcp__codex_mobile.*` as app-server `dynamicTools` because
+current app-server treats MCP-prefixed namespaces as reserved. The tool requires
+the original `taskCardId`, a return title, and a Markdown body; the current
+thread id is inferred from app-server metadata or the recent turn/thread map
+when possible.
 The server validates the target actor, allows return while the original card is
 `pending` or `approved`, creates the reverse-direction card through
 `threadTaskCardService.reply()`, and keeps retries idempotent. If actor
@@ -386,13 +392,13 @@ hidden, sub-agent, and non-detail-readable thread ids are rejected; exact
 self-cards to the source thread are rejected with `target_thread_self`.
 `targetCwd` / `targetWorkspace` remain fuzzy workspace targets and choose a
 current visible thread for that workspace. Completely invisible or unknown ids
-return `target_thread_not_visible`. This same guard applies to both the
-app-server dynamic tool and the `scripts/create-thread-task-card.js` fallback
-because both use `POST /api/threads/:sourceThreadId/task-cards`.
+return `target_thread_not_visible`. This same guard applies to both the MCP
+tool path and the `scripts/create-thread-task-card.js` fallback because both use
+`POST /api/threads/:sourceThreadId/task-cards`.
 
 The same runtime path appends a short developer-instruction fallback to
-`thread/start` and `turn/start`. If the app-server dynamic tool is not visible
-or not discoverable in a particular Codex surface, the source model should run:
+`thread/start` and `turn/start`. If the MCP tool is not visible or not
+discoverable in a particular Codex surface, the source model should run:
 
 ```bash
 node scripts/create-thread-task-card.js \

@@ -55,6 +55,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
   });
 
   let attachWorkspaceDelegationRuntimeGuidance = () => null;
+  let attachTaskCardRuntimeGuidance = () => null;
   let readThreadTaskCardExecutionTargetSummary = () => null;
   let atLoopRuntimeService = null;
 
@@ -296,6 +297,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
     normalizeSandboxPolicyType: dependencies.normalizeSandboxPolicyType,
     workspaceDelegationWriteGuardPermissionProfile: dependencies.workspaceDelegationWriteGuardPermissionProfile,
     attachWorkspaceDelegationRuntimeGuidance: (...args) => attachWorkspaceDelegationRuntimeGuidance(...args),
+    attachTaskCardRuntimeGuidance: (...args) => attachTaskCardRuntimeGuidance(...args),
     readStateDbThread: dependencies.readStateDbThread,
     readStartedThread: dependencies.readStartedThread,
     readRolloutSessionFallbackThread: dependencies.readRolloutSessionFallbackThread,
@@ -376,7 +378,9 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
       const turnParams = applyTurnRuntimeSettings({
         threadId: card.target.threadId,
         input: [{ type: "text", text: message.text }],
-      }, runtimeSettings);
+      }, runtimeSettings, {
+        taskCardRuntimeGuidance: true,
+      });
       const result = await dependencies.codex.request("turn/start", turnParams, {
         timeoutMs: dependencies.mutationRpcTimeoutMs,
         retry: false,
@@ -448,6 +452,7 @@ function createThreadTaskCardRuntimeService(dependencies = {}) {
   });
 
   attachWorkspaceDelegationRuntimeGuidance = threadTaskCardRouteService.attachWorkspaceDelegationRuntimeGuidance;
+  attachTaskCardRuntimeGuidance = threadTaskCardRouteService.attachTaskCardRuntimeGuidance;
   readThreadTaskCardExecutionTargetSummary = threadTaskCardRouteService.readThreadTaskCardExecutionTargetSummary;
 
   async function createLoopRoleThread(input = {}) {

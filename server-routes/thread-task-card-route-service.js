@@ -319,22 +319,15 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       : [];
   }
 
+  function attachWorkspaceDelegationDynamicTools(params, settings = readRuntimeSettings()) {
+    void settings;
+    // Deprecated compatibility helper: app-server dynamicTools cannot carry MCP-prefixed namespaces.
+    return params;
+  }
+
   function attachTaskCardRuntimeDynamicTools(params, settings = readRuntimeSettings()) {
-    if (!params || typeof params !== "object") return params;
-    const tools = taskCardRuntimeDynamicTools(settings);
-    if (!tools.length) return params;
-    const existing = Array.isArray(params.dynamicTools)
-      ? params.dynamicTools.filter(Boolean)
-      : params.dynamicTools ? [params.dynamicTools] : [];
-    const seen = new Set(existing.map((tool) => `${tool && tool.namespace || ""}.${tool && tool.name || ""}`));
-    for (const tool of tools) {
-      const key = `${tool.namespace}.${tool.name}`;
-      if (!seen.has(key)) {
-        existing.push(tool);
-        seen.add(key);
-      }
-    }
-    params.dynamicTools = existing;
+    void settings;
+    // Deprecated compatibility helper: terminal return tools are exposed through MCP server/fallback only.
     return params;
   }
 
@@ -380,7 +373,19 @@ function createThreadTaskCardRouteService(dependencies = {}) {
   }
 
   function attachWorkspaceDelegationRuntimeGuidance(params, settings = readRuntimeSettings()) {
-    attachTaskCardRuntimeDynamicTools(params, settings);
+    // MCP-prefixed Codex Mobile tools are provided by the registered MCP server, not app-server dynamicTools.
+    if (workspaceDelegationSettings(settings).enabled) {
+      appendDeveloperInstructions(
+        params,
+        workspaceDelegationScriptFallbackInstruction(params),
+        "Codex Mobile cross-thread delegation fallback:",
+      );
+    }
+    return params;
+  }
+
+  function attachTaskCardRuntimeGuidance(params, settings = readRuntimeSettings()) {
+    // Keep terminal-return guidance out of app-server dynamicTools; MCP namespaces are reserved there.
     appendDeveloperInstructions(
       params,
       taskCardReturnScriptFallbackInstruction(params),
@@ -1648,6 +1653,8 @@ function createThreadTaskCardRouteService(dependencies = {}) {
     applyHomeAiDeployLaneRoutingPolicy,
     assertThreadTaskCardTargetDeliverable,
     attachTaskCardRuntimeDynamicTools,
+    attachTaskCardRuntimeGuidance,
+    attachWorkspaceDelegationDynamicTools,
     attachWorkspaceDelegationRuntimeGuidance,
     buildThreadTaskCardCreatePayload,
     createThreadTaskCardsFromSourceThread,

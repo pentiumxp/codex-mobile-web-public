@@ -66,6 +66,9 @@ function createTaskCardRuntimePolicyService(options = {}) {
   const attachWorkspaceDelegationRuntimeGuidance = typeof options.attachWorkspaceDelegationRuntimeGuidance === "function"
     ? options.attachWorkspaceDelegationRuntimeGuidance
     : () => {};
+  const attachTaskCardRuntimeGuidance = typeof options.attachTaskCardRuntimeGuidance === "function"
+    ? options.attachTaskCardRuntimeGuidance
+    : attachWorkspaceDelegationRuntimeGuidance;
   const readStateDbThread = typeof options.readStateDbThread === "function" ? options.readStateDbThread : () => null;
   const readStartedThread = typeof options.readStartedThread === "function" ? options.readStartedThread : () => null;
   const readRolloutSessionFallbackThread = typeof options.readRolloutSessionFallbackThread === "function"
@@ -313,7 +316,8 @@ function createTaskCardRuntimePolicyService(options = {}) {
 
   function applyStartThreadRuntimeSettings(params, settings, applyOptions = {}) {
     if (!applyOptions.skipWorkspaceDelegationRuntimeGuidance) {
-      attachWorkspaceDelegationRuntimeGuidance(params);
+      if (applyOptions.taskCardRuntimeGuidance) attachTaskCardRuntimeGuidance(params);
+      else attachWorkspaceDelegationRuntimeGuidance(params);
     }
     if (settings) {
       if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
@@ -328,8 +332,9 @@ function createTaskCardRuntimePolicyService(options = {}) {
     return applyWorkspaceDelegationRuntimeGuard(params, settings, { useSandboxPolicy: false });
   }
 
-  function applyTurnRuntimeSettings(params, settings) {
-    attachWorkspaceDelegationRuntimeGuidance(params);
+  function applyTurnRuntimeSettings(params, settings, applyOptions = {}) {
+    if (applyOptions.taskCardRuntimeGuidance) attachTaskCardRuntimeGuidance(params);
+    else attachWorkspaceDelegationRuntimeGuidance(params);
     if (settings) {
       if (settings.approvalPolicy) params.approvalPolicy = settings.approvalPolicy;
       if (settings.sandboxPolicy) params.sandboxPolicy = settings.sandboxPolicy;

@@ -318,9 +318,14 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolBody"), /body\.autoApprove = true/);
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolBody"), /body\.pending = false/);
   assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "workspaceDelegationDynamicToolBody"), /params\.callId \|\| params\.call_id/);
-  assert.match(functionBody(taskCardRouteServiceJs, "attachWorkspaceDelegationRuntimeGuidance"), /attachTaskCardRuntimeDynamicTools\(params, settings\)/);
-  assert.match(functionBody(taskCardRouteServiceJs, "attachWorkspaceDelegationRuntimeGuidance"), /taskCardReturnScriptFallbackInstruction\(params\)/);
+  assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "attachWorkspaceDelegationRuntimeGuidance"), /attachWorkspaceDelegationDynamicTools\(params, settings\)/);
+  assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "attachWorkspaceDelegationRuntimeGuidance"), /params\.dynamicTools|DynamicTools\(params/);
+  assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "attachWorkspaceDelegationRuntimeGuidance"), /taskCardReturnScriptFallbackInstruction\(params\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "attachWorkspaceDelegationRuntimeGuidance"), /workspaceDelegationScriptFallbackInstruction\(params\)/);
+  assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "attachTaskCardRuntimeGuidance"), /attachTaskCardRuntimeDynamicTools\(params, settings\)/);
+  assert.doesNotMatch(functionBody(taskCardRouteServiceJs, "attachTaskCardRuntimeGuidance"), /params\.dynamicTools|DynamicTools\(params/);
+  assert.match(functionBody(taskCardRouteServiceJs, "attachTaskCardRuntimeGuidance"), /taskCardReturnScriptFallbackInstruction\(params\)/);
+  assert.match(functionBody(taskCardRouteServiceJs, "attachTaskCardRuntimeGuidance"), /workspaceDelegationScriptFallbackInstruction\(params\)/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /return-thread-task-card\.js/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /local final answer in the target thread is not a source-thread return card/);
   assert.match(functionBody(taskCardRouteServiceJs, "taskCardReturnScriptFallbackInstruction"), /mcp__codex_mobile\.return_to_source/);
@@ -343,6 +348,7 @@ test("server exposes a thread-callable direct task-card interface", () => {
   assert.match(functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction"), /must not be used as a substitute/);
   assert.match(functionBody(taskCardRuntimePolicyServiceJs, "applyStartThreadRuntimeSettings"), /attachWorkspaceDelegationRuntimeGuidance\(params\)/);
   assert.match(functionBody(taskCardRuntimePolicyServiceJs, "applyTurnRuntimeSettings"), /attachWorkspaceDelegationRuntimeGuidance\(params\)/);
+  assert.match(functionBody(taskCardRuntimePolicyServiceJs, "applyTurnRuntimeSettings"), /attachTaskCardRuntimeGuidance\(params\)/);
   assert.match(functionBody(codexAppServerClientServiceJs, "sendRpc"), /const serializedPayload = JSON\.stringify\(payload\)/);
   assert.match(functionBody(codexAppServerClientServiceJs, "sendRpc"), /logWorkspaceDelegationRpc\(method, params\);[\s\S]*this\.ws\.send\(serializedPayload\)/);
   assert.match(functionBody(codexAppServerClientServiceJs, "handleServerRequest"), /msg\.method === "item\/tool\/call"[\s\S]*answerDynamicToolServerRequest\(request\)/);
@@ -464,6 +470,7 @@ test("approved task cards inherit target thread model and effort", () => {
   assert.match(setupBlock, /applyReasoningEffortFloor\(requestedRuntimeSettings, "xhigh"\)/);
   assert.match(setupBlock, /thread\/resume", applyResumeRuntimeSettings\(/);
   assert.match(setupBlock, /const turnParams = applyTurnRuntimeSettings\(/);
+  assert.match(setupBlock, /taskCardRuntimeGuidance: true/);
   assert.match(setupBlock, /codex\.request\("turn\/start", turnParams/);
   assert.match(setupBlock, /requestedReasoningEffort/);
   assert.match(setupBlock, /runtime:\s*\{[\s\S]*reasoningEffort: runtimeSettings\.reasoningEffort \|\| ""/);
@@ -808,6 +815,62 @@ test("workspace delegation RPC diagnostics are route-owned and bounded", () => {
   assert.equal(lines.length, 1);
   assert.match(lines[0], /^\[workspace-delegation-rpc\] /);
   assert.doesNotMatch(lines[0], /private body omitted/);
+});
+
+test("ordinary workspace delegation runtime guidance excludes task-card terminal tools for Windows cwd", () => {
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {},
+    workspaceDelegationPublicSettings: () => ({ enabled: true }),
+  });
+  const params = {
+    cwd: "C:\\Users\\xuxin\\Documents\\GMK-test",
+    developerInstructions: "ordinary new thread",
+  };
+
+  service.attachWorkspaceDelegationRuntimeGuidance(params);
+  const names = (params.dynamicTools || []).map((tool) => `${tool.namespace}.${tool.name}`);
+
+  assert.deepEqual(names, []);
+  assert.match(params.developerInstructions, /Codex Mobile cross-thread delegation fallback:/);
+  assert.match(params.developerInstructions, /mcp__codex_mobile\.delegate_to_thread/);
+  assert.doesNotMatch(params.developerInstructions, /Codex Mobile task-card return fallback:/);
+  assert.doesNotMatch(params.developerInstructions, /mcp__codex_mobile\.return_to_source/);
+  assert.doesNotMatch(params.developerInstructions, /mcp__codex_mobile\.task_card_heartbeat/);
+});
+
+test("task-card runtime guidance keeps terminal return fallback scoped without app-server dynamicTools", () => {
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {},
+    workspaceDelegationPublicSettings: () => ({ enabled: true }),
+  });
+  const params = {
+    threadId: "worker-thread",
+    developerInstructions: "received task-card turn",
+  };
+
+  service.attachTaskCardRuntimeGuidance(params);
+  service.attachTaskCardRuntimeGuidance(params);
+  const names = (params.dynamicTools || []).map((tool) => `${tool.namespace}.${tool.name}`);
+
+  assert.deepEqual(names, []);
+  assert.match(params.developerInstructions, /Codex Mobile task-card return fallback:/);
+  assert.match(params.developerInstructions, /mcp__codex_mobile\.return_to_source/);
+  assert.match(params.developerInstructions, /Codex Mobile cross-thread delegation fallback:/);
+});
+
+test("deprecated app-server dynamicTools attach helpers are no-ops for MCP-prefixed task-card tools", () => {
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {},
+    workspaceDelegationPublicSettings: () => ({ enabled: true }),
+  });
+  const workspaceParams = { dynamicTools: [] };
+  const taskCardParams = { dynamicTools: [] };
+
+  service.attachWorkspaceDelegationDynamicTools(workspaceParams);
+  service.attachTaskCardRuntimeDynamicTools(taskCardParams);
+
+  assert.deepEqual(workspaceParams.dynamicTools, []);
+  assert.deepEqual(taskCardParams.dynamicTools, []);
 });
 
 test("return_to_source dynamic tool prefers explicit target thread over app-server params thread", async () => {

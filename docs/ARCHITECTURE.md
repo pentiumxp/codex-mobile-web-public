@@ -715,29 +715,35 @@ when the runtime Settings switch `跨工作区委派` is enabled. With the defau
 configuration the route creates pending target cards. Passing
 `pending:true`, `autoApprove:false`, or `direct:false` keeps pending behavior
 even when the switch is enabled.
-When that same runtime switch is enabled, Mobile Web injects the exact
-MCP-prefixed task-card tool `mcp__codex_mobile.delegate_to_thread` into
-`thread/start` and `turn/start`. The model can call this tool after it determines that the
-current request belongs in another thread/workspace. When the tool is injected,
-its description is a mandatory model-visible boundary: cross-workspace
+When that same runtime switch is enabled, Mobile Web syncs the standard
+Codex Mobile MCP server and appends runtime guidance for the exact
+MCP-prefixed task-card tool `mcp__codex_mobile.delegate_to_thread` to
+`thread/start` and `turn/start`. It must not send `mcp__codex_mobile.*` through
+app-server `dynamicTools`; current app-server reserves MCP-prefixed namespaces.
+The model can call this MCP tool after it determines that the current request
+belongs in another thread/workspace. The tool description and runtime fallback
+guidance form a mandatory model-visible boundary: cross-workspace
 implementation, file edits, command execution, tests, deployments, and other
 mutations should create a task card before target-workspace work, not directly
 `cd`, inspect, edit, patch, test, deploy, or mutate the target workspace from
-the current thread. This dynamic-tool path is fixed to source-thread direct
-approval while the switch is enabled; a model-supplied `pending:true` is ignored
-for this path so free delegation cannot create target-side Pending cards.
+the current thread. This MCP path is fixed to source-thread direct approval
+while the switch is enabled; a model-supplied `pending:true` is ignored for this
+path so free delegation cannot create target-side Pending cards.
 If a guarded local attempt fails with sandbox, permission, cwd, or
 approval-policy errors, the server still does not create a card from the log.
-The source model must evaluate the failure in context and call the dynamic tool
+The source model must evaluate the failure in context and call the MCP tool
 itself, so the delegated task keeps the originating thread's intent and
 evidence.
-Server-side handling of `item/tool/call` resolves the source thread from
-app-server metadata or the recent turn/thread map, resolves the target by exact
-thread id/title/cwd, and then calls the same source-thread task-card helper.
-Separately, Mobile Web injects `mcp__codex_mobile.return_to_source` for task-card
-target turns. This return tool is independent of the workspace-delegation
-switch because it closes an already received card; it validates the original
-`Task card id`, the target actor thread, and the return body before calling
+Server-side handling of legacy `item/tool/call` dynamic-tool requests resolves
+the source thread from app-server metadata or the recent turn/thread map,
+resolves the target by exact thread id/title/cwd, and then calls the same
+source-thread task-card helper, but ordinary runtime payloads no longer attach
+MCP-prefixed dynamic tools.
+Separately, Mobile Web adds `mcp__codex_mobile.return_to_source` guidance for
+task-card target turns. This return tool is independent of the
+workspace-delegation switch because it closes an already received card; it
+validates the original `Task card id`, the target actor thread, and the return
+body before calling
 `threadTaskCardService.reply()`. Return cards with `returnToSource:true` are
 source-direct approved into the original source thread and do not require a
 second source-thread approval. They are terminal receipts, not target-side

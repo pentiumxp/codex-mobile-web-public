@@ -304,12 +304,12 @@ test("server runtime inheritance includes model and reasoning effort", () => {
   assert.match(settingsBody, /model,\s*reasoningEffort,/, "runtime settings response should expose inherited model and effort");
 
   const startBody = functionBody(taskCardRuntimePolicyServiceJs, "applyStartThreadRuntimeSettings");
-  assert.match(startBody, /attachWorkspaceDelegationRuntimeGuidance\(params\)/, "thread/start should receive workspace delegation dynamic tools and script fallback guidance when enabled");
+  assert.match(startBody, /attachWorkspaceDelegationRuntimeGuidance\(params\)/, "thread/start should receive workspace delegation guidance when enabled");
   assert.match(startBody, /if \(settings\.model\) params\.model = settings\.model;/, "thread/start should inherit model");
   assert.match(startBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: false \}\)/, "thread/start should enforce workspace delegation write guard");
 
   const turnBody = functionBody(taskCardRuntimePolicyServiceJs, "applyTurnRuntimeSettings");
-  assert.match(turnBody, /attachWorkspaceDelegationRuntimeGuidance\(params\)/, "turn/start should receive workspace delegation dynamic tools and script fallback guidance when enabled");
+  assert.match(turnBody, /attachWorkspaceDelegationRuntimeGuidance\(params\)/, "turn/start should receive workspace delegation guidance when enabled");
   assert.match(turnBody, /if \(settings\.model\) params\.model = settings\.model;/, "turn/start should inherit model");
   assert.match(turnBody, /if \(settings\.reasoningEffort\) params\.effort = settings\.reasoningEffort;/, "turn/start should inherit reasoning effort");
   assert.match(turnBody, /applyWorkspaceDelegationRuntimeGuard\(params, settings, \{ useSandboxPolicy: true \}\)/, "turn/start should enforce workspace delegation write guard");
@@ -381,9 +381,10 @@ test("server runtime inheritance includes model and reasoning effort", () => {
 
   const guidanceBody = functionBody(taskCardRouteServiceJs, "attachWorkspaceDelegationRuntimeGuidance");
   assert.match(taskCardRouteAdapterJs, /require\("\.\.\/server-routes\/thread-task-card-route-service"\)/, "adapter should remain a compatibility re-export");
-  assert.match(guidanceBody, /attachTaskCardRuntimeDynamicTools\(params, settings\)/, "runtime guidance should preserve dynamic tool injection");
+  assert.doesNotMatch(guidanceBody, /attachWorkspaceDelegationDynamicTools\(params, settings\)/, "ordinary runtime guidance must not send MCP-prefixed tools as app-server dynamicTools");
+  assert.doesNotMatch(guidanceBody, /params\.dynamicTools|DynamicTools\(params/, "ordinary runtime guidance must avoid the reserved MCP dynamicTools namespace");
+  assert.doesNotMatch(guidanceBody, /taskCardReturnScriptFallbackInstruction\(params\)/, "ordinary runtime guidance must not expose return_to_source fallback");
   assert.match(guidanceBody, /appendDeveloperInstructions\(/, "runtime guidance should add model-visible fallback instructions");
-  assert.match(guidanceBody, /taskCardReturnScriptFallbackInstruction\(params\)/, "runtime guidance should include the local return-card script fallback");
   assert.match(guidanceBody, /workspaceDelegationScriptFallbackInstruction\(params\)/, "runtime guidance should include the local task-card script fallback");
 
   const fallbackBody = functionBody(taskCardRouteServiceJs, "workspaceDelegationScriptFallbackInstruction");

@@ -107,6 +107,25 @@ test("task-card runtime policy applies reasoning effort to resume and turn param
   assert.equal(turnParams.effort, "xhigh");
 });
 
+test("task-card runtime policy scopes terminal guidance to explicit task-card turns", () => {
+  const service = createService({
+    attachWorkspaceDelegationRuntimeGuidance: (params) => {
+      params.guidance = "delegation";
+    },
+    attachTaskCardRuntimeGuidance: (params) => {
+      params.guidance = "task-card-terminal";
+    },
+  });
+
+  const ordinaryStart = service.applyStartThreadRuntimeSettings({}, {});
+  const ordinaryTurn = service.applyTurnRuntimeSettings({}, {});
+  const taskCardTurn = service.applyTurnRuntimeSettings({}, {}, { taskCardRuntimeGuidance: true });
+
+  assert.equal(ordinaryStart.guidance, "delegation");
+  assert.equal(ordinaryTurn.guidance, "delegation");
+  assert.equal(taskCardTurn.guidance, "task-card-terminal");
+});
+
 test("task-card runtime policy keeps source-thread cwd before command cwd in approval guard", () => {
   const source = tempProjectRoot("source");
   const foreign = tempProjectRoot("foreign");
