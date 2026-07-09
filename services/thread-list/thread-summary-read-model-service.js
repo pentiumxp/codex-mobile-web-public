@@ -4,6 +4,10 @@ function createThreadSummaryReadModelService(options = {}) {
   const fs = options.fs || require("node:fs");
   const path = options.path || require("node:path");
   const codexHome = String(options.codexHome || "");
+  const globalStateFiles = uniqueStrings([
+    path.join(codexHome, ".codex-global-state.json"),
+    ...(Array.isArray(options.globalStateFiles) ? options.globalStateFiles : []),
+  ]);
   const maxStartThreadDeveloperInstructionsChars = Math.max(0, Number(options.maxStartThreadDeveloperInstructionsChars || 0));
   const startedThreadCacheTtlMs = Math.max(0, Number(options.startedThreadCacheTtlMs || 0));
   const startedThreadCacheMax = Math.max(1, Number(options.startedThreadCacheMax || 80));
@@ -30,13 +34,61 @@ function createThreadSummaryReadModelService(options = {}) {
   const logger = options.logger || console;
   const now = typeof options.now === "function" ? options.now : Date.now;
 
-  function readGlobalState() {
-    const file = path.join(codexHome, ".codex-global-state.json");
+  function uniqueStrings(values) {
+    const seen = new Set();
+    const result = [];
+    for (const value of Array.isArray(values) ? values : []) {
+      const text = String(value || "").trim();
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      result.push(text);
+    }
+    return result;
+  }
+
+  function mergeGlobalStateValue(current, next) {
+    if (Array.isArray(next)) {
+      const values = Array.isArray(current) ? current.slice() : [];
+      for (const value of next) {
+        if (values.includes(value)) continue;
+        values.push(value);
+      }
+      return values;
+    }
+    if (
+      next
+      && typeof next === "object"
+      && !Array.isArray(next)
+      && current
+      && typeof current === "object"
+      && !Array.isArray(current)
+    ) {
+      return Object.assign({}, current, next);
+    }
+    return next;
+  }
+
+  function mergeGlobalStateEntries(entries) {
+    const merged = {};
+    for (const entry of Array.isArray(entries) ? entries : []) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      for (const [key, value] of Object.entries(entry)) {
+        merged[key] = mergeGlobalStateValue(merged[key], value);
+      }
+    }
+    return merged;
+  }
+
+  function readGlobalStateFile(file) {
     try {
       return JSON.parse(fs.readFileSync(file, "utf8"));
     } catch (_) {
       return {};
     }
+  }
+
+  function readGlobalState() {
+    return mergeGlobalStateEntries(globalStateFiles.map(readGlobalStateFile));
   }
 
   function rememberProjectlessThreadId(threadId) {

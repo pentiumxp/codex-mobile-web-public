@@ -64,6 +64,37 @@ test("thread-summary read model owns projectless thread ids in global state", ()
   assert.equal(writes[writes.length - 1].file, path.join(tmpDir, ".codex-global-state.json"));
 });
 
+test("thread-summary read model merges current-user desktop global state files", () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "thread-summary-global-state-"));
+  const mobileHome = path.join(tmpDir, "mobile-codex");
+  const desktopHome = path.join(tmpDir, "desktop-codex");
+  const mobileFile = path.join(mobileHome, ".codex-global-state.json");
+  const desktopFile = path.join(desktopHome, ".codex-global-state.json");
+  const windowsWorkspace = "C:\\Users\\codex\\Documents\\GMK-test";
+  fs.mkdirSync(mobileHome, { recursive: true });
+  fs.mkdirSync(desktopHome, { recursive: true });
+  fs.writeFileSync(mobileFile, JSON.stringify({
+    "active-workspace-roots": ["/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web"],
+    "projectless-thread-ids": ["mobile-thread"],
+  }));
+  fs.writeFileSync(desktopFile, JSON.stringify({
+    "electron-saved-workspace-roots": [windowsWorkspace],
+    "project-order": [windowsWorkspace],
+    "projectless-thread-ids": ["desktop-thread", "mobile-thread"],
+  }));
+
+  const { service } = createService({
+    codexHome: mobileHome,
+    globalStateFiles: [desktopFile],
+  });
+  const state = service.readGlobalState();
+
+  assert.deepEqual(state["active-workspace-roots"], ["/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web"]);
+  assert.deepEqual(state["electron-saved-workspace-roots"], [windowsWorkspace]);
+  assert.deepEqual(state["project-order"], [windowsWorkspace]);
+  assert.deepEqual(state["projectless-thread-ids"], ["mobile-thread", "desktop-thread"]);
+});
+
 test("thread-summary read model reads AGENTS.md chain for start-thread developer instructions", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "thread-summary-agents-"));
   const nested = path.join(root, "a", "b");

@@ -25,6 +25,34 @@ function makeTempService() {
   return { root, projectRoot, service };
 }
 
+function makeMemoryFs(existingDirs = new Set()) {
+  const files = new Map();
+  return {
+    files,
+    mkdirSync() {},
+    chmodSync() {},
+    readFileSync(file) {
+      if (!files.has(file)) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      return files.get(file);
+    },
+    writeFileSync(file, value) {
+      files.set(file, String(value));
+    },
+    renameSync(from, to) {
+      if (!files.has(from)) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      files.set(to, files.get(from));
+      files.delete(from);
+    },
+    rmSync(file) {
+      files.delete(file);
+    },
+    statSync(file) {
+      if (!existingDirs.has(file)) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+      return { isDirectory: () => true };
+    },
+  };
+}
+
 test("remote managed workspace settings persist masked readback and separate token secret", () => {
   const { root, projectRoot, service } = makeTempService();
   try {
@@ -178,4 +206,49 @@ test("remote managed workspace settings auto-generate remote node fields from wo
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("remote managed workspace settings persist central URL while disabled", () => {
+  const { root, service } = makeTempService();
+  try {
+    const saved = service.saveSettings({
+      centralUrl: "http://127.0.0.1:8797/",
+    });
+
+    assert.equal(saved.enabled, false);
+    assert.equal(saved.centralUrl, "http://127.0.0.1:8797");
+    assert.equal(saved.connectionStatus, "disconnected");
+    assert.equal(service.publicSettings().centralUrl, "http://127.0.0.1:8797");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote managed workspace settings auto-generate Windows remote node fields from workspace row", () => {
+  const windowsWorkspace = "C:\\Users\\codex\\Documents\\GMK-test";
+  const memoryFs = makeMemoryFs(new Set([windowsWorkspace]));
+  const service = createRemoteManagedWorkspaceSettingsService({
+    fs: memoryFs,
+    path: path.win32,
+    settingsFile: "C:\\state\\rmw-settings.json",
+    stateFile: "C:\\state\\rmw-state.json",
+    enrollmentTokenFile: "C:\\state\\secret\\enrollment-token",
+    now: () => new Date("2026-07-08T00:00:00.000Z"),
+  });
+
+  const status = service.enableWorkspace({
+    centralUrl: "http://127.0.0.1:8797",
+    workspace: {
+      cwd: windowsWorkspace,
+      label: "GMK-test",
+    },
+  });
+
+  assert.equal(status.enabled, true);
+  assert.equal(status.centralUrl, "http://127.0.0.1:8797");
+  assert.equal(status.projectRoot, windowsWorkspace);
+  assert.equal(status.allowedRoot, windowsWorkspace);
+  assert.match(status.workspaceId, /^rmw_gmk-test_[a-f0-9]{12}$/);
+  assert.match(status.nodeName, /^[a-z0-9._-]+_gmk-test_[a-f0-9]{8}$/);
+  assert.equal(status.issueCodes.includes("enrollment_token_required"), true);
 });

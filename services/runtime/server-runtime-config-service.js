@@ -318,6 +318,11 @@ function createServerRuntimeConfigService(dependencies = {}) {
       WORKSPACE_DEFAULT_CREATE_ROOT: env.CODEX_MOBILE_WORKSPACE_DEFAULT_CREATE_ROOT
         || detectDevelopmentWorkspaceRoot(appRoot),
       SYNC_DESKTOP_WORKSPACES: boolFlag(env.CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES),
+      DESKTOP_GLOBAL_STATE_READ_FILES: uniqueStrings([
+        env.CODEX_MOBILE_DESKTOP_GLOBAL_STATE_FILE || "",
+        path.join(DEFAULT_CODEX_HOME, ".codex-global-state.json"),
+        path.join(CODEX_HOME, ".codex-global-state.json"),
+      ]),
       DESKTOP_GLOBAL_STATE_FILES: boolFlag(env.CODEX_MOBILE_SYNC_DESKTOP_WORKSPACES)
         ? uniqueStrings([
           env.CODEX_MOBILE_DESKTOP_GLOBAL_STATE_FILE || "",

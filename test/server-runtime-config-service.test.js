@@ -139,7 +139,26 @@ test("server runtime config keeps duplicate desktop global state files unique", 
     codexHome: "/home/tester/.codex",
   });
 
+  assert.deepEqual(config.DESKTOP_GLOBAL_STATE_READ_FILES, [
+    "/home/tester/.codex/.codex-global-state.json",
+  ]);
   assert.deepEqual(config.DESKTOP_GLOBAL_STATE_FILES, [
     "/home/tester/.codex/.codex-global-state.json",
   ]);
+});
+
+test("server runtime config reads current-user desktop global state without enabling sync writes", () => {
+  const config = createConfig({
+    env: {
+      CODEX_MOBILE_DESKTOP_GLOBAL_STATE_FILE: "/home/tester/.codex-desktop/.codex-global-state.json",
+    },
+    codexHome: "/runtime/active-codex",
+  });
+
+  assert.deepEqual(config.DESKTOP_GLOBAL_STATE_READ_FILES, [
+    "/home/tester/.codex-desktop/.codex-global-state.json",
+    "/home/tester/.codex/.codex-global-state.json",
+    "/runtime/active-codex/.codex-global-state.json",
+  ]);
+  assert.deepEqual(config.DESKTOP_GLOBAL_STATE_FILES, []);
 });

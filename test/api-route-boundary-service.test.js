@@ -233,6 +233,38 @@ test("workspace route reconciles selector rows with shared workspace snapshot", 
   ]);
 });
 
+test("workspace route exposes Windows desktop workspace rows for RMW selector", async () => {
+  const sent = [];
+  const windowsWorkspace = "C:\\Users\\codex\\Documents\\GMK-test";
+  const service = createWorkspaceRouteService({
+    listWorkspaces: async () => [{
+      cwd: windowsWorkspace,
+      label: "GMK-test",
+      active: false,
+      recentThreadCount: 0,
+      source: "codex",
+    }],
+    tokenUsageWorkspaceCwds: () => [windowsWorkspace],
+    normalizeFsPath: (value) => String(value || "")
+      .replace(/^\\\\\?\\/, "")
+      .replace(/[\\/]+/g, "\\")
+      .replace(/\\+$/, "")
+      .toLowerCase(),
+  });
+
+  const result = await service.handleRoute({
+    url: routeUrl("/api/workspaces"),
+    method: "GET",
+    sendJson: (status, body) => sent.push({ status, body }),
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(sent[0].status, 200);
+  assert.deepEqual(sent[0].body.data.map((row) => [row.cwd, row.source]), [
+    [windowsWorkspace, "codex"],
+  ]);
+});
+
 test("continuation route creates and reads public jobs", async () => {
   const service = createThreadContinuationRouteService({
     createContinuationJob: (body) => ({ id: "job-1", body }),

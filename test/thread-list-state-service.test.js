@@ -220,3 +220,22 @@ test("thread-list state service token workspace snapshot combines visible and re
 
   assert.deepEqual(service.tokenUsageWorkspaceCwds(), ["/visible/a", "/visible/b", "/registered/c"]);
 });
+
+test("thread-list state service lists Windows desktop global-state workspace roots", async () => {
+  const windowsWorkspace = "C:\\Users\\codex\\Documents\\GMK-test";
+  const service = createThreadListStateService({
+    readGlobalState: () => ({
+      "electron-saved-workspace-roots": [windowsWorkspace],
+    }),
+    visibleWorkspaceRoots: (globalState) => new Set(globalState["electron-saved-workspace-roots"] || []),
+    workspaceRegistryService: { list: () => [] },
+    normalizeFsPath,
+    requestThreadList: async () => ({ data: [] }),
+  });
+
+  const rows = await service.listWorkspaces();
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].cwd, windowsWorkspace);
+  assert.equal(rows[0].source, "codex");
+});

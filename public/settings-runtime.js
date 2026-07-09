@@ -2437,6 +2437,18 @@ function remoteManagedWorkspaceConfigFromResult(result) {
   return result && (result.remoteManagedWorkspace || result.status || result.remoteManagedWorkspaceStatus) || null;
 }
 
+function remoteManagedWorkspaceComparableCentralUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const url = new URL(raw);
+    url.hash = "";
+    return url.toString().replace(/\/+$/, "");
+  } catch (_) {
+    return raw.replace(/\/+$/, "");
+  }
+}
+
 async function loadRemoteManagedWorkspaceSettings() {
   const result = await api("/api/settings/remote-managed-workspace", { timeoutMs: 12000 });
   try {
@@ -2451,6 +2463,18 @@ async function handleRemoteManagedWorkspaceSettingsClick(event) {
   const button = event.target.closest("[data-rmw-action]");
   if (!button || button.disabled || state.remoteManagedWorkspaceBusy) return;
   const action = button.getAttribute("data-rmw-action") || "";
+  const workspaceCwd = button.getAttribute("data-rmw-workspace-cwd") || "";
+  const workspace = workspaceCwd
+    ? (state.workspaces || []).find((item) => remoteManagedWorkspacePathKey(item && item.cwd) === remoteManagedWorkspacePathKey(workspaceCwd)) || { cwd: workspaceCwd }
+    : null;
+  const formPayload = remoteManagedWorkspaceFormPayload();
+  const expectedCentralUrl = remoteManagedWorkspaceComparableCentralUrl(formPayload.centralUrl);
+  if ((action === "save-central" || action === "enable-workspace") && !expectedCentralUrl) {
+    const error = new Error("中央服务器地址不能为空");
+    showError(error);
+    $("connectionState").textContent = error.message;
+    return;
+  }
   const endpoint = action === "save" || action === "save-central"
     ? "/api/settings/remote-managed-workspace"
     : action === "enable-workspace" || action === "disable-workspace"
@@ -2466,19 +2490,14 @@ async function handleRemoteManagedWorkspaceSettingsClick(event) {
   state.remoteManagedWorkspaceBusy = true;
   renderRemoteManagedWorkspaceSettings();
   try {
-    const workspaceCwd = button.getAttribute("data-rmw-workspace-cwd") || "";
-    const workspace = workspaceCwd
-      ? (state.workspaces || []).find((item) => remoteManagedWorkspacePathKey(item && item.cwd) === remoteManagedWorkspacePathKey(workspaceCwd)) || { cwd: workspaceCwd }
-      : null;
     let body = "{}";
     if (action === "save" || action === "save-central") {
-      body = JSON.stringify(remoteManagedWorkspaceFormPayload());
+      body = JSON.stringify(formPayload);
     } else if (action === "enable-workspace" || action === "disable-workspace") {
-      const payload = remoteManagedWorkspaceFormPayload();
       body = JSON.stringify({
         action: action === "disable-workspace" ? "disable" : "enable",
-        centralUrl: payload.centralUrl,
-        enrollmentToken: payload.enrollmentToken,
+        centralUrl: formPayload.centralUrl,
+        enrollmentToken: formPayload.enrollmentToken,
         workspace,
       });
     }
@@ -2487,8 +2506,19 @@ async function handleRemoteManagedWorkspaceSettingsClick(event) {
       body,
       timeoutMs: 20000,
     });
-    rememberRemoteManagedWorkspaceConfig(remoteManagedWorkspaceConfigFromResult(result));
-    $("connectionState").textContent = "Remote Managed Workspace 已更新";
+    let config = remoteManagedWorkspaceConfigFromResult(result);
+    rememberRemoteManagedWorkspaceConfig(config);
+    if (action === "save" || action === "save-central" || action === "enable-workspace" || action === "disable-workspace") {
+      const readback = await loadRemoteManagedWorkspaceSettings();
+      config = remoteManagedWorkspaceConfigFromResult(readback) || config;
+    }
+    if (action === "save-central") {
+      const actualCentralUrl = remoteManagedWorkspaceComparableCentralUrl(config && config.centralUrl);
+      if (actualCentralUrl !== expectedCentralUrl) {
+        throw new Error("Remote Managed Workspace 保存读回失败");
+      }
+    }
+    $("connectionState").textContent = "Remote Managed Workspace 已保存";
   } catch (err) {
     showError(err);
     $("connectionState").textContent = err.message || "Remote Managed Workspace 设置失败";
