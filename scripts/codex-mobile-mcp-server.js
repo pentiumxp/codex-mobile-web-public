@@ -9,6 +9,9 @@ const {
   normalizeSecretRefsFromInput,
   publicSensitiveContext,
 } = require("../services/runtime/home-ai-secret-ref-service");
+const {
+  createRemoteManagedWorkspaceControlClientService,
+} = require("../services/remote-managed-workspaces/remote-managed-workspace-control-client-service");
 
 const PROTOCOL_VERSION = "2024-11-05";
 const SERVER_NAME = "codex_mobile";
@@ -17,12 +20,17 @@ function parseArgs(argv = process.argv.slice(2)) {
   const out = {
     server: process.env.CODEX_MOBILE_BASE_URL || "http://127.0.0.1:8787",
     keyFile: process.env.CODEX_MOBILE_KEY_FILE || path.join(os.homedir(), ".codex-mobile-web", "access_key"),
+    rmwControlUrl: process.env.CODEX_MOBILE_RMW_CONTROL_URL || process.env.HOME_AI_RMW_CONTROL_URL || "",
+    rmwControlTokenFile: process.env.CODEX_MOBILE_RMW_CONTROL_TOKEN_FILE || process.env.HOME_AI_RMW_CONTROL_TOKEN_FILE || "",
+    rmwControlToken: process.env.CODEX_MOBILE_RMW_CONTROL_TOKEN || process.env.HOME_AI_RMW_CONTROL_TOKEN || "",
     selfTestToolsList: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--server") out.server = argv[++index] || "";
     else if (arg === "--key-file") out.keyFile = argv[++index] || "";
+    else if (arg === "--rmw-control-url") out.rmwControlUrl = argv[++index] || "";
+    else if (arg === "--rmw-control-token-file") out.rmwControlTokenFile = argv[++index] || "";
     else if (arg === "--self-test-tools-list" || arg === "--list-tools") out.selfTestToolsList = true;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
@@ -41,6 +49,9 @@ function printHelp() {
     "Options:",
     "  --server <url>             Codex Mobile server. Default: http://127.0.0.1:8787",
     "  --key-file <path>          Access key file. Default: $HOME/.codex-mobile-web/access_key",
+    "  --rmw-control-url <url>    Home AI RMW control base URL.",
+    "  --rmw-control-token-file <path>",
+    "                             Scoped RMW control token file. Token is never printed.",
     "  --self-test-tools-list     Print bounded tool names and exit.",
   ].join("\n") + "\n");
 }
@@ -63,10 +74,23 @@ function readAccessKey(file) {
   return key;
 }
 
+function readOptionalSecret(file) {
+  const target = String(file || "").trim();
+  if (!target) return "";
+  try {
+    return fs.readFileSync(target, "utf8").trim();
+  } catch (_) {
+    return "";
+  }
+}
+
 function createContext(args = {}) {
   return {
     server: normalizeBaseUrl(args.server),
     key: readAccessKey(args.keyFile),
+    rmwControlUrl: args.rmwControlUrl ? normalizeBaseUrl(args.rmwControlUrl) : "",
+    rmwControlToken: String(args.rmwControlToken || readOptionalSecret(args.rmwControlTokenFile) || "").trim(),
+    rmwControlClient: createRemoteManagedWorkspaceControlClientService(),
   };
 }
 
@@ -259,6 +283,52 @@ function toolsList() {
         },
       },
       { readOnlyHint: false, destructiveHint: false, openWorldHint: false, idempotentHint: true },
+    ),
+    tool(
+      "rmw_list_workspaces",
+      "List bounded Remote Managed Workspaces through the Home AI scoped control API. Returns metadata only and never raw credentials or task bodies.",
+      {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          centralUrl: { type: "string", maxLength: 1000 },
+        },
+      },
+      { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
+    ),
+    tool(
+      "rmw_dispatch_task_card",
+      "Dispatch one bounded task card to a Remote Managed Workspace through the Home AI scoped control API.",
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["workspaceId", "title", "bodyMarkdown", "idempotencyKey"],
+        properties: {
+          centralUrl: { type: "string", maxLength: 1000 },
+          workspaceId: { type: "string", minLength: 1, maxLength: 180 },
+          title: { type: "string", minLength: 1, maxLength: 180 },
+          summary: { type: "string", maxLength: 500 },
+          bodyMarkdown: { type: "string", minLength: 1, maxLength: 4000 },
+          idempotencyKey: { type: "string", minLength: 1, maxLength: 180 },
+          reasoningEffort: { type: "string", enum: ["low", "medium", "high", "xhigh"] },
+        },
+      },
+      { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: true },
+    ),
+    tool(
+      "rmw_read_task_card",
+      "Read bounded lifecycle status for a Remote Managed Workspace task card. Returns terminal status and summary only, not raw return bodies or logs.",
+      {
+        type: "object",
+        additionalProperties: false,
+        required: ["workspaceId", "taskCardId"],
+        properties: {
+          centralUrl: { type: "string", maxLength: 1000 },
+          workspaceId: { type: "string", minLength: 1, maxLength: 180 },
+          taskCardId: { type: "string", minLength: 1, maxLength: 180 },
+        },
+      },
+      { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
     ),
   ];
 }
@@ -612,6 +682,25 @@ async function threadLifecycle(context, args = {}) {
   };
 }
 
+function rmwControlConfig(context, args = {}) {
+  return {
+    centralUrl: boundedString(args.centralUrl || context.rmwControlUrl, "central_url", 1000, true),
+    controlToken: boundedString(context.rmwControlToken, "rmw_control_credential", 4096, true),
+  };
+}
+
+async function rmwListWorkspaces(context, args = {}) {
+  return context.rmwControlClient.listWorkspaces(rmwControlConfig(context, args));
+}
+
+async function rmwDispatchTaskCard(context, args = {}) {
+  return context.rmwControlClient.dispatchTaskCard(rmwControlConfig(context, args), args);
+}
+
+async function rmwReadTaskCard(context, args = {}) {
+  return context.rmwControlClient.readTaskCard(rmwControlConfig(context, args), args);
+}
+
 async function handleMessage(context, message = {}) {
   const method = String(message.method || "");
   if (method === "initialize") {
@@ -628,6 +717,7 @@ async function handleMessage(context, message = {}) {
         "Use task_card_heartbeat to report bounded progress while actively handling a received task card; this does not complete the card.",
         "Use start_loop only for explicit @loop requests; use loop_status for bounded loop status projection.",
         "Use thread_lifecycle to list, resolve, ensure/create, refresh, or mark complete Loop/Worker role lanes by metadata instead of title heuristics.",
+        "Use rmw_list_workspaces, rmw_dispatch_task_card, and rmw_read_task_card only for Remote Managed Workspace scoped-control flows; these tools return bounded metadata and never raw tokens, task bodies, return bodies, or logs.",
         "Do not use multi_agent_v1 tools as a substitute for Codex Mobile cross-thread task cards.",
       ].join("\n"),
     };
@@ -645,6 +735,9 @@ async function handleMessage(context, message = {}) {
     if (name === "thread_lifecycle") return textContent(await threadLifecycle(context, args));
     if (name === "return_to_source") return textContent(await returnToSource(context, args));
     if (name === "task_card_heartbeat") return textContent(await taskCardHeartbeat(context, args));
+    if (name === "rmw_list_workspaces") return textContent(await rmwListWorkspaces(context, args));
+    if (name === "rmw_dispatch_task_card") return textContent(await rmwDispatchTaskCard(context, args));
+    if (name === "rmw_read_task_card") return textContent(await rmwReadTaskCard(context, args));
     throw new Error("codex_mobile_mcp_unknown_tool");
   }
   if (method === "ping") return {};
@@ -746,6 +839,9 @@ module.exports = {
   loopStatus,
   parseArgs,
   returnToSource,
+  rmwDispatchTaskCard,
+  rmwListWorkspaces,
+  rmwReadTaskCard,
   startLoop,
   taskCardHeartbeat,
   threadLifecycle,

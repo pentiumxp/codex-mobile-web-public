@@ -4,6 +4,18 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const DEFAULT_SERVER_NAME = "codex_mobile";
+const CODEX_MOBILE_MCP_TOOL_NAMES = [
+  "list_threads",
+  "delegate_to_thread",
+  "start_loop",
+  "loop_status",
+  "thread_lifecycle",
+  "return_to_source",
+  "task_card_heartbeat",
+  "rmw_list_workspaces",
+  "rmw_dispatch_task_card",
+  "rmw_read_task_card",
+];
 
 function tomlBasicString(value) {
   return JSON.stringify(String(value || ""));
@@ -67,33 +79,20 @@ function buildCodexMobileMcpSection(options = {}) {
   const keyFile = String(options.keyFile || "").trim();
   const args = [scriptPath, "--server", baseUrl];
   if (keyFile) args.push("--key-file", keyFile);
-  return [
+  const lines = [
     configSectionHeader(serverName),
     `command = ${tomlBasicString(command)}`,
     `args = ${tomlArray(args)}`,
     "",
-    toolSectionHeader(serverName, "list_threads"),
-    `approval_mode = ${tomlBasicString("approve")}`,
-    "",
-    toolSectionHeader(serverName, "delegate_to_thread"),
-    `approval_mode = ${tomlBasicString("approve")}`,
-    "",
-    toolSectionHeader(serverName, "start_loop"),
-    `approval_mode = ${tomlBasicString("approve")}`,
-    "",
-    toolSectionHeader(serverName, "loop_status"),
-    `approval_mode = ${tomlBasicString("approve")}`,
-    "",
-    toolSectionHeader(serverName, "thread_lifecycle"),
-    `approval_mode = ${tomlBasicString("approve")}`,
-    "",
-    toolSectionHeader(serverName, "return_to_source"),
-    `approval_mode = ${tomlBasicString("approve")}`,
-    "",
-    toolSectionHeader(serverName, "task_card_heartbeat"),
-    `approval_mode = ${tomlBasicString("approve")}`,
-    "",
-  ].join("\n");
+  ];
+  for (const toolName of CODEX_MOBILE_MCP_TOOL_NAMES) {
+    lines.push(
+      toolSectionHeader(serverName, toolName),
+      `approval_mode = ${tomlBasicString("approve")}`,
+      "",
+    );
+  }
+  return lines.join("\n");
 }
 
 function ensureCodexMobileMcpServerInConfig(configPath, options = {}) {
@@ -132,6 +131,7 @@ function ensureCodexMobileMcpServer(options = {}) {
 }
 
 module.exports = {
+  CODEX_MOBILE_MCP_TOOL_NAMES,
   DEFAULT_SERVER_NAME,
   buildCodexMobileMcpSection,
   ensureCodexMobileMcpServer,

@@ -15,6 +15,9 @@ const {
   listThreads,
   loopStatus,
   returnToSource,
+  rmwDispatchTaskCard,
+  rmwListWorkspaces,
+  rmwReadTaskCard,
   startLoop,
   taskCardHeartbeat,
   threadLifecycle,
@@ -46,13 +49,27 @@ function readBody(req) {
 
 test("Codex Mobile MCP server exposes delegation tools and parses stdio framing", async () => {
   const listedTools = toolsList();
-  assert.deepEqual(listedTools.map((entry) => entry.name), ["list_threads", "delegate_to_thread", "start_loop", "loop_status", "thread_lifecycle", "return_to_source", "task_card_heartbeat"]);
+  assert.deepEqual(listedTools.map((entry) => entry.name), [
+    "list_threads",
+    "delegate_to_thread",
+    "start_loop",
+    "loop_status",
+    "thread_lifecycle",
+    "return_to_source",
+    "task_card_heartbeat",
+    "rmw_list_workspaces",
+    "rmw_dispatch_task_card",
+    "rmw_read_task_card",
+  ]);
   assert.equal(listedTools.find((entry) => entry.name === "list_threads").annotations.readOnlyHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "delegate_to_thread").annotations.destructiveHint, false);
   assert.equal(listedTools.find((entry) => entry.name === "loop_status").annotations.readOnlyHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "thread_lifecycle").annotations.idempotentHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "return_to_source").annotations.idempotentHint, true);
   assert.equal(listedTools.find((entry) => entry.name === "task_card_heartbeat").annotations.idempotentHint, true);
+  assert.equal(listedTools.find((entry) => entry.name === "rmw_list_workspaces").annotations.readOnlyHint, true);
+  assert.equal(listedTools.find((entry) => entry.name === "rmw_dispatch_task_card").annotations.idempotentHint, true);
+  assert.equal(listedTools.find((entry) => entry.name === "rmw_read_task_card").annotations.readOnlyHint, true);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.sourceWorkspaceId);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.pluginId);
   assert.ok(listedTools.find((entry) => entry.name === "delegate_to_thread").inputSchema.properties.replyToThreadId);
@@ -72,6 +89,8 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   assert.ok(returnSchema.properties.threadId);
   assert.ok(!returnSchema.required.includes("threadId"));
   assert.ok(listedTools.find((entry) => entry.name === "task_card_heartbeat").inputSchema.properties.threadId);
+  assert.ok(listedTools.find((entry) => entry.name === "rmw_dispatch_task_card").inputSchema.required.includes("idempotencyKey"));
+  assert.ok(listedTools.find((entry) => entry.name === "rmw_read_task_card").inputSchema.required.includes("taskCardId"));
   const initialized = await handleMessage({ server: "http://127.0.0.1:1", key: "secret" }, { id: 1, method: "initialize" });
   assert.equal(initialized.serverInfo.name, "codex_mobile");
   assert.match(initialized.instructions, /mcp__codex_mobile\.delegate_to_thread/);
@@ -83,6 +102,8 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   assert.match(initialized.instructions, /thread_lifecycle/);
   assert.match(initialized.instructions, /return_to_source/);
   assert.match(initialized.instructions, /task_card_heartbeat/);
+  assert.match(initialized.instructions, /rmw_list_workspaces/);
+  assert.match(initialized.instructions, /scoped-control/);
 
   const parsed = [];
   const parser = createMessageParser((message) => parsed.push(message));
@@ -91,6 +112,109 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   parser(Buffer.concat([Buffer.from(`Content-Length: ${framed.length}\r\n\r\n`, "ascii"), framed]));
   assert.deepEqual(parsed.map((message) => message.id), [2, 3]);
   assert.equal(encodeMessage({ jsonrpc: "2.0", id: 4, result: {} }).toString("utf8").startsWith("Content-Length:"), false);
+});
+
+test("Codex Mobile MCP server calls Home AI RMW scoped-control API with bounded output", async (t) => {
+  const calls = [];
+  const server = http.createServer(async (req, res) => {
+    calls.push({ method: req.method, url: req.url, authorization: req.headers.authorization || "" });
+    if (req.method === "GET" && req.url === "/api/remote-managed-workspace-control/workspaces") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        ok: true,
+        contractVersion: "remote-managed-workspace-central-contract-v1",
+        contractOwner: "home-ai-central",
+        contractRef: "docs/PLATFORM_CONTRACTS/remote-managed-workspace-contract.md",
+        controlSurface: "remote-managed-workspace-control",
+        controlAuthMode: "scoped-control",
+        workspaces: [{
+          workspaceId: "rmw_fixture",
+          label: "Fixture Workspace",
+          trusted: true,
+          paired: true,
+          connected: true,
+          sessionFresh: true,
+          queuedCount: 1,
+          activeCount: 0,
+          terminalCount: 0,
+          issueCodes: ["none"],
+        }],
+      }));
+      return;
+    }
+    if (req.method === "POST" && req.url === "/api/remote-managed-workspace-control/workspaces/rmw_fixture/task-cards") {
+      const body = JSON.parse(await readBody(req));
+      assert.equal(body.title, "Bounded task");
+      assert.equal(body.bodyMarkdown, "raw task body should not come back");
+      assert.equal(body.idempotencyKey, "rmw-mcp-fixture");
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        ok: true,
+        duplicate: false,
+        card: {
+          taskCardId: "ttc_rmw_fixture",
+          status: "queued",
+          idempotencyKey: "rmw-mcp-fixture",
+          bodyMarkdown: "raw task body should not come back",
+        },
+      }));
+      return;
+    }
+    if (req.method === "GET" && req.url === "/api/remote-managed-workspace-control/workspaces/rmw_fixture/task-cards/ttc_rmw_fixture") {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        ok: true,
+        card: {
+          taskCardId: "ttc_rmw_fixture",
+          status: "returned",
+          terminalStatus: "completed",
+          summary: "bounded dispatch summary",
+          bodyMarkdown: "raw task body should not come back",
+          terminalReturn: {
+            status: "completed",
+            summary: "bounded terminal summary",
+            bodyMarkdown: "raw return body should not come back",
+          },
+        },
+      }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  });
+  t.after(() => server.close());
+  const baseUrl = await listen(server);
+  const context = {
+    server: "http://127.0.0.1:1",
+    key: "unused",
+    rmwControlUrl: baseUrl,
+    rmwControlToken: "scoped-control-token",
+    rmwControlClient: require("../services/remote-managed-workspaces/remote-managed-workspace-control-client-service").createRemoteManagedWorkspaceControlClientService(),
+  };
+
+  const listed = await rmwListWorkspaces(context, {});
+  assert.equal(listed.workspaces[0].workspaceId, "rmw_fixture");
+  assert.equal(listed.workspaces[0].queuedCount, 1);
+  assert.equal(listed.contract.controlAuthMode, "scoped-control");
+
+  const dispatched = await rmwDispatchTaskCard(context, {
+    workspaceId: "rmw_fixture",
+    title: "Bounded task",
+    bodyMarkdown: "raw task body should not come back",
+    idempotencyKey: "rmw-mcp-fixture",
+  });
+  assert.equal(dispatched.taskCardId, "ttc_rmw_fixture");
+  assert.equal(dispatched.duplicate, false);
+
+  const read = await rmwReadTaskCard(context, {
+    workspaceId: "rmw_fixture",
+    taskCardId: "ttc_rmw_fixture",
+  });
+  assert.equal(read.card.terminalStatus, "completed");
+  assert.equal(read.card.terminalSummary, "bounded terminal summary");
+  const combined = JSON.stringify({ listed, dispatched, read });
+  assert.doesNotMatch(combined, /scoped-control-token|raw task body|raw return body|Bearer/i);
+  assert.ok(calls.every((call) => call.authorization === "Bearer scoped-control-token"));
 });
 
 test("Codex Mobile MCP server calls existing authenticated task-card API", async (t) => {
@@ -445,7 +569,10 @@ test("Codex Mobile MCP config registration is per Codex Home and stores no raw k
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.thread_lifecycle\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.return_to_source\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.task_card_heartbeat\]/);
-  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 7);
+  assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.rmw_list_workspaces\]/);
+  assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.rmw_dispatch_task_card\]/);
+  assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.rmw_read_task_card\]/);
+  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 10);
   assert.doesNotMatch(text, /Bearer/);
   assert.doesNotMatch(text, /secret/);
 
@@ -493,6 +620,9 @@ test("Codex Mobile MCP config registration repairs stale command args", () => {
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.thread_lifecycle\]/g) || []).length, 1);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.return_to_source\]/g) || []).length, 1);
   assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.task_card_heartbeat\]/g) || []).length, 1);
-  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 7);
+  assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.rmw_list_workspaces\]/g) || []).length, 1);
+  assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.rmw_dispatch_task_card\]/g) || []).length, 1);
+  assert.equal((text.match(/\[mcp_servers\.codex_mobile\.tools\.rmw_read_task_card\]/g) || []).length, 1);
+  assert.equal((text.match(/approval_mode = "approve"/g) || []).length, 10);
   assert.match(text, /\[mcp_servers\.codegraph\]/);
 });
