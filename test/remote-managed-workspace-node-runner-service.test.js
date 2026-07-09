@@ -250,6 +250,7 @@ test("remote node runner requests pairing before trusted register, heartbeat, an
     assert.equal(stillPending.skipped, "pending_approval");
     assert.equal(calls.filter((entry) => entry[0] === "register").length, 0);
     assert.equal(calls.filter((entry) => entry[0] === "pollTaskCards").length, 0);
+    assert.deepEqual(calls.map((entry) => entry[0]), ["requestPairing", "pollPairingStatus"]);
 
     approved = true;
     const connected = await runner.runOnce({ force: true });
@@ -259,7 +260,76 @@ test("remote node runner requests pairing before trusted register, heartbeat, an
     assert.equal(calls.some((entry) => entry[0] === "register" && entry[2] === "approved-runner-credential"), true);
     assert.equal(calls.some((entry) => entry[0] === "nodeHeartbeat"), true);
     assert.equal(calls.some((entry) => entry[0] === "pollTaskCards"), true);
+    assert.equal(fs.readFileSync(path.join(root, "secret", "scoped-credential"), "utf8").trim(), "approved-runner-credential");
     assert.doesNotMatch(JSON.stringify(connected.status), /approved-runner-credential/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote node runner polls persisted pairing request after offline retry instead of posting replacement request", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-runner-pairing-offline-"));
+  const projectRoot = path.join(root, "project");
+  fs.mkdirSync(projectRoot, { recursive: true });
+  const service = createRemoteManagedWorkspaceSettingsService({
+    fs,
+    path,
+    settingsFile: path.join(root, "settings.json"),
+    stateFile: path.join(root, "state.json"),
+    enrollmentTokenFile: path.join(root, "secret", "scoped-credential"),
+    now: () => new Date("2026-07-08T00:00:00.000Z"),
+  });
+  service.enableWorkspace({
+    centralUrl: "http://127.0.0.1:9999",
+    workspace: {
+      cwd: projectRoot,
+      label: "Offline Pairing Project",
+    },
+  });
+  service.applyPairingResult({
+    pairing: { requestId: "rmw_pair_offline_retry", status: "pending_approval" },
+  });
+  service.updateConnectionState({
+    connectionStatus: "offline",
+    pairingStatus: "offline_retrying",
+    issueCode: "fetch_failed",
+  });
+  const calls = [];
+  const nodeClient = Object.assign(fakeNodeClient([], calls), {
+    requestPairing: async () => {
+      calls.push(["requestPairing"]);
+      return { result: { pairing: { requestId: "rmw_pair_replacement", status: "pending_approval" } } };
+    },
+    pollPairingStatus: async (_config, requestId) => {
+      calls.push(["pollPairingStatus", requestId]);
+      return {
+        result: {
+          pairing: {
+            requestId,
+            status: "approved",
+            scopedCredential: "offline-approved-runner-credential",
+          },
+        },
+      };
+    },
+  });
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: nodeClient,
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+    const connected = await runner.runOnce({ force: true });
+
+    assert.equal(connected.ok, true);
+    assert.equal(connected.status.pairingStatus, "connected");
+    assert.equal(connected.status.scopedCredentialConfigured, true);
+    assert.equal(calls[0][0], "pollPairingStatus");
+    assert.equal(calls[0][1], "rmw_pair_offline_retry");
+    assert.equal(calls.some((entry) => entry[0] === "requestPairing"), false);
+    assert.equal(calls.some((entry) => entry[0] === "register" && entry[2] === "offline-approved-runner-credential"), true);
+    assert.equal(fs.readFileSync(path.join(root, "secret", "scoped-credential"), "utf8").trim(), "offline-approved-runner-credential");
+    assert.doesNotMatch(JSON.stringify(connected.status), /offline-approved-runner-credential/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

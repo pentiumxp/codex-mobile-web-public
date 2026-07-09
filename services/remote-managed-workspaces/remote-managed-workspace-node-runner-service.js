@@ -35,6 +35,18 @@ function backoffMs(failures, options = {}) {
   return Math.max(min, Math.min(max, min * (2 ** exponent)));
 }
 
+function shouldPollExistingPairingRequest(state = {}, options = {}) {
+  const requestId = compactOneLine(state.pairingRequestId);
+  if (!requestId || options.forceRequest === true) return false;
+  const status = compactOneLine(state.pairingStatus).toLowerCase();
+  if (status === "rejected") return false;
+  const issues = Array.isArray(state.issueCodes) ? state.issueCodes.map((code) => compactOneLine(code).toLowerCase()) : [];
+  if (status === "auth_failed" && issues.includes("scoped_node_credential_missing_after_approval")) {
+    return false;
+  }
+  return true;
+}
+
 function boundedTerminalWithoutExecutionBridge(card = {}) {
   return {
     status: "partially_completed",
@@ -224,12 +236,13 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
     }
     const config = settingsService.configForPairingIntent({ requireEnabled: options.requireEnabled !== false });
     const state = settingsService.readState();
+    const pollExistingRequest = shouldPollExistingPairingRequest(state, options);
     setState({
       connectionStatus: "connecting",
-      pairingStatus: state.pairingRequestId && state.pairingStatus === "pending_approval" ? "pending_approval" : "requesting_pairing",
+      pairingStatus: pollExistingRequest ? "pending_approval" : "requesting_pairing",
       lastPairingCheckAt: nowIso(now),
     });
-    const response = state.pairingRequestId && state.pairingStatus === "pending_approval" && options.forceRequest !== true
+    const response = pollExistingRequest
       ? await nodeClientService.pollPairingStatus(config, state.pairingRequestId)
       : await nodeClientService.requestPairing(config);
     const nextState = settingsService.applyPairingResult(response.result || response);

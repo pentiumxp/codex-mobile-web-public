@@ -16,6 +16,31 @@ Composer/operation 状态、Home AI 插件嵌入和 public 发布流程都已经
 先定位失败层和状态所有权，再把可复用策略抽到服务或纯前端 helper，
 避免用前端二次刷新、去重兜底或静默 fallback 掩盖根因。
 
+## 2026-07-09 Public 发布说明（RMW persisted request 重试修复）
+
+本次 Public 热修复同步私有提交 `39e9648e` 的 Remote Managed Workspace
+runner 修复。此前远程节点在已经持有配对请求编号、但上一次连接进入
+`offline_retrying` 后，下一轮可能重新发起新的配对请求，导致 Home AI
+审批视角里出现替代请求，而不是继续查询原有请求。
+
+修复后，只要本地状态里仍有可继续使用的配对请求编号，runner 会优先查询
+既有请求状态；只有被拒绝、明确要求重新请求，或批准后缺少本地凭据这类
+失效状态，才会发起新的配对请求。这样可以保持 Owner 审批入口和 Windows
+public 远程节点的握手状态一致。
+
+验证范围：
+
+```sh
+node --test test/remote-managed-workspace-node-runner-service.test.js
+npm test
+npm run check
+git diff --check
+```
+
+Public 仓库仍只同步公开源码、README 和测试；不包含 `.agent-context`、
+runtime state、上传内容、私有线程正文、原始日志、缓存数据库、截图或本机
+私有配置。
+
 ## 2026-07-09 Public 候选说明（RMW 自动配对客户端）
 
 本次 public 候选同步 private 已验证的
