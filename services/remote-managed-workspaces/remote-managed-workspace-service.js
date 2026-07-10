@@ -68,6 +68,23 @@ function safeId(value, fieldName, maxLength = 180) {
   return text.slice(0, maxLength);
 }
 
+function normalizeRetryOfTaskCardId(input = {}, options = {}) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const value = source.retryOfTaskCardId ?? source.retry_of_task_card_id;
+  if (value == null || value === "") return "";
+  if (typeof value !== "string") {
+    if (options.readback) return "";
+    throw errorWithStatus("retry_of_task_card_id_invalid");
+  }
+  const text = compactOneLine(value);
+  if (text.length > 180) {
+    if (options.readback) return text.slice(0, 180);
+    throw errorWithStatus("retry_of_task_card_id_too_long");
+  }
+  safeId(text, "retry_of_task_card_id", 180);
+  return text;
+}
+
 function boundedString(value, fieldName, maxLength = 500, required = false) {
   const text = compactOneLine(value);
   if (required && !text) throw errorWithStatus(`${fieldName}_required`);
@@ -237,10 +254,13 @@ function publicPairingRequest(row = {}) {
 }
 
 function publicTaskCard(card = {}) {
+  const retryOfTaskCardId = normalizeRetryOfTaskCardId(card, { readback: true });
   return {
     taskCardId: card.taskCardId || "",
     id: card.taskCardId || "",
     idempotencyKey: card.idempotencyKey || "",
+    retryOfTaskCardId: retryOfTaskCardId || "",
+    retryOfTaskCardIdPresent: Boolean(retryOfTaskCardId),
     title: card.title || "",
     summary: card.summary || "",
     bodyMarkdown: card.bodyMarkdown || "",
@@ -557,6 +577,7 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
     const card = {
       taskCardId,
       idempotencyKey: boundedString(input.idempotencyKey || input.requestId || "", "task_card_idempotency_key", 180, false),
+      retryOfTaskCardId: normalizeRetryOfTaskCardId(input),
       title: boundedString(input.title, "task_card_title", 180, true),
       summary: boundedString(input.summary, "task_card_summary", 500, false),
       bodyMarkdown: boundedString(input.bodyMarkdown || input.body || "", "task_card_body_markdown", 4000, false),
@@ -567,6 +588,7 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
     assertNoForbiddenPayloadClasses({
       taskCardId: card.taskCardId,
       idempotencyKey: card.idempotencyKey,
+      retryOfTaskCardId: card.retryOfTaskCardId,
       title: card.title,
       summary: card.summary,
       bodyMarkdown: card.bodyMarkdown,
@@ -575,6 +597,14 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
       locale: card.locale,
     }, "task_card");
     return card;
+  }
+
+  function sameExecutionRequirements(left, right) {
+    return JSON.stringify(left || null) === JSON.stringify(right || null);
+  }
+
+  function sameRetryLineage(left = {}, right = {}) {
+    return normalizeRetryOfTaskCardId(left, { readback: true }) === normalizeRetryOfTaskCardId(right, { readback: true });
   }
 
   function enqueueTaskCard(workspaceId, input = {}, options = {}) {
@@ -587,6 +617,12 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
       ? cards.find((card) => card.idempotencyKey && card.idempotencyKey === normalized.idempotencyKey)
       : cards.find((card) => card.taskCardId === normalized.taskCardId);
     if (existing) {
+      if (normalized.idempotencyKey && (
+        !sameRetryLineage(existing, normalized)
+          || !sameExecutionRequirements(existing.executionRequirements, normalized.executionRequirements)
+      )) {
+        throw errorWithStatus("remote_managed_workspace_task_card_idempotency_conflict", 409);
+      }
       return { ok: true, duplicate: true, card: publicTaskCard(existing) };
     }
     const timestamp = nowIso(now);

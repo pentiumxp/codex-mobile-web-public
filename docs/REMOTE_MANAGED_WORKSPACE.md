@@ -104,6 +104,19 @@ Task-card relay is outbound from the remote node to Home AI. `ack`, heartbeat,
 and terminal return are per task card, not per Worker lane. Terminal return
 payloads are normalized to `zh-CN` for Owner-visible receipts.
 
+Retry lineage is structured metadata. When Home AI dispatches a retry of an
+earlier Remote Managed Workspace task card, it must send bounded
+`retryOfTaskCardId` metadata alongside the normal `idempotencyKey`; Codex
+Mobile must preserve that field through MCP scoped-control dispatch, central
+simulator queue/readback, canonical `taskCards` poll payloads, legacy `cards`
+poll payloads, local execution metadata, and per-card execution history. Codex
+Mobile never infers retry lineage from the task body and never auto-retries or
+replaces a card because lineage is present. The local simulator reuses an
+existing idempotent card only when the retry lineage and
+`executionRequirements` match; mismatches fail closed with bounded metadata.
+Home AI central remains responsible for validating that the retry parent belongs
+to the same workspace and is an allowed terminal parent.
+
 `external_project_main` is treated as a source/main role for runtime reasoning
 floor and receives effective `xhigh` reasoning. External Worker, audit, and
 deploy roles remain ordinary lanes and are not globally upgraded.

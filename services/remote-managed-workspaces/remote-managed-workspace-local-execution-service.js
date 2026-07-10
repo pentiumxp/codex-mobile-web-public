@@ -104,6 +104,11 @@ function normalizedCardId(card = {}) {
   return compactOneLine(card.taskCardId || card.id).slice(0, 180);
 }
 
+function retryOfTaskCardIdForCard(card = {}) {
+  const value = card.retryOfTaskCardId ?? card.retry_of_task_card_id;
+  return typeof value === "string" ? compactOneLine(value).slice(0, 180) : "";
+}
+
 function booleanFromValue(value) {
   if (value === true) return true;
   if (value === false || value == null) return false;
@@ -192,6 +197,7 @@ function cardText(card = {}) {
     ),
     reasoningEffort: compactOneLine(card.reasoningEffort || card.requestedReasoningEffort || card.delivery && card.delivery.reasoningEffort),
     idempotencyKey: compactOneLine(card.idempotencyKey || card.id || card.taskCardId).slice(0, 220),
+    retryOfTaskCardId: retryOfTaskCardIdForCard(card),
   };
 }
 
@@ -263,6 +269,7 @@ function buildRemoteManagedWorkspaceTurnContract(card = {}, config = {}, require
     source: "remote_managed_workspace",
     taskCardId: text.id,
     idempotencyKey: text.idempotencyKey,
+    retryOfTaskCardId: text.retryOfTaskCardId || undefined,
     workspaceId: compactOneLine(config.workspaceId).slice(0, 180),
     projectType: compactOneLine(config.projectType || "unknown").slice(0, 120),
     executionRequirements: requirements,
@@ -672,6 +679,7 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
         id: workflowIdForCard(card, config),
         authorized: true,
         routeKind: "remote_managed_workspace",
+        retryOfTaskCardId: retryOfTaskCardIdForCard(card) || undefined,
       },
       source: {
         threadId: sourceThreadIdForCard(card),
@@ -765,6 +773,7 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
         bridge: "codex_mobile_local_runtime",
         localExecutionBridge: "codex_mobile_local_runtime",
         taskCardId: normalizedCardId(card),
+        retryOfTaskCardId: retryOfTaskCardIdForCard(card) || "",
         workspaceId: compactOneLine(config.workspaceId).slice(0, 180),
         localThreadId: "",
         localTurnId: "",
@@ -776,6 +785,7 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
         executionRequirements: requirements || null,
         executionResult: Object.assign({
           taskCardId: normalizedCardId(card),
+          retryOfTaskCardId: retryOfTaskCardIdForCard(card) || "",
           workspaceId: compactOneLine(config.workspaceId).slice(0, 180),
           localThreadId: "",
           localTurnId: "",
@@ -830,6 +840,7 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
         bridge: "codex_mobile_local_runtime",
         localExecutionBridge: "codex_mobile_local_runtime",
         taskCardId: normalizedCardId(card),
+        retryOfTaskCardId: retryOfTaskCardIdForCard(card) || "",
         workspaceId: compactOneLine(config.workspaceId).slice(0, 180),
         localThreadId: execution.threadId,
         localTurnId: execution.turnId,
@@ -841,6 +852,7 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
         executionRequirements: requirements || null,
         executionResult: executionResult ? Object.assign({
           taskCardId: normalizedCardId(card),
+          retryOfTaskCardId: retryOfTaskCardIdForCard(card) || "",
           workspaceId: compactOneLine(config.workspaceId).slice(0, 180),
           localThreadId: execution.threadId,
           localTurnId: execution.turnId,
@@ -902,4 +914,5 @@ module.exports = {
   isCompletedTurn,
   isCompletedStatus,
   normalizeExecutionRequirements,
+  retryOfTaskCardIdForCard,
 };

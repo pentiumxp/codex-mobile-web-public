@@ -99,6 +99,7 @@ test("RMW control client dispatch and readback hide raw task and return bodies",
             taskCardId: "ttc_127",
             status: "queued",
             idempotencyKey: body.idempotencyKey,
+            retryOfTaskCardId: body.retryOfTaskCardId,
             bodyMarkdown: "raw task body",
             executionRequirements: body.executionRequirements,
           },
@@ -110,6 +111,7 @@ test("RMW control client dispatch and readback hide raw task and return bodies",
           taskCardId: "ttc_127",
           status: "returned",
           terminalStatus: "completed",
+          retryOfTaskCardId: "rmwtc_parent",
           summary: "bounded task summary",
           bodyMarkdown: "raw task body",
           terminalReturn: {
@@ -134,6 +136,7 @@ test("RMW control client dispatch and readback hide raw task and return bodies",
     title: "Dispatch",
     bodyMarkdown: "raw task body",
     idempotencyKey: "idem-127",
+    retryOfTaskCardId: "rmwtc_parent",
     executionRequirements: {
       requiresCommandExecution: true,
       minimumCompletedCommandCount: 1,
@@ -148,11 +151,45 @@ test("RMW control client dispatch and readback hide raw task and return bodies",
 
   assert.equal(dispatched.taskCardId, "ttc_127");
   assert.equal(dispatched.duplicate, true);
+  assert.equal(dispatched.idempotencyKeyPresent, true);
   assert.equal(read.card.terminalStatus, "completed");
   assert.equal(read.card.terminalSummary, "bounded terminal summary");
+  assert.equal(read.card.retryOfTaskCardId, "rmwtc_parent");
+  assert.equal(read.card.retryOfTaskCardIdHash.length, 16);
   assert.equal(read.card.executionRequirements.requiresCommandExecution, true);
   assert.deepEqual(read.card.executionRequirements.requiredCommandClasses, ["workspace_read"]);
   assert.doesNotMatch(JSON.stringify({ dispatched, read }), /raw task body|raw return body|raw logs|rmw_control_secret/i);
+});
+
+test("RMW control client rejects malformed retry lineage and preserves central issue codes", async () => {
+  const client = createRemoteManagedWorkspaceControlClientService({
+    fetch: async () => response(409, {
+      ok: false,
+      issueCode: "remote_managed_workspace_task_card_retry_parent_invalid",
+      contractOwner: "home-ai-central",
+    }),
+  });
+  const config = { centralUrl: "http://127.0.0.1:1234", controlToken: "rmw_control_secret" };
+
+  await assert.rejects(() => client.dispatchTaskCard(config, {
+    workspaceId: "rmw_127",
+    title: "Dispatch",
+    bodyMarkdown: "bounded",
+    idempotencyKey: "idem-127",
+    retryOfTaskCardId: "x".repeat(181),
+  }), /retry_of_task_card_id_too_long/);
+
+  await assert.rejects(() => client.dispatchTaskCard(config, {
+    workspaceId: "rmw_127",
+    title: "Dispatch",
+    bodyMarkdown: "bounded",
+    idempotencyKey: "idem-127",
+    retryOfTaskCardId: "rmwtc_parent",
+  }), (err) => {
+    assert.equal(err.issueCode, "remote_managed_workspace_task_card_retry_parent_invalid");
+    assert.equal(err.contract.contractOwner, "home-ai-central");
+    return true;
+  });
 });
 
 test("RMW control public mappers do not pass through unsafe fields", () => {

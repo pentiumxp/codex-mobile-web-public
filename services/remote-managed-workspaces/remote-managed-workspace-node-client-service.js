@@ -151,6 +151,16 @@ function taskCardIdentity(card = {}) {
   return compactOneLine(card.taskCardId || card.id);
 }
 
+function normalizeRetryOfTaskCardId(card = {}) {
+  const source = card && typeof card === "object" && !Array.isArray(card) ? card : {};
+  const value = source.retryOfTaskCardId ?? source.retry_of_task_card_id;
+  if (value == null || value === "") return "";
+  if (typeof value !== "string") throw errorWithStatus("remote_managed_workspace_poll_retry_of_task_card_id_invalid", 502);
+  const text = compactOneLine(value);
+  if (text.length > 180) throw errorWithStatus("remote_managed_workspace_poll_retry_of_task_card_id_too_long", 502);
+  return text;
+}
+
 function normalizeTaskCardArray(value, fieldName) {
   if (value == null) return [];
   if (!Array.isArray(value)) throw errorWithStatus(`remote_managed_workspace_poll_${fieldName}_invalid`, 502);
@@ -160,7 +170,11 @@ function normalizeTaskCardArray(value, fieldName) {
     }
     const id = taskCardIdentity(entry);
     if (!id) throw errorWithStatus("remote_managed_workspace_poll_task_card_id_missing", 502);
-    return entry.taskCardId ? entry : Object.assign({}, entry, { taskCardId: id });
+    const retryOfTaskCardId = normalizeRetryOfTaskCardId(entry);
+    const normalized = entry.taskCardId ? Object.assign({}, entry) : Object.assign({}, entry, { taskCardId: id });
+    if (retryOfTaskCardId) normalized.retryOfTaskCardId = retryOfTaskCardId;
+    delete normalized.retry_of_task_card_id;
+    return normalized;
   });
 }
 

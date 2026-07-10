@@ -267,6 +267,7 @@ async function runRemoteManagedWorkspaceHarness() {
     const created = homeAiCentralService.enqueueTaskCard(config.workspaceId, {
       taskCardId: "ttc_remote_fixture",
       idempotencyKey: "remote-fixture-card",
+      retryOfTaskCardId: "rmwtc_parent_fixture",
       title: "Remote fixture task",
       summary: "bounded fixture task",
       bodyMarkdown: "Run bounded fixture validation.",
@@ -281,8 +282,15 @@ async function runRemoteManagedWorkspaceHarness() {
     const duplicate = homeAiCentralService.enqueueTaskCard(config.workspaceId, {
       taskCardId: "ttc_remote_fixture_duplicate",
       idempotencyKey: "remote-fixture-card",
+      retryOfTaskCardId: "rmwtc_parent_fixture",
       title: "Remote fixture task duplicate",
       summary: "bounded duplicate fixture task",
+      executionRequirements: {
+        requiresCommandExecution: true,
+        minimumCompletedCommandCount: 1,
+        requiredCommandClasses: ["localhost_health_probe"],
+        toolSurfaceRequired: true,
+      },
     }, { skipAuth: true });
 
     const processed = await runner.runOnce({ force: true });
@@ -325,6 +333,7 @@ async function runRemoteManagedWorkspaceHarness() {
       registered: registeredNow.ok === true && processed.registered === true,
       createdDuplicateSuppressed: duplicate.duplicate === true,
       createdTaskCardId: created.card.taskCardId,
+      createdRetryOfTaskCardId: created.card.retryOfTaskCardId,
       runnerConnectionStatus: processed.status.connectionStatus,
       processedExecuted: processed.processed && processed.processed.processed === true,
       pollCountAfterReturn: polledAfterReturn.count,
@@ -334,6 +343,8 @@ async function runRemoteManagedWorkspaceHarness() {
       terminalBridge: snapshot.taskCards[config.workspaceId][0].terminalReturn
         && snapshot.taskCards[config.workspaceId][0].terminalReturn.metadata
         && snapshot.taskCards[config.workspaceId][0].terminalReturn.metadata.localExecutionBridge || "",
+      retryLineagePreserved: settingsService.publicSettings().lastExecutionResult
+        && settingsService.publicSettings().lastExecutionResult.retryOfTaskCardId === "rmwtc_parent_fixture",
       authorityConfigured: settingsService.publicSettings().lastExecutionAuthority
         && settingsService.publicSettings().lastExecutionAuthority.configured === true,
       authoritySource: settingsService.publicSettings().lastExecutionAuthority

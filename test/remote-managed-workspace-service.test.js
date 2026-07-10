@@ -161,6 +161,7 @@ test("remote task-card relay is idempotent and tracks per-card heartbeat plus zh
     title: "Remote task",
     summary: "bounded",
     bodyMarkdown: "Run one bounded task.",
+    retryOfTaskCardId: "rmwtc_parent",
     reasoningEffort: "medium",
     executionRequirements: {
       requiresCommandExecution: true,
@@ -172,15 +173,26 @@ test("remote task-card relay is idempotent and tracks per-card heartbeat plus zh
   const duplicate = service.enqueueTaskCard("rmw_test", {
     taskCardId: "ttc_remote_b",
     idempotencyKey: "idem-a",
+    retryOfTaskCardId: "rmwtc_parent",
     title: "Remote duplicate",
+    executionRequirements: {
+      requiresCommandExecution: true,
+      minimumCompletedCommandCount: 1,
+      requiredCommandClasses: ["workspace_read"],
+      toolSurfaceRequired: true,
+    },
   }, { token: "token" });
 
   assert.equal(first.duplicate, false);
+  assert.equal(first.card.retryOfTaskCardId, "rmwtc_parent");
+  assert.equal(first.card.retryOfTaskCardIdPresent, true);
   assert.equal(first.card.executionRequirements.requiresCommandExecution, true);
   assert.deepEqual(first.card.executionRequirements.requiredCommandClasses, ["workspace_read"]);
   assert.equal(duplicate.duplicate, true);
   const polled = service.pollTaskCards("rmw_test", { limit: 4 }, { token: "token" });
   assert.equal(polled.count, 1);
+  assert.equal(polled.taskCards[0].retryOfTaskCardId, "rmwtc_parent");
+  assert.equal(polled.cards[0].retryOfTaskCardId, "rmwtc_parent");
   assert.equal(polled.taskCards[0].executionRequirements.minimumCompletedCommandCount, 1);
 
   const acked = service.ackTaskCard("rmw_test", "ttc_remote_a", { leaseId: "lease-a" }, { token: "token" });
@@ -198,6 +210,56 @@ test("remote task-card relay is idempotent and tracks per-card heartbeat plus zh
   assert.equal(returned.card.terminalStatus, "completed");
   assert.equal(returned.terminalReturn.locale, "zh-CN");
   assert.equal(service.pollTaskCards("rmw_test", { limit: 4 }, { token: "token" }).count, 0);
+});
+
+test("remote task-card relay fails closed on same idempotency with mismatched lineage or requirements", () => {
+  const service = makeService();
+  registerFixture(service);
+  service.enqueueTaskCard("rmw_test", {
+    taskCardId: "ttc_retry_a",
+    idempotencyKey: "idem-retry",
+    retryOfTaskCardId: "rmwtc_parent_a",
+    title: "Remote task",
+    executionRequirements: {
+      requiresCommandExecution: true,
+      minimumCompletedCommandCount: 1,
+      requiredCommandClasses: ["workspace_read"],
+      toolSurfaceRequired: true,
+    },
+  }, { token: "token" });
+
+  assert.throws(() => service.enqueueTaskCard("rmw_test", {
+    taskCardId: "ttc_retry_b",
+    idempotencyKey: "idem-retry",
+    retryOfTaskCardId: "rmwtc_parent_b",
+    title: "Remote task",
+    executionRequirements: {
+      requiresCommandExecution: true,
+      minimumCompletedCommandCount: 1,
+      requiredCommandClasses: ["workspace_read"],
+      toolSurfaceRequired: true,
+    },
+  }, { token: "token" }), /remote_managed_workspace_task_card_idempotency_conflict/);
+
+  assert.throws(() => service.enqueueTaskCard("rmw_test", {
+    taskCardId: "ttc_retry_c",
+    idempotencyKey: "idem-retry",
+    retryOfTaskCardId: "rmwtc_parent_a",
+    title: "Remote task",
+    executionRequirements: {
+      requiresCommandExecution: true,
+      minimumCompletedCommandCount: 2,
+      requiredCommandClasses: ["workspace_read"],
+      toolSurfaceRequired: true,
+    },
+  }, { token: "token" }), /remote_managed_workspace_task_card_idempotency_conflict/);
+
+  assert.throws(() => service.enqueueTaskCard("rmw_test", {
+    taskCardId: "ttc_retry_d",
+    idempotencyKey: "idem-new",
+    retryOfTaskCardId: "x".repeat(181),
+    title: "Remote task",
+  }, { token: "token" }), /retry_of_task_card_id_too_long/);
 });
 
 test("remote daily summary and escalation reject forbidden raw/private payload classes", () => {

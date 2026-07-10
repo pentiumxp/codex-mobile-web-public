@@ -328,6 +328,7 @@ function toolsList() {
           summary: { type: "string", maxLength: 500 },
           bodyMarkdown: { type: "string", minLength: 1, maxLength: 4000 },
           idempotencyKey: { type: "string", minLength: 1, maxLength: 180 },
+          retryOfTaskCardId: { type: "string", maxLength: 180 },
           reasoningEffort: { type: "string", enum: ["low", "medium", "high", "xhigh"] },
           executionRequirements: {
             type: "object",

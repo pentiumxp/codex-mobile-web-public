@@ -95,6 +95,7 @@ test("Codex Mobile MCP server exposes delegation tools and parses stdio framing"
   assert.ok(listedTools.find((entry) => entry.name === "task_card_heartbeat").inputSchema.properties.threadId);
   const rmwDispatchSchema = listedTools.find((entry) => entry.name === "rmw_dispatch_task_card").inputSchema;
   assert.ok(rmwDispatchSchema.required.includes("idempotencyKey"));
+  assert.equal(rmwDispatchSchema.properties.retryOfTaskCardId.maxLength, 180);
   assert.ok(rmwDispatchSchema.properties.executionRequirements);
   assert.deepEqual(rmwDispatchSchema.properties.executionRequirements.properties.requiredCommandClasses.items.enum, [
     "workspace_read",
@@ -159,6 +160,7 @@ test("Codex Mobile MCP server calls Home AI RMW scoped-control API with bounded 
       assert.equal(body.title, "Bounded task");
       assert.equal(body.bodyMarkdown, "raw task body should not come back");
       assert.equal(body.idempotencyKey, "rmw-mcp-fixture");
+      assert.equal(body.retryOfTaskCardId, "rmwtc_parent");
       assert.deepEqual(body.executionRequirements, {
         requiresCommandExecution: true,
         minimumCompletedCommandCount: 1,
@@ -173,6 +175,7 @@ test("Codex Mobile MCP server calls Home AI RMW scoped-control API with bounded 
           taskCardId: "ttc_rmw_fixture",
           status: "queued",
           idempotencyKey: "rmw-mcp-fixture",
+          retryOfTaskCardId: body.retryOfTaskCardId,
           bodyMarkdown: "raw task body should not come back",
           executionRequirements: body.executionRequirements,
         },
@@ -187,6 +190,7 @@ test("Codex Mobile MCP server calls Home AI RMW scoped-control API with bounded 
           taskCardId: "ttc_rmw_fixture",
           status: "returned",
           terminalStatus: "completed",
+          retryOfTaskCardId: "rmwtc_parent",
           summary: "bounded dispatch summary",
           bodyMarkdown: "raw task body should not come back",
           terminalReturn: {
@@ -227,6 +231,7 @@ test("Codex Mobile MCP server calls Home AI RMW scoped-control API with bounded 
     title: "Bounded task",
     bodyMarkdown: "raw task body should not come back",
     idempotencyKey: "rmw-mcp-fixture",
+    retryOfTaskCardId: "rmwtc_parent",
     executionRequirements: {
       requiresCommandExecution: true,
       minimumCompletedCommandCount: 1,
@@ -236,6 +241,7 @@ test("Codex Mobile MCP server calls Home AI RMW scoped-control API with bounded 
   });
   assert.equal(dispatched.taskCardId, "ttc_rmw_fixture");
   assert.equal(dispatched.duplicate, false);
+  assert.equal(dispatched.idempotencyKeyPresent, true);
 
   const read = await rmwReadTaskCard(context, {
     workspaceId: "rmw_fixture",
@@ -243,6 +249,8 @@ test("Codex Mobile MCP server calls Home AI RMW scoped-control API with bounded 
   });
   assert.equal(read.card.terminalStatus, "completed");
   assert.equal(read.card.terminalSummary, "bounded terminal summary");
+  assert.equal(read.card.retryOfTaskCardId, "rmwtc_parent");
+  assert.equal(read.card.retryOfTaskCardIdPresent, true);
   assert.equal(read.card.executionRequirements.requiresCommandExecution, true);
   const combined = JSON.stringify({ listed, dispatched, read });
   assert.doesNotMatch(combined, /scoped-control-token|raw task body|raw return body|Bearer/i);

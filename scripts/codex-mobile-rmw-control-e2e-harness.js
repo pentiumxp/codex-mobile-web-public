@@ -115,6 +115,8 @@ function publicControlCard(card = {}) {
   const terminal = card.terminalReturn && typeof card.terminalReturn === "object" ? card.terminalReturn : {};
   return {
     taskCardId: card.taskCardId || "",
+    retryOfTaskCardId: card.retryOfTaskCardId || "",
+    retryOfTaskCardIdPresent: Boolean(card.retryOfTaskCardId),
     status: card.status || "",
     terminalStatus: card.terminalStatus || "",
     summary: card.summary || "",
@@ -462,6 +464,7 @@ async function runRmwControlE2eHarness() {
           summary: "bounded fixture dispatch",
           bodyMarkdown: "Execute bounded fixture task without raw task body exposure.",
           idempotencyKey: "rmw-control-fixture-card",
+          retryOfTaskCardId: "rmwtc_control_parent",
           reasoningEffort: "medium",
           executionRequirements: {
             requiresCommandExecution: true,
@@ -512,15 +515,19 @@ async function runRmwControlE2eHarness() {
       restartPreservedCredential: restartListed.structuredContent.count === 1,
       listedWorkspaceCount: listed.structuredContent.count,
       dispatchedTaskCardId: dispatched.structuredContent.taskCardId,
+      dispatchedRetryOfTaskCardIdPresent: dispatched.structuredContent.retryOfTaskCardIdPresent === true,
       duplicate: dispatched.structuredContent.duplicate,
       processedExecuted: processed.processed && processed.processed.processed === true,
       readTerminalStatus: read.structuredContent.card.terminalStatus,
+      readRetryOfTaskCardId: read.structuredContent.card.retryOfTaskCardId,
       readTerminalSummaryPresent: Boolean(read.structuredContent.card.terminalSummary),
       commandExecutionCount,
       manualRequestApprovalCount,
       pendingApprovalCount,
       requiredCommandExecutionOk: settingsService.publicSettings().lastExecutionResult
         && settingsService.publicSettings().lastExecutionResult.ok === true,
+      retryLineagePreserved: settingsService.publicSettings().lastExecutionResult
+        && settingsService.publicSettings().lastExecutionResult.retryOfTaskCardId === "rmwtc_control_parent",
       rawTaskBodyExposed: JSON.stringify(combined).includes("Execute bounded fixture task without raw task body exposure."),
       rawReturnBodyExposed: /terminalReturn|raw return body/i.test(JSON.stringify(combined)),
       localCodexThreadStarted: localCodexRequests.some((entry) => entry.method === "thread/start" && entry.cwd === projectRoot),

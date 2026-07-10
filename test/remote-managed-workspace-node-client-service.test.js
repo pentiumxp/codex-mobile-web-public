@@ -145,7 +145,7 @@ test("RMW node client error normalizer uses canonical code for recovery decision
 });
 
 test("RMW node client normalizes canonical poll taskCards", () => {
-  const card = { taskCardId: "rmwtc_canonical", title: "Canonical" };
+  const card = { taskCardId: "rmwtc_canonical", retryOfTaskCardId: "rmwtc_parent", title: "Canonical" };
   const normalized = normalizePolledTaskCardsPayload({
     ok: true,
     taskCards: [card],
@@ -153,11 +153,12 @@ test("RMW node client normalizes canonical poll taskCards", () => {
   });
   assert.equal(normalized.count, 1);
   assert.equal(normalized.taskCards[0].taskCardId, "rmwtc_canonical");
+  assert.equal(normalized.taskCards[0].retryOfTaskCardId, "rmwtc_parent");
   assert.equal(normalized.cards[0].taskCardId, "rmwtc_canonical");
 });
 
 test("RMW node client preserves legacy poll cards compatibility", () => {
-  const card = { id: "rmwtc_legacy", title: "Legacy" };
+  const card = { id: "rmwtc_legacy", retry_of_task_card_id: "rmwtc_parent_legacy", title: "Legacy" };
   const normalized = normalizePolledTaskCardsPayload({
     ok: true,
     cards: [card],
@@ -166,6 +167,8 @@ test("RMW node client preserves legacy poll cards compatibility", () => {
   assert.deepEqual(normalized.taskCards.map((entry) => entry.taskCardId), ["rmwtc_legacy"]);
   assert.deepEqual(normalized.cards.map((entry) => entry.taskCardId), ["rmwtc_legacy"]);
   assert.equal(normalized.taskCards[0].id, "rmwtc_legacy");
+  assert.equal(normalized.taskCards[0].retryOfTaskCardId, "rmwtc_parent_legacy");
+  assert.equal(normalized.taskCards[0].retry_of_task_card_id, undefined);
 });
 
 test("RMW node client de-duplicates canonical and legacy poll fields by task-card id", () => {
@@ -192,5 +195,9 @@ test("RMW node client fails closed on malformed poll payloads", () => {
   assert.throws(
     () => normalizePolledTaskCardsPayload({ ok: true, taskCards: [{ taskCardId: "rmwtc_one" }], count: 2 }),
     /remote_managed_workspace_poll_count_mismatch/,
+  );
+  assert.throws(
+    () => normalizePolledTaskCardsPayload({ ok: true, taskCards: [{ taskCardId: "rmwtc_one", retryOfTaskCardId: "x".repeat(181) }], count: 1 }),
+    /remote_managed_workspace_poll_retry_of_task_card_id_too_long/,
   );
 });

@@ -24,6 +24,17 @@ function boundedString(value, fieldName, maxLength, required = false) {
   return text;
 }
 
+function normalizeRetryOfTaskCardId(input = {}, options = {}) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const value = source.retryOfTaskCardId ?? source.retry_of_task_card_id;
+  if (value == null || value === "") return "";
+  if (typeof value !== "string") {
+    if (options.readback) return "";
+    throw new Error("retry_of_task_card_id_invalid");
+  }
+  return boundedString(value, "retry_of_task_card_id", 180, false);
+}
+
 function normalizeCentralUrl(value) {
   const text = boundedString(value, "central_url", 1000, true).replace(/\/+$/, "");
   let parsed;
@@ -134,6 +145,7 @@ function publicTaskCard(card = {}) {
   const source = card && typeof card === "object" ? card : {};
   const lease = source.executionLease && typeof source.executionLease === "object" ? source.executionLease : {};
   const terminal = source.terminalReturn && typeof source.terminalReturn === "object" ? source.terminalReturn : {};
+  const retryOfTaskCardId = normalizeRetryOfTaskCardId(source, { readback: true });
   return {
     taskCardId: compactOneLine(source.taskCardId || source.id),
     status: boundedString(source.status || "", "task_card_status", 80, false),
@@ -146,6 +158,9 @@ function publicTaskCard(card = {}) {
     lastHeartbeatAt: boundedString(lease.lastHeartbeatAt || "", "last_heartbeat_at", 80, false),
     createdAt: boundedString(source.createdAt || "", "created_at", 80, false),
     updatedAt: boundedString(source.updatedAt || "", "updated_at", 80, false),
+    retryOfTaskCardId: retryOfTaskCardId || undefined,
+    retryOfTaskCardIdPresent: Boolean(retryOfTaskCardId),
+    retryOfTaskCardIdHash: retryOfTaskCardId ? shortHash(retryOfTaskCardId, 16) : undefined,
     executionRequirements: normalizeExecutionRequirements(source) || undefined,
   };
 }
@@ -160,6 +175,9 @@ function publicDispatchResult(payload = {}) {
     status: card.status,
     duplicate: Boolean(source.duplicate || card.duplicate),
     idempotencyKeyPresent: card.idempotencyKeyPresent,
+    retryOfTaskCardId: card.retryOfTaskCardId,
+    retryOfTaskCardIdPresent: card.retryOfTaskCardIdPresent,
+    retryOfTaskCardIdHash: card.retryOfTaskCardIdHash,
     issueCodes: boundedIssueCodes(source.issueCodes),
     contract: contractMetadata(source),
   };
@@ -374,6 +392,8 @@ function createRemoteManagedWorkspaceControlClientService(dependencies = {}) {
       idempotencyKey: boundedString(args.idempotencyKey || args.requestId, "idempotency_key", 180, true),
       reasoningEffort: boundedString(args.reasoningEffort || "medium", "reasoning_effort", 20, false) || "medium",
     };
+    const retryOfTaskCardId = normalizeRetryOfTaskCardId(args);
+    if (retryOfTaskCardId) payload.retryOfTaskCardId = retryOfTaskCardId;
     const executionRequirements = normalizeExecutionRequirements(args);
     if (executionRequirements) payload.executionRequirements = executionRequirements;
     const result = await request(

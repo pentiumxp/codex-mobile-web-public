@@ -90,6 +90,7 @@ test("remote managed workspace local execution starts Codex thread, waits for co
     const terminal = await service.execute({
       taskCardId: "ttc_remote_local",
       idempotencyKey: "idem-local",
+      retryOfTaskCardId: "rmwtc_parent",
       title: "Implement bounded local task",
       summary: "bounded summary",
       bodyMarkdown: "Run the local project task.",
@@ -116,6 +117,7 @@ test("remote managed workspace local execution starts Codex thread, waits for co
     assert.equal(terminal.status, "completed");
     assert.equal(terminal.summary, "local_task_card_execution_completed");
     assert.equal(terminal.metadata.localExecutionBridge, "codex_mobile_local_runtime");
+    assert.equal(terminal.metadata.retryOfTaskCardId, "rmwtc_parent");
     assert.equal(terminal.metadata.localThreadId, "local-thread-1");
     assert.equal(terminal.metadata.localTurnId, "local-turn-1");
     assert.equal(terminal.metadata.turnStatus, "completed");
@@ -133,6 +135,7 @@ test("remote managed workspace local execution starts Codex thread, waits for co
     assert.equal(terminal.metadata.executionAuthority.approvalResolution.status, "configured");
     assert.equal(terminal.metadata.executionRequirements.requiresCommandExecution, true);
     assert.equal(terminal.metadata.executionResult.ok, true);
+    assert.equal(terminal.metadata.executionResult.retryOfTaskCardId, "rmwtc_parent");
     assert.equal(terminal.metadata.executionResult.commandExecutionCount, 1);
     assert.deepEqual(terminal.metadata.executionResult.completedCommandClasses, ["workspace_read"]);
     assert.equal(terminal.metadata.toolSurfaceAvailability.available, true);
@@ -193,6 +196,7 @@ test("remote managed workspace local execution starts Codex thread, waits for co
     assert.equal(requests[1].params.effort, "xhigh");
     assert.equal(requests[1].params.remoteManagedWorkspaceExecution.contractVersion, "remote-managed-workspace-local-execution-v1");
     assert.equal(requests[1].params.remoteManagedWorkspaceExecution.taskCardId, "ttc_remote_local");
+    assert.equal(requests[1].params.remoteManagedWorkspaceExecution.retryOfTaskCardId, "rmwtc_parent");
     assert.deepEqual(requests[1].params.remoteManagedWorkspaceExecution.requiredToolSurface.requiredCommandClasses, ["workspace_read"]);
     assert.equal(requests[1].params.remoteManagedWorkspaceExecution.toolSurfaceAvailability.available, true);
     assert.match(requests[1].params.developerInstructions, /Remote Managed Workspace structured execution contract:/);

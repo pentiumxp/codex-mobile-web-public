@@ -270,6 +270,8 @@ function normalizeExecutionResultSummary(value) {
     : null;
   const out = {
     taskCardId: compactOneLine(source.taskCardId).slice(0, 180),
+    retryOfTaskCardId: compactOneLine(source.retryOfTaskCardId || source.retry_of_task_card_id).slice(0, 180),
+    retryOfTaskCardIdPresent: Boolean(compactOneLine(source.retryOfTaskCardId || source.retry_of_task_card_id)),
     workspaceId: compactOneLine(source.workspaceId).slice(0, 180),
     localThreadId: compactOneLine(source.localThreadId).slice(0, 180),
     localTurnId: compactOneLine(source.localTurnId).slice(0, 180),

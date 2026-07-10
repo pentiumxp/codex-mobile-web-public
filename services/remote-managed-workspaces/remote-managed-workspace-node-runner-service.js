@@ -103,6 +103,7 @@ function isOrphanedPendingPairing(state = {}) {
 }
 
 function boundedTerminalWithoutExecutionBridge(card = {}) {
+  const retryOfTaskCardId = compactOneLine(card.retryOfTaskCardId || card.retry_of_task_card_id).slice(0, 180);
   return {
     status: "partially_completed",
     title: "远程任务未执行",
@@ -110,12 +111,14 @@ function boundedTerminalWithoutExecutionBridge(card = {}) {
     metadata: {
       blocker: "local_task_card_execution_bridge_unavailable",
       taskCardId: compactOneLine(card.taskCardId || card.id).slice(0, 180),
+      retryOfTaskCardId: retryOfTaskCardId || undefined,
     },
   };
 }
 
 function boundedTerminalForExecutionError(card = {}, err = {}) {
   const code = errorCode(err) || "local_task_card_execution_failed";
+  const retryOfTaskCardId = compactOneLine(card.retryOfTaskCardId || card.retry_of_task_card_id).slice(0, 180);
   return {
     status: "blocked",
     title: "远程任务执行失败",
@@ -123,6 +126,7 @@ function boundedTerminalForExecutionError(card = {}, err = {}) {
     metadata: {
       blocker: code,
       taskCardId: compactOneLine(card.taskCardId || card.id).slice(0, 180),
+      retryOfTaskCardId: retryOfTaskCardId || undefined,
       localExecutionBridge: "codex_mobile_local_runtime",
     },
   };

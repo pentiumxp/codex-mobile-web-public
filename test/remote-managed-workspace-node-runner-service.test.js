@@ -79,7 +79,7 @@ function fakeNodeClient(cards, calls, options = {}) {
 test("remote node runner registers, heartbeats, polls, acks, heartbeats card, and returns execution-bridge blocker", async () => {
   const { root, service } = makeSettings();
   const calls = [];
-  const cards = [{ taskCardId: "ttc_runner_a", idempotencyKey: "idem-a", title: "Runner task" }];
+  const cards = [{ taskCardId: "ttc_runner_a", idempotencyKey: "idem-a", retryOfTaskCardId: "rmwtc_parent", title: "Runner task" }];
   try {
     const runner = createRemoteManagedWorkspaceNodeRunnerService({
       settingsService: service,
@@ -101,6 +101,7 @@ test("remote node runner registers, heartbeats, polls, acks, heartbeats card, an
     ]);
     assert.equal(calls[0][2], "runner-token");
     assert.equal(calls[5][4], "local_task_card_execution_bridge_unavailable");
+    assert.equal(calls[5][2], "partially_completed");
     assert.equal(result.status.connectionStatus, "connected");
     assert.equal(result.status.lastTaskCardId, "ttc_runner_a");
     assert.doesNotMatch(JSON.stringify(result.status), /runner-token/);
@@ -261,8 +262,8 @@ test("remote node runner preserves bounded per-card execution result history", a
   const { root, service } = makeSettings();
   const calls = [];
   const cards = [
-    { taskCardId: "ttc_runner_history_a", idempotencyKey: "idem-history-a", title: "History A" },
-    { taskCardId: "ttc_runner_history_b", idempotencyKey: "idem-history-b", title: "History B" },
+    { taskCardId: "ttc_runner_history_a", idempotencyKey: "idem-history-a", retryOfTaskCardId: "rmwtc_parent_a", title: "History A" },
+    { taskCardId: "ttc_runner_history_b", idempotencyKey: "idem-history-b", retryOfTaskCardId: "rmwtc_parent_b", title: "History B" },
   ];
   try {
     const runner = createRemoteManagedWorkspaceNodeRunnerService({
@@ -280,6 +281,7 @@ test("remote node runner preserves bounded per-card execution result history", a
           localTurnId: `turn-${card.taskCardId}`,
           executionResult: {
             taskCardId: card.taskCardId,
+            retryOfTaskCardId: card.retryOfTaskCardId,
             workspaceId: "rmw_runner",
             localThreadId: `thread-${card.taskCardId}`,
             localTurnId: `turn-${card.taskCardId}`,
@@ -310,6 +312,8 @@ test("remote node runner preserves bounded per-card execution result history", a
     const second = await runner.runOnce({ force: true });
 
     assert.equal(second.status.lastExecutionResult.taskCardId, "ttc_runner_history_b");
+    assert.equal(second.status.lastExecutionResult.retryOfTaskCardId, "rmwtc_parent_b");
+    assert.equal(second.status.lastExecutionResult.retryOfTaskCardIdPresent, true);
     assert.equal(second.status.lastExecutionResult.commandExecutionCount, 1);
     assert.equal(second.status.lastExecutionResult.toolSurfaceAvailability.available, true);
     assert.deepEqual(
@@ -317,6 +321,7 @@ test("remote node runner preserves bounded per-card execution result history", a
       ["ttc_runner_history_a", "ttc_runner_history_b"],
     );
     assert.equal(second.status.recentExecutionResults[0].issueCode, "remote_managed_workspace_required_command_execution_missing");
+    assert.equal(second.status.recentExecutionResults[0].retryOfTaskCardId, "rmwtc_parent_a");
     assert.equal(second.status.recentExecutionResults[0].toolSurfaceAvailability.available, false);
     assert.equal(second.status.recentExecutionResults[0].toolSurfaceAvailability.issueCode, "remote_managed_workspace_command_tool_surface_unavailable");
     assert.doesNotMatch(JSON.stringify(second.status), /runner-token|raw/i);
