@@ -50,9 +50,13 @@ test("manual restart route delegates to the shared-chain restart service", () =>
   assert.match(serverRouteCompositionServiceJs, /createCoreApiRouteService/);
   assert.match(coreApiRouteServiceJs, /sharedChainRestartService\.restart/);
   assert.match(coreApiRouteServiceJs, /\/api\/restart\/shared-chain/);
+  assert.match(coreApiRouteServiceJs, /\/api\/readyz/);
+  assert.match(coreApiRouteServiceJs, /\/api\/restart\/drain/);
   assert.match(coreApiRouteServiceJs, /activeProfileRestartOptions\(\)/);
   assert.match(coreApiRouteServiceJs, /sendJson\(202,\s*result\)/);
+  assert.match(serverRouteCompositionServiceJs, /restartDrainService: dependencies\.restartDrainService/);
   assert.match(pkg, /adapters\/shared-chain-restart-service\.js/);
+  assert.match(pkg, /services\/runtime\/server-restart-drain-service\.js/);
   assert.match(pkg, /server-routes\/core-api-route-service\.js/);
   assert.match(pkg, /adapters\/core-api-route-service\.js/);
 });
@@ -126,4 +130,13 @@ test("manual restart distinguishes macOS Mobile Web restart scope", () => {
   assert.match(appUpdateRuntimeJs, /不会重启 Codex Desktop、shared mux 或其它本机服务/);
   assert.match(readme, /On macOS, the same endpoint restarts only the current Mobile Web listener/);
   assert.match(readme, /without triggering the macOS `Quit Codex\?` confirmation/);
+});
+
+test("macOS listener shutdown preserves shared app-server turn ownership", () => {
+  assert.match(serverJs, /createServerRestartDrainService/);
+  assert.match(serverJs, /serverRestartDrainService\.beginDrain/);
+  assert.match(serverJs, /codex\.closeTransportOnly\(\)/);
+  assert.match(serverJs, /if \(!REQUIRE_SHARED_APP_SERVER\) \{[\s\S]*codex\.child[\s\S]*child\.kill\(\)/);
+  assert.match(serverJs, /if \(!PERSIST_MOBILE_OWNED_MUX\) \{[\s\S]*codex\.muxChild[\s\S]*muxChild\.kill\(\)/);
+  assert.match(serverJs, /server\.close\(\(\) => process\.exit\(0\)\)/);
 });

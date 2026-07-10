@@ -535,6 +535,92 @@ test("core status route exposes runtime pressure without blocking on quota hydra
   assert.equal(loadedRecentRateLimits, true);
 });
 
+test("core readiness routes distinguish listener health from restart drain readiness", async () => {
+  const sent = [];
+  const service = createCoreApiRouteService({
+    restartDrainService: {
+      status: () => ({
+        ok: false,
+        ready: false,
+        draining: true,
+        reason: "macos_plugin_deploy",
+        retryAfterSeconds: 7,
+        issueCodes: ["listener_restart_draining"],
+        activeTurnCount: 1,
+      }),
+    },
+  });
+
+  const health = await service.handlePublicRoute({
+    url: new URL("http://127.0.0.1:8787/api/healthz"),
+    req: { method: "GET", headers: {} },
+    res: {},
+    readBody: async () => ({}),
+    sendJson: (status, body, headers) => sent.push({ status, body, headers }),
+  });
+  const ready = await service.handlePublicRoute({
+    url: new URL("http://127.0.0.1:8787/api/readyz"),
+    req: { method: "GET", headers: {} },
+    res: {},
+    readBody: async () => ({}),
+    sendJson: (status, body, headers) => sent.push({ status, body, headers }),
+  });
+
+  assert.deepEqual(health, { handled: true });
+  assert.deepEqual(ready, { handled: true });
+  assert.equal(sent[0].status, 200);
+  assert.equal(sent[0].body.ready, true);
+  assert.equal(sent[1].status, 503);
+  assert.equal(sent[1].body.reason, "macos_plugin_deploy");
+  assert.equal(sent[1].body.activeTurnCount, 1);
+  assert.equal(sent[1].headers["Retry-After"], "7");
+});
+
+test("core restart drain route marks listener not ready before deploy restart", async () => {
+  let captured = null;
+  let sent = null;
+  const service = createCoreApiRouteService({
+    restartDrainService: {
+      beginDrain: (input) => {
+        captured = input;
+        return {
+          ok: false,
+          ready: false,
+          draining: true,
+          reason: input.reason,
+          issueCodes: ["listener_restart_draining"],
+          activeTurnCount: input.activeTurnCount,
+        };
+      },
+    },
+  });
+
+  const handled = await service.handleAuthorizedRoute({
+    url: new URL("http://127.0.0.1:8787/api/restart/drain"),
+    req: { method: "POST", headers: {} },
+    res: {},
+    readBody: async () => ({
+      reason: "macos_plugin_deploy",
+      source: "deploy_script",
+      maxDrainMs: 900000,
+      activeTurnCount: 2,
+    }),
+    sendJson: (status, body) => {
+      sent = { status, body };
+    },
+  });
+
+  assert.deepEqual(handled, { handled: true });
+  assert.equal(sent.status, 202);
+  assert.equal(sent.body.ready, false);
+  assert.deepEqual(captured, {
+    reason: "macos_plugin_deploy",
+    source: "deploy_script",
+    maxDrainMs: 900000,
+    activeTurnCount: 2,
+  });
+});
+
 test("core Hermes plugin manifest route forwards runtime build identity", async () => {
   let capturedManifestInput = null;
   let sent = null;

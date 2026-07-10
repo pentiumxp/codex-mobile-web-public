@@ -72,6 +72,7 @@ function createCoreApiRouteService(deps = {}) {
     reasoningEffortOptions,
     remoteManagedWorkspaceRunnerService,
     remoteManagedWorkspaceSettingsService,
+    restartDrainService,
     refreshAppUpdateStatus,
     refreshGitHubLinkPreview,
     refreshPublicPullRequestStatus,
@@ -148,6 +149,21 @@ function createCoreApiRouteService(deps = {}) {
     }
   }
 
+  function restartReadinessStatus(input = {}) {
+    if (restartDrainService && typeof restartDrainService.status === "function") {
+      return restartDrainService.status(input);
+    }
+    return { ok: true, ready: true, draining: false, issueCodes: [], activeTurnCount: 0 };
+  }
+
+  function sendRestartReadiness(sendJson, status) {
+    const code = status && status.ready === false ? 503 : 200;
+    const retryAfter = status && status.retryAfterSeconds
+      ? { "Retry-After": String(status.retryAfterSeconds) }
+      : {};
+    sendJson(code, status, retryAfter);
+  }
+
   function defaultModelForOptions(options = []) {
     const configured = String(codexConfigDefaults && codexConfigDefaults.model || "").trim();
     const fallback = String(defaultModel || "").trim();
@@ -184,6 +200,14 @@ function createCoreApiRouteService(deps = {}) {
   async function handlePublicRoute(context = {}) {
     const { url, req, res, readBody, sendJson } = context;
     if (!url || !req || !res) return { handled: false };
+    if (url.pathname === "/api/healthz" && req.method === "GET") {
+      sendJson(200, { ok: true, ready: true, service: "codex-mobile-web" });
+      return { handled: true };
+    }
+    if (url.pathname === "/api/readyz" && req.method === "GET") {
+      sendRestartReadiness(sendJson, restartReadinessStatus());
+      return { handled: true };
+    }
     if (url.pathname === "/api/v1/hermes/plugin/manifest" && req.method === "GET") {
       const buildConfig = typeof deps.currentPublicBuildConfig === "function"
         ? deps.currentPublicBuildConfig()
@@ -805,6 +829,30 @@ function createCoreApiRouteService(deps = {}) {
       } catch (err) {
         sendJson(err.statusCode || 500, { error: err.message || String(err) });
       }
+      return { handled: true };
+    }
+    if (url.pathname === "/api/restart/drain" && req.method === "POST") {
+      try {
+        const body = await readBody();
+        const result = restartDrainService && typeof restartDrainService.beginDrain === "function"
+          ? restartDrainService.beginDrain({
+            reason: body.reason || "listener_restart",
+            source: body.source || "api",
+            maxDrainMs: body.maxDrainMs,
+            activeTurnCount: body.activeTurnCount,
+          })
+          : restartReadinessStatus();
+        sendJson(202, result);
+      } catch (err) {
+        sendJson(err.statusCode || 500, { error: err.message || String(err) });
+      }
+      return { handled: true };
+    }
+    if (url.pathname === "/api/restart/drain" && req.method === "DELETE") {
+      const result = restartDrainService && typeof restartDrainService.clearDrain === "function"
+        ? restartDrainService.clearDrain()
+        : restartReadinessStatus();
+      sendJson(200, result);
       return { handled: true };
     }
     if (url.pathname === "/api/status") {

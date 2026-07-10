@@ -110,6 +110,7 @@ const { createServerRuntimeUtils } = require("./services/runtime/server-runtime-
 const { createViteShellArtifactService } = require("./services/runtime/vite-shell-artifact-service");
 const { createServerRuntimeConfigService } = require("./services/runtime/server-runtime-config-service");
 const { createServerHttpRuntimeService } = require("./services/runtime/server-http-runtime-service");
+const { createServerRestartDrainService } = require("./services/runtime/server-restart-drain-service");
 const { createRuntimeSettingsService } = require("./services/runtime/runtime-settings-service");
 const { createThreadRuntimeSettingsService } = require("./services/runtime/thread-runtime-settings-service");
 const { createModelOptionsRuntimeService } = require("./services/runtime/model-options-runtime-service");
@@ -445,6 +446,7 @@ const {
   compactStringArray,
   statusText,
 } = serverHttpRuntimeService;
+const serverRestartDrainService = createServerRestartDrainService();
 const AUTH_KEY = DISABLE_AUTH ? "" : loadAuthKey();
 const hermesPluginService = createHermesPluginService({
   registrationFile: HERMES_PLUGIN_REGISTRATION_FILE,
@@ -2100,6 +2102,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   remoteManagedWorkspaceRunnerService,
   remoteManagedWorkspaceService,
   remoteManagedWorkspaceSettingsService,
+  restartDrainService: serverRestartDrainService,
   rememberStartedThread,
   removeEventClient,
   requestAuthToken,
@@ -2164,6 +2167,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   logger: console,
 });
 const server = http.createServer(serverRouteCompositionService.handleRequest);
+let shutdownStarted = false;
 
 server.on("clientError", serverRouteCompositionService.handleClientError);
 
@@ -2175,10 +2179,19 @@ process.on("unhandledRejection", (err) => {
   console.error(`[server] unhandled rejection: ${err && err.stack ? err.stack : err}`);
 });
 
-process.on("SIGINT", () => shutdown());
-process.on("SIGTERM", () => shutdown());
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
 
-function shutdown() {
+function shutdown(reason = "signal") {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  try {
+    serverRestartDrainService.beginDrain({
+      reason: "listener_shutdown",
+      source: reason,
+      maxDrainMs: 15_000,
+    });
+  } catch (_) {}
   try {
     remoteManagedWorkspaceRunnerService.stop();
   } catch (_) {}
@@ -2186,15 +2199,25 @@ function shutdown() {
     clearTaskCardExecutionWatchdog();
   } catch (_) {}
   try {
-    if (codex.ws) codex.ws.close();
+    if (codex.ws && typeof codex.closeTransportOnly === "function") codex.closeTransportOnly();
   } catch (_) {}
+  if (!REQUIRE_SHARED_APP_SERVER) {
+    try {
+      if (codex.child && codex.child.exitCode === null) codex.child.kill();
+    } catch (_) {}
+  }
+  if (!PERSIST_MOBILE_OWNED_MUX) {
+    try {
+      if (!PERSIST_MOBILE_OWNED_MUX && codex.muxChild && codex.muxChild.exitCode === null) codex.muxChild.kill();
+    } catch (_) {}
+  }
+  const forceExit = setTimeout(() => process.exit(0), 5_000);
+  if (forceExit && typeof forceExit.unref === "function") forceExit.unref();
   try {
-    if (codex.child && codex.child.exitCode === null) codex.child.kill();
-  } catch (_) {}
-  try {
-    if (!PERSIST_MOBILE_OWNED_MUX && codex.muxChild && codex.muxChild.exitCode === null) codex.muxChild.kill();
-  } catch (_) {}
-  process.exit(0);
+    server.close(() => process.exit(0));
+  } catch (_) {
+    process.exit(0);
+  }
 }
 
 function startServer() {
