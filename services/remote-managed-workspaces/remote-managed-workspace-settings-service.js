@@ -115,6 +115,14 @@ function normalizePairingStatus(value) {
   return PAIRING_STATUS_VALUES.has(text) ? text : "unconfigured";
 }
 
+function pairingResultSource(result = {}) {
+  if (!result || typeof result !== "object" || Array.isArray(result)) return {};
+  return result.pairingRequest
+    || result.pairing
+    || result.registration
+    || result;
+}
+
 function isPathInside(pathModule, child, parent) {
   const relative = pathModule.relative(parent, child);
   return relative === "" || (!relative.startsWith("..") && !pathModule.isAbsolute(relative));
@@ -668,9 +676,7 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
   }
 
   function applyPairingResult(result = {}) {
-    const source = result && typeof result === "object" && !Array.isArray(result)
-      ? (result.pairing || result.registration || result)
-      : {};
+    const source = pairingResultSource(result);
     const current = readState();
     const timestamp = nowIso(now);
     const requestId = compactOneLine(

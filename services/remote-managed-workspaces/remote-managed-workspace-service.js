@@ -385,7 +385,7 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
       const pairing = publicPairingRequest(existing);
       const credential = pairingCredentialsByRequestId.get(existing.requestId);
       if (existing.status === "approved" && credential) pairing.scopedCredential = credential;
-      return { ok: true, duplicate: true, pairing };
+      return { ok: true, duplicate: true, pairing, pairingRequest: pairing };
     }
     const timestamp = nowIso(now);
     const requestId = `rmw_pair_${stableHash(cryptoModule, `${config.workspaceId}:${config.nodeName}:${timestamp}`).slice(0, 18)}`;
@@ -400,7 +400,8 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
     });
     loaded.pairingRequests[requestId] = row;
     persist();
-    return { ok: true, duplicate: false, pairing: publicPairingRequest(row) };
+    const pairing = publicPairingRequest(row);
+    return { ok: true, duplicate: false, pairing, pairingRequest: pairing };
   }
 
   function pairingStatus(requestId) {
@@ -412,7 +413,7 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
     if (row.status === "approved" && credential) {
       pairing.scopedCredential = credential;
     }
-    return { ok: true, pairing };
+    return { ok: true, pairing, pairingRequest: pairing };
   }
 
   function approvePairing(requestId, input = {}) {
@@ -433,7 +434,8 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
     row.credentialHash = stableHash(cryptoModule, scopedCredential);
     loaded.pairingRequests[id] = row;
     persist();
-    return { ok: true, pairing: Object.assign(publicPairingRequest(row), { scopedCredential }) };
+    const pairing = Object.assign(publicPairingRequest(row), { scopedCredential });
+    return { ok: true, pairing, pairingRequest: pairing };
   }
 
   function rejectPairing(requestId, input = {}) {
@@ -450,7 +452,8 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
     pairingCredentialsByRequestId.delete(id);
     loaded.pairingRequests[id] = row;
     persist();
-    return { ok: true, pairing: publicPairingRequest(row) };
+    const pairing = publicPairingRequest(row);
+    return { ok: true, pairing, pairingRequest: pairing };
   }
 
   function normalizeRegistration(input = {}) {

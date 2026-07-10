@@ -324,6 +324,73 @@ test("remote managed workspace settings consume pairing approval as write-only s
   }
 });
 
+test("remote managed workspace settings consume Home AI pairingRequest response shape", () => {
+  const { root, projectRoot, service } = makeTempService();
+  try {
+    service.enableWorkspace({
+      centralUrl: "http://127.0.0.1:8797",
+      workspace: {
+        cwd: projectRoot,
+        label: "Home AI Pairing Shape",
+      },
+    });
+    const pairing = service.applyPairingResult({
+      ok: true,
+      pendingApproval: true,
+      pairingRequest: {
+        requestId: "rmw_pair_home_ai_shape",
+        status: "pending_approval",
+      },
+    });
+    assert.equal(pairing.pairingStatus, "pending_approval");
+    assert.equal(service.publicSettings().pairingRequestId, "rmw_pair_home_ai_shape");
+
+    const approved = service.applyPairingResult({
+      ok: true,
+      pairingRequest: {
+        requestId: "rmw_pair_home_ai_shape",
+        status: "paired",
+      },
+      nodeCredential: "home-ai-node-credential",
+    });
+    const publicStatus = service.publicSettings(undefined, approved);
+    assert.equal(publicStatus.pairingRequestId, "rmw_pair_home_ai_shape");
+    assert.equal(publicStatus.pairingStatus, "approved");
+    assert.equal(publicStatus.scopedCredentialConfigured, true);
+    assert.doesNotMatch(JSON.stringify(publicStatus), /home-ai-node-credential/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote managed workspace settings prefer canonical pairingRequest over legacy pairing alias", () => {
+  const { root, projectRoot, service } = makeTempService();
+  try {
+    service.enableWorkspace({
+      centralUrl: "http://127.0.0.1:8797",
+      workspace: {
+        cwd: projectRoot,
+        label: "Pairing Precedence",
+      },
+    });
+    const pairing = service.applyPairingResult({
+      ok: true,
+      pairing: {
+        requestId: "rmw_pair_legacy_alias",
+        status: "pending_approval",
+      },
+      pairingRequest: {
+        requestId: "rmw_pair_canonical",
+        status: "pending_approval",
+      },
+    });
+    assert.equal(pairing.pairingStatus, "pending_approval");
+    assert.equal(service.publicSettings().pairingRequestId, "rmw_pair_canonical");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("remote managed workspace settings ignore external credential fallback after invalid scoped credential recovery", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-settings-invalid-external-"));
   const projectRoot = path.join(root, "project");

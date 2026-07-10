@@ -77,12 +77,14 @@ test("remote managed workspace pairing approval issues scoped credential without
   });
   assert.equal(requested.ok, true);
   assert.equal(requested.pairing.status, "pending_approval");
+  assert.equal(requested.pairingRequest.requestId, requested.pairing.requestId);
   assert.doesNotMatch(JSON.stringify(requested), /scoped-node-credential/);
 
   const approved = service.approvePairing(requested.pairing.requestId, {
     scopedCredential: "scoped-node-credential",
   });
   assert.equal(approved.pairing.status, "approved");
+  assert.equal(approved.pairingRequest.requestId, requested.pairing.requestId);
   assert.equal(approved.pairing.scopedCredential, "scoped-node-credential");
 
   const registered = service.register({

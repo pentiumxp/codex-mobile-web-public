@@ -61,6 +61,8 @@ config must point `centralUrl` at the Home AI control-plane endpoint.
 The Home AI app owns the production endpoints:
 
 - `POST /api/remote-managed-workspaces/register`
+- `POST /api/remote-managed-workspaces/pairing-requests`
+- `GET /api/remote-managed-workspaces/pairing-requests/:requestId`
 - `POST /api/remote-managed-workspaces/:workspaceId/node-heartbeat`
 - `GET /api/remote-managed-workspaces/:workspaceId/task-cards/poll`
 - `POST /api/remote-managed-workspaces/:workspaceId/task-cards/:taskCardId/ack`
@@ -70,8 +72,9 @@ The Home AI app owns the production endpoints:
 - `POST /api/remote-managed-workspaces/:workspaceId/escalations`
 
 Codex Mobile's simulator uses the same route shape so the remote-node client can
-be tested against a local central stand-in. That route shape does not make
-Codex Mobile the central owner.
+be tested against a local central stand-in. Pairing responses expose Home AI's
+canonical `pairingRequest.requestId` shape and keep `pairing` only as a local
+legacy alias. That route shape does not make Codex Mobile the central owner.
 
 ## Remote Node Contract
 

@@ -712,7 +712,16 @@ test("remote node runner creates fresh request for orphaned pending approval sta
   const nodeClient = Object.assign(fakeNodeClient([], calls), {
     requestPairing: async () => {
       calls.push(["requestPairing"]);
-      return { result: { pairing: { requestId: "rmw_pair_orphan_recreated", status: "pending_approval" } } };
+      return {
+        result: {
+          ok: true,
+          pendingApproval: true,
+          pairingRequest: {
+            requestId: "rmw_pair_orphan_recreated",
+            status: "pending_approval",
+          },
+        },
+      };
     },
     pollPairingStatus: async (_config, requestId) => {
       calls.push(["pollPairingStatus", requestId]);
@@ -766,7 +775,13 @@ test("remote node runner fails closed when recreated pairing request has no id",
   const nodeClient = Object.assign(fakeNodeClient([], calls), {
     requestPairing: async () => {
       calls.push(["requestPairing"]);
-      return { result: { pairing: { status: "pending_approval" } } };
+      return {
+        result: {
+          ok: true,
+          pendingApproval: true,
+          pairingRequest: { status: "pending_approval" },
+        },
+      };
     },
     pollPairingStatus: async (_config, requestId) => {
       calls.push(["pollPairingStatus", requestId]);
