@@ -49,6 +49,9 @@ function fakeNodeClient(cards, calls, options = {}) {
     },
     pollTaskCards: async () => {
       calls.push(["pollTaskCards"]);
+      if (options.pollPayload) {
+        return typeof options.pollPayload === "function" ? options.pollPayload(cards) : options.pollPayload;
+      }
       return { ok: true, cards: cards.length ? [cards[0]] : [], count: cards.length ? 1 : 0 };
     },
     ackTaskCard: async (_config, taskCardId) => {
@@ -101,6 +104,91 @@ test("remote node runner registers, heartbeats, polls, acks, heartbeats card, an
     assert.equal(result.status.connectionStatus, "connected");
     assert.equal(result.status.lastTaskCardId, "ttc_runner_a");
     assert.doesNotMatch(JSON.stringify(result.status), /runner-token/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote node runner consumes canonical poll taskCards", async () => {
+  const { root, service } = makeSettings();
+  const calls = [];
+  const cards = [{ taskCardId: "rmwtc_canonical_runner", idempotencyKey: "idem-canonical", title: "Canonical runner task" }];
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: fakeNodeClient(cards, calls, {
+        pollPayload: () => ({ ok: true, taskCards: cards.length ? [cards[0]] : [], count: cards.length ? 1 : 0 }),
+      }),
+      taskCardExecutor: async () => ({ status: "completed", title: "done", summary: "done" }),
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+    const result = await runner.runOnce({ force: true });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.polledCount, 1);
+    assert.equal(result.processed.terminalStatus, "completed");
+    assert.deepEqual(calls.map((entry) => entry[0]), [
+      "register",
+      "nodeHeartbeat",
+      "pollTaskCards",
+      "ackTaskCard",
+      "heartbeatTaskCard",
+      "returnTaskCard",
+    ]);
+    assert.equal(calls[3][1], "rmwtc_canonical_runner");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote node runner de-duplicates canonical and legacy poll aliases", async () => {
+  const { root, service } = makeSettings();
+  const calls = [];
+  const cards = [{ taskCardId: "rmwtc_alias_runner", idempotencyKey: "idem-alias", title: "Alias runner task" }];
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: fakeNodeClient(cards, calls, {
+        pollPayload: () => ({
+          ok: true,
+          taskCards: cards.length ? [cards[0]] : [],
+          cards: cards.length ? [Object.assign({}, cards[0], { title: "Legacy duplicate" })] : [],
+          count: cards.length ? 1 : 0,
+        }),
+      }),
+      taskCardExecutor: async () => ({ status: "completed", title: "done", summary: "done" }),
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+    const result = await runner.runOnce({ force: true });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.polledCount, 1);
+    assert.equal(calls.filter((entry) => entry[0] === "ackTaskCard").length, 1);
+    assert.equal(calls.filter((entry) => entry[0] === "returnTaskCard").length, 1);
+    assert.equal(result.status.lastTaskCardId, "rmwtc_alias_runner");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote node runner fails closed on malformed poll payload", async () => {
+  const { root, service } = makeSettings();
+  const calls = [];
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: fakeNodeClient([], calls, {
+        pollPayload: { ok: true, taskCards: { taskCardId: "rmwtc_bad" }, count: 1 },
+      }),
+      taskCardExecutor: async () => ({ status: "completed", title: "done", summary: "done" }),
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+    const result = await runner.runOnce({ force: true, suppressErrors: true });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, "remote_managed_workspace_poll_task_cards_invalid");
+    assert.equal(calls.filter((entry) => entry[0] === "ackTaskCard").length, 0);
+    assert.equal(calls.filter((entry) => entry[0] === "returnTaskCard").length, 0);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -467,6 +555,239 @@ test("remote node runner normalizes invalid scoped credential alias and creates 
     assert.equal(pending.status.pairingRequestId, "rmw_pair_alias_recovery");
     assert.equal(calls.filter((entry) => entry[0] === "requestPairing").length, 1);
     assert.doesNotMatch(JSON.stringify(pending.status), /runner-token/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote node runner clears stale credential on pairing precondition without request id", async () => {
+  const { root, service } = makeSettings();
+  service.updateConnectionState({
+    connectionStatus: "auth_failed",
+    pairingStatus: "approved",
+    pairingRequestId: "",
+  });
+  const calls = [];
+  const nodeClient = Object.assign(fakeNodeClient([], calls), {
+    register: async (config) => {
+      calls.push(["register", config.workspaceId, config.enrollmentToken]);
+      const err = new Error("remote_managed_workspace_pairing_must_be_approved_before_node_access");
+      err.code = "remote_managed_workspace_pairing_must_be_approved_before_node_access";
+      err.statusCode = 403;
+      throw err;
+    },
+    requestPairing: async () => {
+      calls.push(["requestPairing"]);
+      return { result: { pairing: { requestId: "rmw_pair_precondition_recovery", status: "pending_approval" } } };
+    },
+    pollPairingStatus: async (_config, requestId) => {
+      calls.push(["pollPairingStatus", requestId]);
+      return { result: { pairing: { requestId, status: "pending_approval" } } };
+    },
+  });
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: nodeClient,
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+
+    const failed = await runner.runOnce({ force: true, suppressErrors: true });
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error, "remote_managed_workspace_pairing_approval_required");
+    assert.equal(failed.status.connectionStatus, "auth_failed");
+    assert.equal(failed.status.pairingStatus, "unconfigured");
+    assert.equal(failed.status.pairingRequestId, "");
+    assert.equal(failed.status.scopedCredentialConfigured, false);
+    assert.equal(failed.status.issueCodes.includes("remote_managed_workspace_pairing_approval_required"), true);
+    assert.equal(service.readEnrollmentToken(), "");
+    assert.deepEqual(calls.map((entry) => entry[0]), ["register"]);
+
+    const pending = await runner.runOnce({ force: true });
+    assert.equal(pending.skipped, "pending_approval");
+    assert.equal(pending.status.pairingStatus, "pending_approval");
+    assert.equal(pending.status.pairingRequestId, "rmw_pair_precondition_recovery");
+    assert.equal(calls.filter((entry) => entry[0] === "requestPairing").length, 1);
+    assert.doesNotMatch(JSON.stringify(pending.status), /runner-token/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote node runner creates fresh request for orphaned pending approval state", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-runner-orphaned-pending-"));
+  const projectRoot = path.join(root, "project");
+  fs.mkdirSync(projectRoot, { recursive: true });
+  const service = createRemoteManagedWorkspaceSettingsService({
+    fs,
+    path,
+    settingsFile: path.join(root, "settings.json"),
+    stateFile: path.join(root, "state.json"),
+    enrollmentTokenFile: path.join(root, "secret", "scoped-credential"),
+    now: () => new Date("2026-07-08T00:00:00.000Z"),
+  });
+  service.enableWorkspace({
+    centralUrl: "http://127.0.0.1:9999",
+    workspace: { cwd: projectRoot, label: "Orphaned Pending Project" },
+  });
+  service.updateConnectionState({
+    connectionStatus: "connecting",
+    pairingStatus: "pending_approval",
+    pairingRequestId: "",
+    issueCode: "remote_managed_workspace_pairing_approval_required",
+  });
+  const calls = [];
+  const nodeClient = Object.assign(fakeNodeClient([], calls), {
+    requestPairing: async () => {
+      calls.push(["requestPairing"]);
+      return { result: { pairing: { requestId: "rmw_pair_orphan_recreated", status: "pending_approval" } } };
+    },
+    pollPairingStatus: async (_config, requestId) => {
+      calls.push(["pollPairingStatus", requestId]);
+      return { result: { pairing: { requestId, status: "pending_approval" } } };
+    },
+  });
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: nodeClient,
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+
+    const pending = await runner.runOnce({ force: true });
+    assert.equal(pending.skipped, "pending_approval");
+    assert.equal(pending.status.pairingStatus, "pending_approval");
+    assert.equal(pending.status.pairingRequestId, "rmw_pair_orphan_recreated");
+    assert.equal(pending.status.scopedCredentialConfigured, false);
+    assert.deepEqual(calls, [["requestPairing"]]);
+
+    const stillPending = await runner.runOnce({ force: true });
+    assert.equal(stillPending.skipped, "pending_approval");
+    assert.equal(calls.some((entry) => entry[0] === "pollPairingStatus" && entry[1] === "rmw_pair_orphan_recreated"), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote node runner fails closed when recreated pairing request has no id", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-runner-orphaned-missing-id-"));
+  const projectRoot = path.join(root, "project");
+  fs.mkdirSync(projectRoot, { recursive: true });
+  const service = createRemoteManagedWorkspaceSettingsService({
+    fs,
+    path,
+    settingsFile: path.join(root, "settings.json"),
+    stateFile: path.join(root, "state.json"),
+    enrollmentTokenFile: path.join(root, "secret", "scoped-credential"),
+    now: () => new Date("2026-07-08T00:00:00.000Z"),
+  });
+  service.enableWorkspace({
+    centralUrl: "http://127.0.0.1:9999",
+    workspace: { cwd: projectRoot, label: "Orphaned Missing Id Project" },
+  });
+  service.updateConnectionState({
+    connectionStatus: "connecting",
+    pairingStatus: "pending_approval",
+    pairingRequestId: "",
+  });
+  const calls = [];
+  const nodeClient = Object.assign(fakeNodeClient([], calls), {
+    requestPairing: async () => {
+      calls.push(["requestPairing"]);
+      return { result: { pairing: { status: "pending_approval" } } };
+    },
+    pollPairingStatus: async (_config, requestId) => {
+      calls.push(["pollPairingStatus", requestId]);
+      return { result: { pairing: { requestId, status: "pending_approval" } } };
+    },
+  });
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: nodeClient,
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+
+    const blocked = await runner.runOnce({ force: true });
+    assert.equal(blocked.skipped, "pairing_request_id_missing");
+    assert.equal(blocked.status.connectionStatus, "auth_failed");
+    assert.equal(blocked.status.pairingStatus, "auth_failed");
+    assert.equal(blocked.status.pairingRequestId, "");
+    assert.equal(blocked.status.issueCodes.includes("remote_managed_workspace_pairing_request_id_missing"), true);
+    assert.deepEqual(calls, [["requestPairing"]]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote node runner does not clear credential for pairing precondition with active request", async () => {
+  const { root, service } = makeSettings();
+  service.updateConnectionState({
+    connectionStatus: "auth_failed",
+    pairingStatus: "approved",
+    pairingRequestId: "rmw_pair_active_request",
+  });
+  const calls = [];
+  const nodeClient = Object.assign(fakeNodeClient([], calls), {
+    register: async (config) => {
+      calls.push(["register", config.workspaceId, config.enrollmentToken]);
+      const err = new Error("remote_managed_workspace_pairing_approval_required");
+      err.code = "remote_managed_workspace_pairing_approval_required";
+      err.statusCode = 403;
+      throw err;
+    },
+  });
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: nodeClient,
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+    const failed = await runner.runOnce({ force: true, suppressErrors: true });
+
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error, "remote_managed_workspace_pairing_approval_required");
+    assert.equal(failed.status.connectionStatus, "auth_failed");
+    assert.equal(failed.status.pairingRequestId, "rmw_pair_active_request");
+    assert.equal(failed.status.scopedCredentialConfigured, true);
+    assert.equal(service.readEnrollmentToken(), "runner-token");
+    assert.equal(calls.some((entry) => entry[0] === "register" && entry[2] === "runner-token"), true);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote node runner does not clear credential for generic auth failure", async () => {
+  const { root, service } = makeSettings();
+  service.updateConnectionState({
+    connectionStatus: "auth_failed",
+    pairingStatus: "approved",
+    pairingRequestId: "",
+  });
+  const calls = [];
+  const nodeClient = Object.assign(fakeNodeClient([], calls), {
+    register: async (config) => {
+      calls.push(["register", config.workspaceId, config.enrollmentToken]);
+      const err = new Error("remote_managed_workspace_owner_access_forbidden");
+      err.code = "remote_managed_workspace_owner_access_forbidden";
+      err.statusCode = 403;
+      throw err;
+    },
+  });
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: nodeClient,
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+    const failed = await runner.runOnce({ force: true, suppressErrors: true });
+
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error, "remote_managed_workspace_owner_access_forbidden");
+    assert.equal(failed.status.connectionStatus, "auth_failed");
+    assert.equal(failed.status.pairingStatus, "approved");
+    assert.equal(failed.status.scopedCredentialConfigured, true);
+    assert.equal(service.readEnrollmentToken(), "runner-token");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

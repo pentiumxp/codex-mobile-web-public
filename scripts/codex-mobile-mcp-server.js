@@ -10,7 +10,10 @@ const {
   publicSensitiveContext,
 } = require("../services/runtime/home-ai-secret-ref-service");
 const {
+  createRemoteManagedWorkspaceControlBootstrapService,
   createRemoteManagedWorkspaceControlClientService,
+  defaultControlCredentialFile,
+  defaultControlStateFile,
 } = require("../services/remote-managed-workspaces/remote-managed-workspace-control-client-service");
 
 const PROTOCOL_VERSION = "2024-11-05";
@@ -20,8 +23,12 @@ function parseArgs(argv = process.argv.slice(2)) {
   const out = {
     server: process.env.CODEX_MOBILE_BASE_URL || "http://127.0.0.1:8787",
     keyFile: process.env.CODEX_MOBILE_KEY_FILE || path.join(os.homedir(), ".codex-mobile-web", "access_key"),
-    rmwControlUrl: process.env.CODEX_MOBILE_RMW_CONTROL_URL || process.env.HOME_AI_RMW_CONTROL_URL || "",
-    rmwControlTokenFile: process.env.CODEX_MOBILE_RMW_CONTROL_TOKEN_FILE || process.env.HOME_AI_RMW_CONTROL_TOKEN_FILE || "",
+    rmwControlUrl: process.env.CODEX_MOBILE_RMW_CONTROL_URL || process.env.HOME_AI_RMW_CONTROL_URL || "http://127.0.0.1:8797",
+    rmwControlTokenFile: process.env.CODEX_MOBILE_RMW_CONTROL_CREDENTIAL_FILE
+      || process.env.CODEX_MOBILE_RMW_CONTROL_TOKEN_FILE
+      || process.env.HOME_AI_RMW_CONTROL_TOKEN_FILE
+      || defaultControlCredentialFile(),
+    rmwControlStateFile: process.env.CODEX_MOBILE_RMW_CONTROL_STATE_FILE || defaultControlStateFile(),
     rmwControlToken: process.env.CODEX_MOBILE_RMW_CONTROL_TOKEN || process.env.HOME_AI_RMW_CONTROL_TOKEN || "",
     selfTestToolsList: false,
   };
@@ -31,6 +38,8 @@ function parseArgs(argv = process.argv.slice(2)) {
     else if (arg === "--key-file") out.keyFile = argv[++index] || "";
     else if (arg === "--rmw-control-url") out.rmwControlUrl = argv[++index] || "";
     else if (arg === "--rmw-control-token-file") out.rmwControlTokenFile = argv[++index] || "";
+    else if (arg === "--rmw-control-credential-file") out.rmwControlTokenFile = argv[++index] || "";
+    else if (arg === "--rmw-control-state-file") out.rmwControlStateFile = argv[++index] || "";
     else if (arg === "--self-test-tools-list" || arg === "--list-tools") out.selfTestToolsList = true;
     else if (arg === "--help" || arg === "-h") {
       printHelp();
@@ -49,9 +58,13 @@ function printHelp() {
     "Options:",
     "  --server <url>             Codex Mobile server. Default: http://127.0.0.1:8787",
     "  --key-file <path>          Access key file. Default: $HOME/.codex-mobile-web/access_key",
-    "  --rmw-control-url <url>    Home AI RMW control base URL.",
+    "  --rmw-control-url <url>    Home AI RMW control base URL. Default: http://127.0.0.1:8797",
+    "  --rmw-control-credential-file <path>",
+    "                             Scoped RMW control credential file. Token is never printed.",
     "  --rmw-control-token-file <path>",
-    "                             Scoped RMW control token file. Token is never printed.",
+    "                             Backward-compatible alias for --rmw-control-credential-file.",
+    "  --rmw-control-state-file <path>",
+    "                             Non-secret RMW control client pairing state file.",
     "  --self-test-tools-list     Print bounded tool names and exit.",
   ].join("\n") + "\n");
 }
@@ -90,6 +103,11 @@ function createContext(args = {}) {
     key: readAccessKey(args.keyFile),
     rmwControlUrl: args.rmwControlUrl ? normalizeBaseUrl(args.rmwControlUrl) : "",
     rmwControlToken: String(args.rmwControlToken || readOptionalSecret(args.rmwControlTokenFile) || "").trim(),
+    rmwControlBootstrap: createRemoteManagedWorkspaceControlBootstrapService({
+      centralUrl: args.rmwControlUrl,
+      credentialFile: args.rmwControlTokenFile,
+      stateFile: args.rmwControlStateFile,
+    }),
     rmwControlClient: createRemoteManagedWorkspaceControlClientService(),
   };
 }
@@ -682,23 +700,43 @@ async function threadLifecycle(context, args = {}) {
   };
 }
 
-function rmwControlConfig(context, args = {}) {
-  return {
-    centralUrl: boundedString(args.centralUrl || context.rmwControlUrl, "central_url", 1000, true),
-    controlToken: boundedString(context.rmwControlToken, "rmw_control_credential", 4096, true),
-  };
+async function rmwControlConfig(context, args = {}) {
+  const centralUrl = boundedString(args.centralUrl || context.rmwControlUrl, "central_url", 1000, true);
+  const inlineToken = boundedString(context.rmwControlToken, "rmw_control_credential", 4096, false);
+  if (inlineToken) return { ok: true, centralUrl, controlToken: inlineToken };
+  if (!context.rmwControlBootstrap || typeof context.rmwControlBootstrap.ensureControlCredential !== "function") {
+    return {
+      ok: false,
+      status: {
+        ok: false,
+        skipped: "control_pairing_bootstrap_unavailable",
+        centralUrlConfigured: Boolean(centralUrl),
+        scopedControlCredentialConfigured: false,
+        issueCodes: ["rmw_control_pairing_bootstrap_unavailable"],
+      },
+    };
+  }
+  const ensured = await context.rmwControlBootstrap.ensureControlCredential({ centralUrl });
+  if (!ensured.ok) return { ok: false, status: ensured.status };
+  return { ok: true, centralUrl: ensured.centralUrl, controlToken: ensured.controlToken };
 }
 
 async function rmwListWorkspaces(context, args = {}) {
-  return context.rmwControlClient.listWorkspaces(rmwControlConfig(context, args));
+  const config = await rmwControlConfig(context, args);
+  if (!config.ok) return config.status;
+  return context.rmwControlClient.listWorkspaces(config);
 }
 
 async function rmwDispatchTaskCard(context, args = {}) {
-  return context.rmwControlClient.dispatchTaskCard(rmwControlConfig(context, args), args);
+  const config = await rmwControlConfig(context, args);
+  if (!config.ok) return config.status;
+  return context.rmwControlClient.dispatchTaskCard(config, args);
 }
 
 async function rmwReadTaskCard(context, args = {}) {
-  return context.rmwControlClient.readTaskCard(rmwControlConfig(context, args), args);
+  const config = await rmwControlConfig(context, args);
+  if (!config.ok) return config.status;
+  return context.rmwControlClient.readTaskCard(config, args);
 }
 
 async function handleMessage(context, message = {}) {

@@ -45,6 +45,7 @@ const GENERATED_WORKSPACE_CONFIG_ISSUES = new Set([
 ]);
 const INVALID_SCOPED_CREDENTIAL_RECOVERY_ISSUES = new Set([
   "remote_managed_workspace_scoped_node_credential_invalid",
+  "remote_managed_workspace_pairing_approval_required",
   "stale_pairing_request_missing_scoped_credential",
 ]);
 const DEFAULT_CAPABILITIES = [

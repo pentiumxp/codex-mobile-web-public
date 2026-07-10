@@ -216,6 +216,22 @@ function hasExplicitThreadTarget(input = {}) {
   });
 }
 
+function hasExactTargetThreadId(input = {}) {
+  const scalarTargets = [
+    input.targetThreadId,
+    input.target_thread_id,
+  ];
+  if (scalarTargets.some((value) => String(value || "").trim())) return true;
+  const listTargets = [
+    input.targetThreadIds,
+    input.target_thread_ids,
+  ];
+  return listTargets.some((value) => {
+    if (Array.isArray(value)) return value.some((item) => String(item || "").trim());
+    return String(value || "").trim();
+  });
+}
+
 function isHostPlatformRepairText(text) {
   return /(?:home ai central|host-owned|host owned|deploy-contract|deploy contract|proxy|launchd|gateway|schema|platform repair|home ai source|control-plane|控制平面|部署契约|宿主|平台修复)/i.test(text);
 }
@@ -332,6 +348,9 @@ function planHomeAiDeployLaneRouting(input = {}) {
   const targets = Array.isArray(input.targetThreads) ? input.targetThreads.filter(Boolean) : [];
   const visibleThreads = Array.isArray(input.visibleThreads) ? input.visibleThreads.filter(Boolean) : [];
   const options = input.options || {};
+  if (input.exactTargetThreadIdRequested === true && targets.length) {
+    return { action: "allow", reason: "exact_target_thread_honored" };
+  }
   if (!hasStructuredDeployKind(body)
     && hasExplicitThreadTarget(body)
     && targets.some((thread) => thread && !isHomeAiDeployLaneThread(thread, options))) {
@@ -428,6 +447,7 @@ module.exports = {
   findHomeAiDeployLaneThreads,
   homeAiDeployLaneAssignments,
   homeAiDeployLaneTitles,
+  hasExactTargetThreadId,
   hasExplicitThreadTarget,
   isHomeAiControlPlaneCwd,
   isHomeAiDeployLaneThread,

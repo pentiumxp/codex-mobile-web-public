@@ -128,16 +128,80 @@ function publicControlCard(card = {}) {
   };
 }
 
-async function startCentralControlSimulator(service, controlToken) {
+async function startCentralControlSimulator(service) {
   const routeService = createRemoteManagedWorkspaceRouteService({
     remoteManagedWorkspaceService: service,
     centralSimulator: true,
   });
+  let seq = 0;
+  const controlPairingRequests = new Map();
+  const validControlTokens = new Set();
+  function publicControlPairingRequest(entry, includeCredential = false) {
+    return Object.assign({}, DEFAULT_CONTRACT, {
+      requestId: entry.requestId,
+      status: entry.status,
+      clientId: entry.clientId,
+      clientKind: entry.clientKind,
+      localWorkspaceId: entry.localWorkspaceId,
+      approvedScopes: entry.approvedScopes || [],
+      controlCredential: includeCredential && entry.controlToken ? { token: entry.controlToken } : undefined,
+    });
+  }
+  function identityMatches(entry, params) {
+    return entry.clientId === params.get("clientId")
+      && entry.installId === params.get("installId")
+      && entry.deviceId === params.get("deviceId")
+      && entry.localWorkspaceId === params.get("localWorkspaceId");
+  }
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
+      if (req.method === "POST" && url.pathname === "/api/remote-managed-workspace-control/client-pairing-requests") {
+        const body = await readBody(req);
+        seq += 1;
+        const requestId = `cpr_fixture_${seq}`;
+        const entry = {
+          requestId,
+          status: "pending_approval",
+          clientId: String(body.clientId || ""),
+          clientName: String(body.clientName || ""),
+          clientKind: String(body.clientKind || ""),
+          installId: String(body.installId || ""),
+          deviceId: String(body.deviceId || ""),
+          localWorkspaceId: String(body.localWorkspaceId || ""),
+          scopes: Array.isArray(body.scopes) ? body.scopes : [],
+          approvedScopes: [],
+          controlToken: "",
+          credentialIssued: false,
+        };
+        controlPairingRequests.set(requestId, entry);
+        sendJson(res, 202, { ok: true, pairingRequest: publicControlPairingRequest(entry) });
+        return;
+      }
+      if (url.pathname.startsWith("/api/remote-managed-workspace-control/client-pairing-requests/")) {
+        const parts = url.pathname.split("/").filter(Boolean);
+        const requestId = decodeURIComponent(parts[3] || "");
+        const entry = controlPairingRequests.get(requestId);
+        if (!entry) {
+          sendJson(res, 404, Object.assign({ ok: false, error: "remote_managed_workspace_control_client_pairing_request_not_found" }, DEFAULT_CONTRACT));
+          return;
+        }
+        if (!identityMatches(entry, url.searchParams)) {
+          sendJson(res, 403, Object.assign({ ok: false, code: "remote_managed_workspace_control_client_identity_mismatch" }, DEFAULT_CONTRACT));
+          return;
+        }
+        if (entry.status === "approved" && !entry.credentialIssued) {
+          entry.status = "paired";
+          entry.credentialIssued = true;
+          validControlTokens.add(entry.controlToken);
+          sendJson(res, 200, { ok: true, pairingRequest: publicControlPairingRequest(entry, true) });
+          return;
+        }
+        sendJson(res, entry.status === "pending_approval" ? 202 : 200, { ok: true, pairingRequest: publicControlPairingRequest(entry, false) });
+        return;
+      }
       if (url.pathname.startsWith("/api/remote-managed-workspace-control")) {
-        if (bearerToken(req) !== controlToken) {
+        if (!validControlTokens.has(bearerToken(req))) {
           sendJson(res, 403, Object.assign({ ok: false, error: "rmw_control_forbidden" }, DEFAULT_CONTRACT));
           return;
         }
@@ -191,6 +255,15 @@ async function startCentralControlSimulator(service, controlToken) {
     server,
     port,
     url: `http://127.0.0.1:${port}`,
+    approveControlClientPairing(requestId) {
+      const entry = controlPairingRequests.get(requestId);
+      if (!entry) throw new Error("control_pairing_request_not_found");
+      seq += 1;
+      entry.status = "approved";
+      entry.approvedScopes = ["list", "dispatch", "read"];
+      entry.controlToken = `rmw_control_paired_${crypto.randomBytes(16).toString("hex")}_${seq}`;
+      return publicControlPairingRequest(entry);
+    },
   };
 }
 
@@ -217,7 +290,8 @@ async function runRmwControlE2eHarness() {
   const projectRoot = path.join(root, "remote-project");
   fs.mkdirSync(projectRoot, { recursive: true });
   fs.writeFileSync(path.join(projectRoot, "package.json"), "{\"private\":true}\n");
-  const controlToken = `rmw_control_${crypto.randomBytes(16).toString("hex")}`;
+  const controlStateFile = path.join(root, "rmw-control-client-state.json");
+  const controlCredentialFile = path.join(root, "rmw-control-credential");
 
   const homeAiCentralService = createRemoteManagedWorkspaceService({
     fs,
@@ -226,7 +300,7 @@ async function runRmwControlE2eHarness() {
     stateFile: "",
     enrollmentTokens: [],
   });
-  const central = await startCentralControlSimulator(homeAiCentralService, controlToken);
+  const central = await startCentralControlSimulator(homeAiCentralService);
   const projectServer = http.createServer((req, res) => {
     if (req.url === "/status") {
       sendJson(res, 200, { ok: true, projectServer: "remote_project_simulator" });
@@ -307,9 +381,21 @@ async function runRmwControlE2eHarness() {
       server: "http://127.0.0.1:1",
       key: "unused",
       rmwControlUrl: central.url,
-      rmwControlToken: controlToken,
+      rmwControlToken: "",
+      rmwControlBootstrap: require("../services/remote-managed-workspaces/remote-managed-workspace-control-client-service").createRemoteManagedWorkspaceControlBootstrapService({
+        centralUrl: central.url,
+        credentialFile: controlCredentialFile,
+        stateFile: controlStateFile,
+      }),
       rmwControlClient: require("../services/remote-managed-workspaces/remote-managed-workspace-control-client-service").createRemoteManagedWorkspaceControlClientService(),
     };
+    const pendingControlPairing = await handleMessage(context, {
+      id: 0,
+      method: "tools/call",
+      params: { name: "rmw_list_workspaces", arguments: {} },
+    });
+    const controlPairingRequestId = pendingControlPairing.structuredContent.pairingRequest.requestId;
+    central.approveControlClientPairing(controlPairingRequestId);
     const listed = await handleMessage(context, {
       id: 1,
       method: "tools/call",
@@ -342,9 +428,21 @@ async function runRmwControlE2eHarness() {
         },
       },
     });
+    const restartedContext = Object.assign({}, context, {
+      rmwControlBootstrap: require("../services/remote-managed-workspaces/remote-managed-workspace-control-client-service").createRemoteManagedWorkspaceControlBootstrapService({
+        centralUrl: central.url,
+        credentialFile: controlCredentialFile,
+        stateFile: controlStateFile,
+      }),
+    });
+    const restartListed = await handleMessage(restartedContext, {
+      id: 4,
+      method: "tools/call",
+      params: { name: "rmw_list_workspaces", arguments: {} },
+    });
     const combined = { listed: listed.structuredContent, dispatched: dispatched.structuredContent, read: read.structuredContent };
     assertNoForbiddenPayloadClasses(combined, "rmw_control_e2e_result");
-    assertNoRawMaterial(combined, [controlToken]);
+    assertNoRawMaterial(combined, [fs.readFileSync(controlCredentialFile, "utf8").trim()]);
     return {
       ok: true,
       centralPort: central.port,
@@ -352,6 +450,10 @@ async function runRmwControlE2eHarness() {
       pairingRequested: requestedPairing.skipped === "pending_approval",
       pairingApproved: approvedPairing.pairing.status === "approved",
       registered: registeredNow.ok === true,
+      controlPairingStarted: pendingControlPairing.structuredContent.skipped === "control_pairing_pending_approval",
+      controlPairingRequestIdPresent: Boolean(controlPairingRequestId),
+      controlCredentialStored: fs.existsSync(controlCredentialFile),
+      restartPreservedCredential: restartListed.structuredContent.count === 1,
       listedWorkspaceCount: listed.structuredContent.count,
       dispatchedTaskCardId: dispatched.structuredContent.taskCardId,
       duplicate: dispatched.structuredContent.duplicate,

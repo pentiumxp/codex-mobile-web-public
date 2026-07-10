@@ -1101,6 +1101,7 @@ test("source-thread task-card route uses semantic idempotency for routine plugin
   const service = createThreadTaskCardRouteService({
     threadTaskCardService: {},
     stableTextHash,
+    reasoningEffortOptions: ["low", "medium", "high", "xhigh"],
     readThreadListFallback: () => [
       { id: "source-thread", name: "Codex Mobile Implementation", cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" },
       { id: "deploy-lane", name: "Codex Mobile Deploy Lane", cwd: "/Users/hermes-dev/HermesMobileDev/app" },
@@ -1127,9 +1128,10 @@ test("source-thread task-card route uses semantic idempotency for routine plugin
     "deploy-lane": "/Users/hermes-dev/HermesMobileDev/app",
   });
   assert.equal(firstDeploy.routeKind, "deployment");
-  assert.equal(firstDeploy.routeResolution.code, "exact_thread_resolved");
+  assert.equal(firstDeploy.routeResolution.code, "exact_target_thread_honored");
   assert.equal(firstDeploy.routeResolution.targetThreadId, "deploy-lane");
   assert.equal(firstDeploy.mobileDeployLaneRouting, undefined);
+  assert.equal(firstDeploy.mobileExactTargetRouting.reason, "exact_target_thread_honored");
   assert.equal(firstDeploy.idempotencyKey, retryDeploy.idempotencyKey);
 
   const ordinaryBody = {
@@ -1141,6 +1143,103 @@ test("source-thread task-card route uses semantic idempotency for routine plugin
   const firstOrdinary = service.buildThreadTaskCardCreatePayload(Object.assign({}, ordinaryBody, { requestId: "dynamic-tool-call" }), "source-thread");
   const retryOrdinary = service.buildThreadTaskCardCreatePayload(Object.assign({}, ordinaryBody, { requestId: "fallback-script-retry" }), "source-thread");
   assert.notEqual(firstOrdinary.idempotencyKey, retryOrdinary.idempotencyKey);
+});
+
+test("source-thread task-card route honors exact Home AI deploy lane id over Codex Mobile deploy affinity", () => {
+  const homeAiDeployLaneB = {
+    id: "019f16e6-b761-7930-a7ce-1a67041669f4",
+    name: "Home AI Deploy Lane B",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    status: "completed",
+    updatedAt: 200,
+  };
+  const codexDeployLane = {
+    id: "019f16e6-9131-79e2-9b6b-ad41f7e65d92",
+    name: "Codex Mobile Deploy Lane",
+    cwd: "/Users/hermes-dev/HermesMobileDev/app",
+    status: "completed",
+    updatedAt: 100,
+  };
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {},
+    stableTextHash,
+    reasoningEffortOptions: ["low", "medium", "high", "xhigh"],
+    readThreadListFallback: () => [
+      { id: "source-home-ai", name: "Home AI 07-05", cwd: "/Users/hermes-dev/HermesMobileDev/app" },
+      homeAiDeployLaneB,
+      codexDeployLane,
+    ],
+    readStateDbThread: (threadId) => {
+      if (threadId === "source-home-ai") return { id: "source-home-ai", title: "Home AI 07-05", cwd: "/Users/hermes-dev/HermesMobileDev/app" };
+      if (threadId === homeAiDeployLaneB.id) return Object.assign({ title: homeAiDeployLaneB.name }, homeAiDeployLaneB);
+      if (threadId === codexDeployLane.id) return Object.assign({ title: codexDeployLane.name }, codexDeployLane);
+      return null;
+    },
+    threadDisplayTitle: (thread) => thread && (thread.name || thread.title || thread.preview || thread.id) || "",
+  });
+
+  const payload = service.buildThreadTaskCardCreatePayload({
+    targetThreadId: homeAiDeployLaneB.id,
+    targetThreadTitle: "Home AI Deploy Lane B",
+    cardKind: "plugin_deployment",
+    pluginId: "codex-mobile-web",
+    routeKind: "deployment",
+    title: "Approve Gun_Battle RMW pairing",
+    summary: "Owner-gated Home AI RMW approve/readback.",
+    body: "Approve/read back Gun_Battle RMW for codex-mobile-web. Exact Home AI Deploy Lane B must own this credential boundary.",
+    workflowMode: "autonomous",
+    reasoningEffort: "medium",
+  }, "source-home-ai");
+
+  assert.deepEqual(payload.targetThreadIds, [homeAiDeployLaneB.id]);
+  assert.equal(payload.targetThreadIds[0], "019f16e6-b761-7930-a7ce-1a67041669f4");
+  assert.notEqual(payload.targetThreadIds[0], "019f16e6-9131-79e2-9b6b-ad41f7e65d92");
+  assert.equal(payload.routeKind, "deployment");
+  assert.equal(payload.reasoningEffort, "medium");
+  assert.equal(payload.routeResolution.code, "exact_target_thread_honored");
+  assert.equal(payload.routeResolution.targetThreadId, homeAiDeployLaneB.id);
+  assert.equal(payload.routeResolution.matchedThreadId, homeAiDeployLaneB.id);
+  assert.deepEqual(payload.routeResolution.matchedThreadIds, [homeAiDeployLaneB.id]);
+  assert.equal(payload.mobileDeployLaneRouting, undefined);
+  assert.deepEqual(payload.mobileExactTargetRouting, {
+    reason: "exact_target_thread_honored",
+    targetThreadIds: [homeAiDeployLaneB.id],
+  });
+});
+
+test("source-thread task-card route keeps non-exact plugin deploy lane affinity", () => {
+  const service = createThreadTaskCardRouteService({
+    threadTaskCardService: {},
+    stableTextHash,
+    readThreadListFallback: () => [
+      { id: "source-thread", name: "Codex Mobile Implementation", cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" },
+      { id: "home-deploy-b", name: "Home AI Deploy Lane B", cwd: "/Users/hermes-dev/HermesMobileDev/app" },
+      { id: "codex-deploy", name: "Codex Mobile Deploy Lane", cwd: "/Users/hermes-dev/HermesMobileDev/app" },
+    ],
+    readStateDbThread: (threadId) => {
+      if (threadId === "source-thread") return { id: "source-thread", title: "Codex Mobile Implementation", cwd: "/Users/hermes-dev/HermesMobileDev/plugins/codex-mobile-web" };
+      if (threadId === "home-deploy-b") return { id: "home-deploy-b", title: "Home AI Deploy Lane B", cwd: "/Users/hermes-dev/HermesMobileDev/app" };
+      if (threadId === "codex-deploy") return { id: "codex-deploy", title: "Codex Mobile Deploy Lane", cwd: "/Users/hermes-dev/HermesMobileDev/app" };
+      return null;
+    },
+    threadDisplayTitle: (thread) => thread && (thread.name || thread.title || thread.preview || thread.id) || "",
+  });
+
+  const payload = service.buildThreadTaskCardCreatePayload({
+    targetThreadTitle: "Home AI Deploy Lane B",
+    cardKind: "plugin_deployment",
+    pluginId: "codex-mobile-web",
+    routeKind: "deployment",
+    title: "Deploy Codex Mobile",
+    body: "Routine plugin production deploy and readback.",
+    workflowMode: "autonomous",
+  }, "source-thread");
+
+  assert.deepEqual(payload.targetThreadIds, ["codex-deploy"]);
+  assert.equal(payload.routeKind, "deployment");
+  assert.equal(payload.routeResolution.code, "home_ai_deploy_lane_routed");
+  assert.equal(payload.routeResolution.targetThreadId, "codex-deploy");
+  assert.equal(payload.mobileDeployLaneRouting.reason, "routine_plugin_deployment_uses_deploy_lane");
 });
 
 test("source-thread task-card route accepts exact deploy lane title when stored summary is stale", () => {
@@ -1178,7 +1277,7 @@ test("source-thread task-card route accepts exact deploy lane title when stored 
   assert.equal(payload.mobileDeployLaneRouting, undefined);
 });
 
-test("source-thread task-card route blocks Codex Mobile deploy lane redirecting its own deploy to Home AI Deploy", () => {
+test("source-thread task-card route honors exact deploy lane id even from another deploy lane", () => {
   const service = createThreadTaskCardRouteService({
     threadTaskCardService: {},
     stableTextHash,
@@ -1194,20 +1293,19 @@ test("source-thread task-card route blocks Codex Mobile deploy lane redirecting 
     threadDisplayTitle: (thread) => thread && (thread.name || thread.title || thread.preview || thread.id) || "",
   });
 
-  assert.throws(() => service.buildThreadTaskCardCreatePayload({
+  const payload = service.buildThreadTaskCardCreatePayload({
     targetThreadId: "home-deploy-lane",
     cardKind: "plugin_deployment",
     pluginId: "codex-mobile-web",
     title: "Deploy Codex Mobile",
     body: "Deploy source ref c68243f0 for production readback.",
-  }, "codex-deploy-lane"), (err) => {
-    assert.equal(err.code, "deploy_lane_already_at_expected_lane");
-    assert.equal(err.statusCode, 409);
-    assert.equal(err.details.reason, "source_thread_is_assigned_deploy_lane");
-    assert.equal(err.details.pluginId, "codex-mobile-web");
-    assert.equal(err.details.expectedDeployLaneTitle, "Codex Mobile Deploy Lane");
-    return true;
-  });
+  }, "codex-deploy-lane");
+
+  assert.deepEqual(payload.targetThreadIds, ["home-deploy-lane"]);
+  assert.equal(payload.routeKind, "deployment");
+  assert.equal(payload.routeResolution.code, "exact_target_thread_honored");
+  assert.equal(payload.mobileDeployLaneRouting, undefined);
+  assert.equal(payload.mobileExactTargetRouting.reason, "exact_target_thread_honored");
 });
 
 test("source-thread task-card route persists exact role routing evidence", () => {

@@ -92,6 +92,7 @@ function createThreadMessageRouteService(dependencies = {}) {
   const {
     codex,
     modelOptions = [],
+    resolveModelOptions,
     reasoningEffortOptions = [],
     mutationRpcTimeoutMs = 120000,
     startThreadFromRequestBody,
@@ -132,6 +133,30 @@ function createThreadMessageRouteService(dependencies = {}) {
     scheduleBackgroundTask = scheduleDetachedTask,
   } = dependencies;
 
+  function normalizeOptionList(values) {
+    return [...new Set((Array.isArray(values) ? values : [])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean))];
+  }
+
+  async function effectiveModelOptions() {
+    const fallback = normalizeOptionList(modelOptions);
+    if (typeof resolveModelOptions !== "function") return fallback;
+    try {
+      const resolved = normalizeOptionList(await resolveModelOptions());
+      return resolved.length ? resolved : fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  async function allowedRequestedModel(value) {
+    const requested = String(value || "").trim();
+    if (!requested) return "";
+    const options = await effectiveModelOptions();
+    return options.includes(requested) ? requested : "";
+  }
+
   async function handleRoute(options = {}) {
     const url = options.url;
     const method = String(options.method || "").toUpperCase();
@@ -160,9 +185,7 @@ function createThreadMessageRouteService(dependencies = {}) {
         workspaceCwd: cwd,
       });
       const textForInput = appendSecretRefReceiptText(text, secretContext).trim();
-      const requestedModel = modelOptions.includes(String(body.model || "").trim())
-        ? String(body.model || "").trim()
-        : "";
+      const requestedModel = await allowedRequestedModel(body.model);
       const requestedEffort = reasoningEffortOptions.includes(String(body.effort || "").trim())
         ? String(body.effort || "").trim()
         : "";
@@ -343,9 +366,7 @@ function createThreadMessageRouteService(dependencies = {}) {
       const submissionKeyStartedAtMs = Date.now();
       const submissionKeys = messageSubmissionKeys(threadId, body, textForInput, uploads);
       markSubmitTiming(timings, "submissionKeyMs", submissionKeyStartedAtMs);
-      const requestedModel = modelOptions.includes(String(body.model || "").trim())
-        ? String(body.model || "").trim()
-        : "";
+      const requestedModel = await allowedRequestedModel(body.model);
       const requestedEffort = reasoningEffortOptions.includes(String(body.effort || "").trim())
         ? String(body.effort || "").trim()
         : "";

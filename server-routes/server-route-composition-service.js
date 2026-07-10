@@ -74,6 +74,7 @@ function createServerRouteCompositionService(dependencies = {}) {
     requestAuthToken: dependencies.requestAuthToken,
     requestAuthTokens: dependencies.requestAuthTokens,
     requestBaseUrl: dependencies.requestBaseUrl,
+    resolveModelOptions: dependencies.resolveModelOptions,
     rolloutWarningBytes: dependencies.rolloutWarningBytes,
     runtimePressureDiagnostics: dependencies.runtimePressureDiagnostics,
     safeAppUpdateError: dependencies.safeAppUpdateError,

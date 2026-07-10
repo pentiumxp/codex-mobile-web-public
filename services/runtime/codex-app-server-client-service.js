@@ -146,11 +146,15 @@ function createAppServerEndpointResolver(options = {}) {
         const childPid = boundedProcessId(endpoint.childPid || endpoint.appServerPid);
         if (pid) resolved.pid = pid;
         if (childPid) resolved.childPid = childPid;
+        if (endpoint.codexExe) resolved.codexExe = String(endpoint.codexExe).slice(0, 1024);
         if (endpoint.startedAt) resolved.startedAt = String(endpoint.startedAt).slice(0, 80);
+        if (endpoint.codexExe) resolved.codexExe = String(endpoint.codexExe).slice(0, 500);
         return resolved;
       }
       if (endpoint && endpoint.protocol === "ws" && endpoint.url) {
-        return { protocol: "ws", url: endpoint.url, source: endpointFile, required: true };
+        const resolved = { protocol: "ws", url: endpoint.url, source: endpointFile, required: true };
+        if (endpoint.codexExe) resolved.codexExe = String(endpoint.codexExe).slice(0, 500);
+        return resolved;
       }
     } catch (_) {
       return null;
@@ -272,6 +276,24 @@ function createCodexAppServerClient(dependencies = {}) {
     return Boolean(left && right && normalizeRuntimePath(left) === normalizeRuntimePath(right));
   }
 
+  function realRuntimePath(value) {
+    const text = String(value || "").trim();
+    if (!text || !text.includes(path.sep)) return "";
+    try {
+      const realpath = fs.realpathSync.native || fs.realpathSync;
+      return normalizeRuntimePath(realpath(text));
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function sameExecutablePath(left, right) {
+    if (sameRuntimePath(left, right)) return true;
+    const leftReal = realRuntimePath(left);
+    const rightReal = realRuntimePath(right);
+    return Boolean(leftReal && rightReal && leftReal === rightReal);
+  }
+
 class CodexAppServerClient {
   constructor() {
     this.child = null;
@@ -328,6 +350,13 @@ class CodexAppServerClient {
     const externalEndpoint = resolveExternalEndpoint(binding);
     if (externalEndpoint) {
       this.requireSharedAppServer = true;
+      if (this.shouldReplaceProfileMuxForExecutableMismatch(externalEndpoint, binding)) {
+        console.error("[codex app-server] profile mux codex executable changed; starting Mobile-owned mux");
+        await this.startOwnedMuxAndConnect(binding);
+        await this.initialize({ allowAlreadyInitialized: true });
+        this.rememberRuntimeBinding(binding);
+        return;
+      }
       let connected = false;
       try {
         await this.connectEndpoint(externalEndpoint);
@@ -417,6 +446,14 @@ class CodexAppServerClient {
   canStartOwnedMuxForEndpoint(endpoint, binding = runtimeProfileBinding()) {
     if (DISABLE_MOBILE_OWNED_MUX || EXTERNAL_APP_SERVER_WS || EXTERNAL_APP_SERVER_TCP) return false;
     return Boolean(endpoint && endpoint.source && sameRuntimePath(endpoint.source, binding.muxEndpointFile));
+  }
+
+  shouldReplaceProfileMuxForExecutableMismatch(endpoint, binding = runtimeProfileBinding()) {
+    if (!this.canStartOwnedMuxForEndpoint(endpoint, binding)) return false;
+    const endpointCodexExe = String(endpoint && endpoint.codexExe || "").trim();
+    const currentCodexExe = String(CODEX_EXE || "").trim();
+    if (!endpointCodexExe || !currentCodexExe) return false;
+    return !sameExecutablePath(endpointCodexExe, currentCodexExe);
   }
 
   endpointProcessIsAlive(endpoint) {
@@ -1041,6 +1078,7 @@ class CodexAppServerClient {
         host: this.endpoint.host || null,
         port: this.endpoint.port || null,
         url: this.endpoint.url || null,
+        codexExe: this.endpoint.codexExe || null,
         capabilities: this.endpoint.capabilities || null,
       } : null,
       muxEndpointFile: binding.muxEndpointFile,

@@ -25,6 +25,7 @@ test("core public config route uses injected runtime dependencies", async () => 
   let refreshedRateLimits = false;
   let loadedRecentRateLimits = false;
   let syncedMcpToolsets = false;
+  let resolvedModelOptions = false;
   let sent = null;
   const scheduled = [];
   const service = createCoreApiRouteService({
@@ -86,6 +87,10 @@ test("core public config route uses injected runtime dependencies", async () => 
       publicSettings: () => ({ enabled: true, workspaceKind: "remote_managed_workspace", connectionStatus: "connected" }),
     },
     requestBaseUrl: () => "http://127.0.0.1:8787",
+    resolveModelOptions: async () => {
+      resolvedModelOptions = true;
+      return ["gpt-test", "gpt-5.6-sol"];
+    },
     rolloutWarningBytes: 1000,
     syncKnownCodexMobileMcpToolsets: () => {
       syncedMcpToolsets = true;
@@ -126,6 +131,8 @@ test("core public config route uses injected runtime dependencies", async () => 
   assert.equal(sent.body.shellCacheName, "shell-test");
   assert.equal(sent.body.defaultShellMode, "vite-app-preview");
   assert.equal(sent.body.defaultModel, "gpt-test");
+  assert.equal(resolvedModelOptions, true);
+  assert.deepEqual(sent.body.modelOptions, ["gpt-test", "gpt-5.6-sol"]);
   assert.equal(sent.body.workspaceDelegation.enabled, true);
   assert.equal(sent.body.remoteManagedWorkspace.connectionStatus, "connected");
   assert.equal(sent.body.frontendDiagnosticLog.enabled, true);

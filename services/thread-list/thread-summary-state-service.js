@@ -161,6 +161,48 @@ function createThreadSummaryStateService(dependencies = {}) {
     return false;
   }
 
+  function returnReceiptTimestampMs(thread = {}) {
+    if (!thread || typeof thread !== "object") return 0;
+    const direct = timestampToMs(thread.latestReturnReceiptAt)
+      || timestampToMs(thread.latest_return_receipt_at);
+    if (direct) return direct;
+    const cards = Array.isArray(thread.threadTaskCards) ? thread.threadTaskCards : [];
+    let latest = 0;
+    for (const card of cards) {
+      if (!card || typeof card !== "object") continue;
+      const role = String(card.threadRole || card.thread_role || "").trim();
+      if (role !== "target") continue;
+      const delivery = card.delivery && typeof card.delivery === "object" ? card.delivery : {};
+      const audit = card.audit && typeof card.audit === "object" ? card.audit : {};
+      const terminal = card.terminal === true || delivery.terminal === true || audit.terminal === true;
+      const returnToSource = delivery.returnToSource === true
+        || audit.returnToSource === true
+        || String(card.ackPolicy || delivery.ackPolicy || audit.ackPolicy || "").trim() === "none";
+      if (!terminal || !returnToSource) continue;
+      latest = Math.max(latest,
+        timestampToMs(delivery.returnedAtMs)
+          || timestampToMs(delivery.returnedAt)
+          || timestampToMs(delivery.deliveredAtMs)
+          || timestampToMs(delivery.deliveredAt)
+          || timestampToMs(audit.returnedAtMs)
+          || timestampToMs(audit.returnedAt)
+          || timestampToMs(card.returnedAtMs)
+          || timestampToMs(card.returnedAt)
+          || timestampToMs(card.updatedAtMs)
+          || timestampToMs(card.updatedAt)
+          || timestampToMs(card.createdAtMs)
+          || timestampToMs(card.createdAt)
+          || 0);
+    }
+    return latest;
+  }
+
+  function returnReceiptSupersedesLocalActive(thread = {}, startedAtMs = 0) {
+    const receiptAtMs = returnReceiptTimestampMs(thread);
+    if (!receiptAtMs || !startedAtMs) return false;
+    return receiptAtMs >= Math.max(0, Number(startedAtMs || 0) - 1000);
+  }
+
   function localActiveSupersedingRolloutEvidence(rolloutPath, entry, nowMs = Date.now()) {
     const localTurnId = String(entry && entry.turnId || "").trim();
     if (!rolloutPath || !localTurnId) return null;
@@ -216,6 +258,13 @@ function createThreadSummaryStateService(dependencies = {}) {
       }
       return null;
     }
+    if (returnReceiptSupersedesLocalActive(summary, entry.startedAtMs)) {
+      localActiveThreadStatuses.delete(id);
+      if (!shouldSkipFallbackCacheStatusUpdate(options)) {
+        updateThreadListFallbackCacheStatus(id, { type: "completed" }, { source: "local-active-terminal-return-receipt" });
+      }
+      return null;
+    }
     const supersedingEvidence = localActiveSupersedingRolloutEvidence(rolloutPath, entry, nowMs);
     if (supersedingEvidence) {
       localActiveThreadStatuses.delete(id);
@@ -262,7 +311,25 @@ function createThreadSummaryStateService(dependencies = {}) {
     const threadId = String(thread.id || options.threadId || "").trim();
     if (!threadId) return thread;
     const entry = readLocalActiveThreadStatus(threadId, thread, options.nowMs || Date.now(), options);
-    if (!entry) return thread;
+    if (!entry) {
+      const localTurnId = activeMarkerTurnId(thread.mobileLocalActiveStatus);
+      if (!localTurnId) return thread;
+      const out = Object.assign({}, thread);
+      if (String(out.activeTurnId || "") === localTurnId) delete out.activeTurnId;
+      if (String(out.active_turn_id || "") === localTurnId) delete out.active_turn_id;
+      if (String(out.mobileActiveTurnId || "") === localTurnId) delete out.mobileActiveTurnId;
+      if (String(out.mobile_active_turn_id || "") === localTurnId) delete out.mobile_active_turn_id;
+      if (out.mobileRolloutActiveTurn && activeMarkerTurnId(out.mobileRolloutActiveTurn) === localTurnId) delete out.mobileRolloutActiveTurn;
+      delete out.mobileLocalActiveStatus;
+      if (isThreadListLiveStatus(out.status) && returnReceiptSupersedesLocalActive(thread, activeMarkerTimestampMs(thread.mobileLocalActiveStatus))) {
+        out.status = {
+          type: "completed",
+          mobileClearedLocalActiveReturnReceipt: true,
+          previousType: statusText(thread.status),
+        };
+      }
+      return out;
+    }
     const startedAtSeconds = Math.floor(Number(entry.startedAtMs || Date.now()) / 1000);
     const updatedAt = Math.max(Number(thread.updatedAt || thread.updated_at || 0), startedAtSeconds);
     const out = Object.assign({}, thread, {

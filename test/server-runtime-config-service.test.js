@@ -55,9 +55,9 @@ test("server runtime config resolves default runtime paths and bounded ids", () 
   assert.equal(config.TASK_CARD_RETURN_TOOL_FULL_NAME, "mcp__codex_mobile.return_to_source");
   assert.equal(config.HOME_AI_SECRET_REF_CONSUME_PATH, "/api/secret-refs/consume");
   assert.equal(config.HOME_AI_SECRET_REF_TIMEOUT_MS, 12000);
-  assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS, 60000);
+  assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS, 30 * 60 * 1000);
   assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS, 30 * 60 * 1000);
-  assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_LIMIT, 2);
+  assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_LIMIT, 8);
   assert.equal(config.MOBILE_WEB_LOG_MAX_BYTES, 512 * 1024);
   assert.equal(config.MOBILE_WEB_LOG_KEEP_BYTES, 128 * 1024);
   assert.equal(config.MOBILE_WEB_LOG_EVENT_MIN_INTERVAL_MS, 30000);
@@ -117,7 +117,7 @@ test("server runtime config applies env overrides and clamps hot-path limits", (
   assert.equal(config.HOME_AI_SECRET_REF_KEY_FILE, "/runtime/secret-ref-key");
   assert.equal(config.HOME_AI_SECRET_REF_CONSUME_PATH, "/api/native/secret-ref/consume");
   assert.equal(config.HOME_AI_SECRET_REF_TIMEOUT_MS, 2500);
-  assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS, 0);
+  assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS, 30000);
   assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS, 30000);
   assert.equal(config.THREAD_TASK_CARD_EXECUTION_WATCHDOG_LIMIT, 8);
   assert.equal(config.MOBILE_WEB_LOG_MAX_BYTES, 64 * 1024);

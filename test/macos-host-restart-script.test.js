@@ -38,6 +38,12 @@ test("macOS host restart script is a LaunchDaemon recovery entrypoint", () => {
   assert.match(hostRestartScript, /plist_set_env CODEX_HOME "\$SELECTED_CODEX_HOME"/);
   assert.match(hostRestartScript, /SELECTED_MUX_ENDPOINT_FILE="\$\{SELECTED_CODEX_HOME\}\/app-server-mux\/endpoint\.json"/);
   assert.match(hostRestartScript, /plist_set_env CODEX_MOBILE_MUX_ENDPOINT_FILE "\$SELECTED_MUX_ENDPOINT_FILE"/);
+  assert.match(hostRestartScript, /TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS="1800000"/);
+  assert.match(hostRestartScript, /TASK_CARD_EXECUTION_WATCHDOG_STALE_MS="1800000"/);
+  assert.match(hostRestartScript, /TASK_CARD_EXECUTION_WATCHDOG_LIMIT="8"/);
+  assert.match(hostRestartScript, /plist_set_env CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS "\$TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS"/);
+  assert.match(hostRestartScript, /plist_set_env CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS "\$TASK_CARD_EXECUTION_WATCHDOG_STALE_MS"/);
+  assert.match(hostRestartScript, /plist_set_env CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_LIMIT "\$TASK_CARD_EXECUTION_WATCHDOG_LIMIT"/);
   assert.match(hostRestartScript, /plist_set_env CODEX_MOBILE_DEFAULT_SHELL "\$DEFAULT_SHELL_MODE"/);
   assert.match(hostRestartScript, /select_args\+=\(--no-write\)/);
   assert.match(hostRestartScript, /stop_selected_mux_endpoint\(\) \{/);
@@ -64,6 +70,13 @@ test("macOS host restart script fails safely around bootstrap and postflight", (
   assert.match(hostRestartScript, /launchd_env_value CODEX_HOME/);
   assert.match(hostRestartScript, /launchd_env_value CODEX_MOBILE_MUX_ENDPOINT_FILE/);
   assert.match(hostRestartScript, /launchd_env_value CODEX_MOBILE_DEFAULT_SHELL/);
+  assert.match(hostRestartScript, /launchd_env_value CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS/);
+  assert.match(hostRestartScript, /launchd_env_value CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS/);
+  assert.match(hostRestartScript, /launchd_env_value CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_LIMIT/);
+  assert.match(hostRestartScript, /task-card watchdog interval does not match platform default/);
+  assert.match(hostRestartScript, /task-card watchdog stale window does not match platform default/);
+  assert.match(hostRestartScript, /task-card watchdog batch limit does not match platform default/);
+  assert.match(hostRestartScript, /taskCardExecutionWatchdog/);
   assert.match(hostRestartScript, /LaunchDaemon plist default shell does not match selected mode/);
   assert.match(hostRestartScript, /Public config default shell does not match selected mode/);
   assert.match(hostRestartScript, /Running LaunchDaemon default shell does not match selected mode/);

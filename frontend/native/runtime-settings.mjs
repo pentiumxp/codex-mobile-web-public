@@ -45,8 +45,24 @@ export function normalizeOptionList(values) {
   return [...new Set((values || []).map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
+function titleCaseModelSuffix(value) {
+  return String(value || "")
+    .split(/[-_]+/)
+    .map((part) => part ? part.charAt(0).toUpperCase() + part.slice(1) : "")
+    .filter(Boolean)
+    .join(" ");
+}
+
+function fallbackModelLabel(value) {
+  const text = String(value || "").trim();
+  const match = /^gpt[-_]?([0-9]+(?:\.[0-9]+)?)(?:[-_](.+))?$/i.exec(text);
+  if (!match) return text;
+  const suffix = titleCaseModelSuffix(match[2] || "");
+  return `GPT-${match[1]}${suffix ? ` ${suffix}` : ""}`;
+}
+
 export function labelForModel(value) {
-  return MODEL_LABELS[value] || value;
+  return MODEL_LABELS[value] || fallbackModelLabel(value);
 }
 
 export function compactLabelForModel(value) {
@@ -78,6 +94,62 @@ export function selectedNewThreadModel(settings) {
   return firstRuntimeValue([settings && settings.selected, settings && settings.defaultValue, ...((settings && settings.options) || [])]);
 }
 
+function optionSignature(values) {
+  return normalizeOptionList(values).join("\n");
+}
+
+function legalModelValues(defaultModel, modelOptions) {
+  return new Set(normalizeOptionList([defaultModel, ...modelOptions]));
+}
+
+export function applyModelOptionsRefresh(state, config = {}) {
+  const target = state && typeof state === "object" ? state : {};
+  const nextOptions = normalizeOptionList(config.modelOptions || []);
+  const nextDefault = String(config.defaultModel || "").trim();
+  const currentOptions = normalizeOptionList(target.modelOptions || []);
+  const currentDefault = String(target.defaultModel || "").trim();
+  const optionsChanged = optionSignature(currentOptions) !== optionSignature(nextOptions);
+  const defaultChanged = currentDefault !== nextDefault;
+  if (!optionsChanged && !defaultChanged) {
+    return {
+      changed: false,
+      optionsChanged: false,
+      defaultChanged: false,
+      selectionChanged: false,
+      modelOptions: currentOptions,
+      defaultModel: currentDefault,
+    };
+  }
+
+  const legal = legalModelValues(nextDefault, nextOptions);
+  const fallback = nextDefault || nextOptions[0] || "";
+  let selectionChanged = false;
+  const previousNewThreadModel = String(target.newThreadModel || "").trim();
+  const previousComposerModel = String(target.composerModel || "").trim();
+
+  target.modelOptions = nextOptions;
+  target.defaultModel = nextDefault;
+
+  if (!previousNewThreadModel || !legal.has(previousNewThreadModel)) {
+    target.newThreadModel = fallback;
+    selectionChanged = previousNewThreadModel !== String(target.newThreadModel || "").trim();
+  }
+  if (previousComposerModel && !legal.has(previousComposerModel)) {
+    target.composerModel = "";
+    selectionChanged = true;
+  }
+
+  return {
+    changed: true,
+    optionsChanged,
+    defaultChanged,
+    selectionChanged,
+    modelOptions: nextOptions,
+    defaultModel: nextDefault,
+    fallbackModel: fallback,
+  };
+}
+
 export function selectedNewThreadEffort(settings) {
   return firstRuntimeValue([settings && settings.selected, settings && settings.defaultValue, ...((settings && settings.options) || [])]);
 }
@@ -94,6 +166,7 @@ export default {
   normalizeOptionList,
   labelForModel,
   compactLabelForModel,
+  applyModelOptionsRefresh,
   labelForEffort,
   labelForPermissionMode,
   titleForPermissionMode,

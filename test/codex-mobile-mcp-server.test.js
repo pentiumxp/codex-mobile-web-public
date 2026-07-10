@@ -27,6 +27,10 @@ const {
   ensureCodexMobileMcpServerInConfig,
   hasMcpServerSection,
 } = require("../adapters/codex-mobile-mcp-config-service");
+const {
+  createRemoteManagedWorkspaceControlBootstrapService,
+  createRemoteManagedWorkspaceControlClientService,
+} = require("../services/remote-managed-workspaces/remote-managed-workspace-control-client-service");
 
 function listen(server) {
   return new Promise((resolve) => {
@@ -215,6 +219,100 @@ test("Codex Mobile MCP server calls Home AI RMW scoped-control API with bounded 
   const combined = JSON.stringify({ listed, dispatched, read });
   assert.doesNotMatch(combined, /scoped-control-token|raw task body|raw return body|Bearer/i);
   assert.ok(calls.every((call) => call.authorization === "Bearer scoped-control-token"));
+});
+
+test("Codex Mobile MCP RMW tools bootstrap approved control-client pairing without raw token args", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-mcp-rmw-bootstrap-"));
+  const stateFile = path.join(dir, "state.json");
+  const credentialFile = path.join(dir, "control-credential");
+  const controlToken = "rmw_control_bootstrap_secret";
+  let approved = false;
+  let pairingCreates = 0;
+  let controlCalls = 0;
+  let identity = null;
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, `http://${req.headers.host || "127.0.0.1"}`);
+    if (req.method === "POST" && url.pathname === "/api/remote-managed-workspace-control/client-pairing-requests") {
+      pairingCreates += 1;
+      identity = JSON.parse(await readBody(req));
+      res.setHeader("content-type", "application/json");
+      res.statusCode = 202;
+      res.end(JSON.stringify({
+        ok: true,
+        pairingRequest: {
+          requestId: "cpr_mcp_1",
+          status: "pending_approval",
+          clientId: identity.clientId,
+          clientKind: identity.clientKind,
+          localWorkspaceId: identity.localWorkspaceId,
+          scopes: identity.scopes,
+        },
+      }));
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/remote-managed-workspace-control/client-pairing-requests/cpr_mcp_1") {
+      assert.equal(url.searchParams.get("clientId"), identity.clientId);
+      assert.equal(url.searchParams.get("installId"), identity.installId);
+      assert.equal(url.searchParams.get("deviceId"), identity.deviceId);
+      assert.equal(url.searchParams.get("localWorkspaceId"), identity.localWorkspaceId);
+      res.setHeader("content-type", "application/json");
+      res.statusCode = approved ? 200 : 202;
+      res.end(JSON.stringify({
+        ok: true,
+        pairingRequest: {
+          requestId: "cpr_mcp_1",
+          status: approved ? "paired" : "pending_approval",
+          clientId: identity.clientId,
+          clientKind: identity.clientKind,
+          localWorkspaceId: identity.localWorkspaceId,
+          approvedScopes: ["list", "dispatch", "read"],
+          controlCredential: approved ? { token: controlToken } : undefined,
+        },
+      }));
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/api/remote-managed-workspace-control/workspaces") {
+      controlCalls += 1;
+      assert.equal(req.headers.authorization, `Bearer ${controlToken}`);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        ok: true,
+        workspaces: [{ workspaceId: "rmw_bootstrap", trusted: true, paired: true, connected: true }],
+      }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end("{}");
+  });
+  t.after(() => server.close());
+  const baseUrl = await listen(server);
+  const context = {
+    server: "http://127.0.0.1:1",
+    key: "unused",
+    rmwControlUrl: baseUrl,
+    rmwControlToken: "",
+    rmwControlBootstrap: createRemoteManagedWorkspaceControlBootstrapService({
+      centralUrl: baseUrl,
+      credentialFile,
+      stateFile,
+    }),
+    rmwControlClient: createRemoteManagedWorkspaceControlClientService(),
+  };
+
+  const pending = await rmwListWorkspaces(context, {});
+  assert.equal(pending.ok, false);
+  assert.equal(pending.skipped, "control_pairing_pending_approval");
+  assert.equal(pending.pairingRequest.requestId, "cpr_mcp_1");
+  assert.equal(pairingCreates, 1);
+  assert.doesNotMatch(JSON.stringify(pending), /rmw_control_bootstrap_secret|Bearer/i);
+
+  approved = true;
+  const listed = await rmwListWorkspaces(context, {});
+  assert.equal(listed.ok, true);
+  assert.equal(listed.workspaces[0].workspaceId, "rmw_bootstrap");
+  assert.equal(controlCalls, 1);
+  assert.equal(fs.readFileSync(credentialFile, "utf8").trim(), controlToken);
+  assert.doesNotMatch(JSON.stringify(listed), /rmw_control_bootstrap_secret|Bearer/i);
 });
 
 test("Codex Mobile MCP server calls existing authenticated task-card API", async (t) => {
@@ -554,6 +652,9 @@ test("Codex Mobile MCP config registration is per Codex Home and stores no raw k
     scriptPath: "/repo/scripts/codex-mobile-mcp-server.js",
     baseUrl: "http://127.0.0.1:8787",
     keyFile: "/runtime/access_key",
+    rmwControlUrl: "http://127.0.0.1:8797",
+    rmwControlCredentialFile: "/runtime/rmw-control-credential",
+    rmwControlStateFile: "/runtime/rmw-control-client-state.json",
   });
   assert.equal(result.changed, true);
   const text = fs.readFileSync(configPath, "utf8");
@@ -562,6 +663,12 @@ test("Codex Mobile MCP config registration is per Codex Home and stores no raw k
   assert.match(text, /codex-mobile-mcp-server\.js/);
   assert.match(text, /"--key-file"/);
   assert.match(text, /"\/runtime\/access_key"/);
+  assert.match(text, /"--rmw-control-url"/);
+  assert.match(text, /"http:\/\/127\.0\.0\.1:8797"/);
+  assert.match(text, /"--rmw-control-credential-file"/);
+  assert.match(text, /"\/runtime\/rmw-control-credential"/);
+  assert.match(text, /"--rmw-control-state-file"/);
+  assert.match(text, /"\/runtime\/rmw-control-client-state\.json"/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.list_threads\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.delegate_to_thread\]/);
   assert.match(text, /\[mcp_servers\.codex_mobile\.tools\.start_loop\]/);
@@ -581,6 +688,9 @@ test("Codex Mobile MCP config registration is per Codex Home and stores no raw k
     scriptPath: "/repo/scripts/codex-mobile-mcp-server.js",
     baseUrl: "http://127.0.0.1:8787",
     keyFile: "/runtime/access_key",
+    rmwControlUrl: "http://127.0.0.1:8797",
+    rmwControlCredentialFile: "/runtime/rmw-control-credential",
+    rmwControlStateFile: "/runtime/rmw-control-client-state.json",
   });
   assert.equal(second.changed, false);
 });
@@ -606,6 +716,9 @@ test("Codex Mobile MCP config registration repairs stale command args", () => {
     scriptPath: "/new/codex-mobile-mcp-server.js",
     baseUrl: "http://127.0.0.1:8787",
     keyFile: "/runtime/access_key",
+    rmwControlUrl: "http://127.0.0.1:8797",
+    rmwControlCredentialFile: "/runtime/rmw-control-credential",
+    rmwControlStateFile: "/runtime/rmw-control-client-state.json",
   });
   assert.equal(result.changed, true);
   assert.equal(result.added, false);

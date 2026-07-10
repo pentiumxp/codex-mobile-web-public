@@ -8,6 +8,7 @@ function createRuntimeWorkspaceBootstrapService(options = {}) {
     activeCodexHome = "",
     authKeyFile = "",
     port = 8787,
+    runtimeRoot = "",
     env = process.env,
     processExecPath = process.execPath,
     workspaceRegistryService,
@@ -41,6 +42,13 @@ function createRuntimeWorkspaceBootstrapService(options = {}) {
         scriptPath: path.join(appRoot, "scripts", "codex-mobile-mcp-server.js"),
         baseUrl: env.CODEX_MOBILE_MCP_SERVER_URL || `http://127.0.0.1:${port}`,
         keyFile: authKeyFile,
+        rmwControlUrl: env.CODEX_MOBILE_RMW_CONTROL_URL || env.HOME_AI_RMW_CONTROL_URL || "http://127.0.0.1:8797",
+        rmwControlCredentialFile: env.CODEX_MOBILE_RMW_CONTROL_CREDENTIAL_FILE
+          || env.CODEX_MOBILE_RMW_CONTROL_TOKEN_FILE
+          || env.HOME_AI_RMW_CONTROL_TOKEN_FILE
+          || (runtimeRoot ? path.join(runtimeRoot, "rmw-control-credential") : ""),
+        rmwControlStateFile: env.CODEX_MOBILE_RMW_CONTROL_STATE_FILE
+          || (runtimeRoot ? path.join(runtimeRoot, "rmw-control-client-state.json") : ""),
       });
       if (result.changed) {
         logger.log(`[codex-mobile-mcp] registered ${result.serverName} in ${result.configPath}`);

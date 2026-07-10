@@ -61,6 +61,16 @@ test("thread runtime settings inherit model and effort from latest rollout conte
   assert.equal(settings.sandboxMode, "read-only");
 });
 
+test("thread runtime settings accepts models from current effective options provider", () => {
+  const service = makeService({
+    modelOptions: () => ["gpt-5.6-sol", "gpt-5.5"],
+    readStateDbThread: () => ({ id: "thread-1", model: "gpt-5.6-sol", effort: "medium" }),
+  });
+
+  const settings = service.threadRuntimeSettings("thread-1");
+  assert.equal(settings.model, "gpt-5.6-sol");
+});
+
 test("thread runtime settings reuse recent rollout context across active rollout writes", () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-runtime-settings-"));
   const rolloutPath = path.join(tempDir, "rollout.jsonl");

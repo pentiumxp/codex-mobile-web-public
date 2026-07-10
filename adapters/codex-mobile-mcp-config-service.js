@@ -77,8 +77,14 @@ function buildCodexMobileMcpSection(options = {}) {
   const scriptPath = path.resolve(rawScriptPath);
   const baseUrl = normalizeBaseUrl(options.baseUrl || "http://127.0.0.1:8787");
   const keyFile = String(options.keyFile || "").trim();
+  const rmwControlUrl = String(options.rmwControlUrl || "http://127.0.0.1:8797").trim();
+  const rmwControlCredentialFile = String(options.rmwControlCredentialFile || options.rmwControlTokenFile || "").trim();
+  const rmwControlStateFile = String(options.rmwControlStateFile || "").trim();
   const args = [scriptPath, "--server", baseUrl];
   if (keyFile) args.push("--key-file", keyFile);
+  if (rmwControlUrl) args.push("--rmw-control-url", normalizeBaseUrl(rmwControlUrl));
+  if (rmwControlCredentialFile) args.push("--rmw-control-credential-file", rmwControlCredentialFile);
+  if (rmwControlStateFile) args.push("--rmw-control-state-file", rmwControlStateFile);
   const lines = [
     configSectionHeader(serverName),
     `command = ${tomlBasicString(command)}`,

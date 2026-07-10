@@ -20,6 +20,9 @@ SELECTED_MUX_STOP_JSON="{}"
 BOOTOUT_PERFORMED=0
 BOOTSTRAP_COMPLETED=0
 RECOVERY_TRAP_RUNNING=0
+TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS="1800000"
+TASK_CARD_EXECUTION_WATCHDOG_STALE_MS="1800000"
+TASK_CARD_EXECUTION_WATCHDOG_LIMIT="8"
 
 usage() {
   cat <<'EOF'
@@ -367,10 +370,16 @@ validate_preflight_selection() {
   local plist_codex_home
   local plist_mux_endpoint
   local plist_default_shell
+  local plist_watchdog_interval
+  local plist_watchdog_stale
+  local plist_watchdog_limit
   local store_active_id
   plist_codex_home="$(plist_get_env CODEX_HOME)"
   plist_mux_endpoint="$(plist_get_env CODEX_MOBILE_MUX_ENDPOINT_FILE)"
   plist_default_shell="$(plist_get_env CODEX_MOBILE_DEFAULT_SHELL)"
+  plist_watchdog_interval="$(plist_get_env CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS)"
+  plist_watchdog_stale="$(plist_get_env CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS)"
+  plist_watchdog_limit="$(plist_get_env CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_LIMIT)"
   store_active_id="$(profile_store_active_id)"
   if [[ "$plist_codex_home" != "$SELECTED_CODEX_HOME" ]]; then
     json_error "preflight" "LaunchDaemon plist CODEX_HOME does not match selected profile." "plist=${plist_codex_home}; selected=${SELECTED_CODEX_HOME}" 1
@@ -384,6 +393,15 @@ validate_preflight_selection() {
   if [[ -n "$DEFAULT_SHELL_MODE" && "$plist_default_shell" != "$DEFAULT_SHELL_MODE" ]]; then
     json_error "preflight" "LaunchDaemon plist default shell does not match selected mode." "plist=${plist_default_shell}; selected=${DEFAULT_SHELL_MODE}" 1
   fi
+  if [[ "$plist_watchdog_interval" != "$TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS" ]]; then
+    json_error "preflight" "LaunchDaemon plist task-card watchdog interval does not match platform default." "plist=${plist_watchdog_interval}; selected=${TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS}" 1
+  fi
+  if [[ "$plist_watchdog_stale" != "$TASK_CARD_EXECUTION_WATCHDOG_STALE_MS" ]]; then
+    json_error "preflight" "LaunchDaemon plist task-card watchdog stale window does not match platform default." "plist=${plist_watchdog_stale}; selected=${TASK_CARD_EXECUTION_WATCHDOG_STALE_MS}" 1
+  fi
+  if [[ "$plist_watchdog_limit" != "$TASK_CARD_EXECUTION_WATCHDOG_LIMIT" ]]; then
+    json_error "preflight" "LaunchDaemon plist task-card watchdog batch limit does not match platform default." "plist=${plist_watchdog_limit}; selected=${TASK_CARD_EXECUTION_WATCHDOG_LIMIT}" 1
+  fi
 }
 
 validate_postflight_selection() {
@@ -392,11 +410,17 @@ validate_postflight_selection() {
   local launchd_codex_home
   local launchd_mux_endpoint
   local launchd_default_shell
+  local launchd_watchdog_interval
+  local launchd_watchdog_stale
+  local launchd_watchdog_limit
   public_active="$(public_config_active_profile || true)"
   public_default_shell="$(public_config_default_shell_mode || true)"
   launchd_codex_home="$(launchd_env_value CODEX_HOME)"
   launchd_mux_endpoint="$(launchd_env_value CODEX_MOBILE_MUX_ENDPOINT_FILE)"
   launchd_default_shell="$(launchd_env_value CODEX_MOBILE_DEFAULT_SHELL)"
+  launchd_watchdog_interval="$(launchd_env_value CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS)"
+  launchd_watchdog_stale="$(launchd_env_value CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS)"
+  launchd_watchdog_limit="$(launchd_env_value CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_LIMIT)"
   if [[ "$public_active" != "$SELECTED_PROFILE_ID" ]]; then
     json_error "postflight" "Public config active profile does not match selected profile." "public=${public_active}; selected=${SELECTED_PROFILE_ID}" 1
   fi
@@ -412,16 +436,30 @@ validate_postflight_selection() {
   if [[ -n "$DEFAULT_SHELL_MODE" && "$launchd_default_shell" != "$DEFAULT_SHELL_MODE" ]]; then
     json_error "postflight" "Running LaunchDaemon default shell does not match selected mode." "launchd=${launchd_default_shell}; selected=${DEFAULT_SHELL_MODE}" 1
   fi
+  if [[ "$launchd_watchdog_interval" != "$TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS" ]]; then
+    json_error "postflight" "Running LaunchDaemon task-card watchdog interval does not match platform default." "launchd=${launchd_watchdog_interval}; selected=${TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS}" 1
+  fi
+  if [[ "$launchd_watchdog_stale" != "$TASK_CARD_EXECUTION_WATCHDOG_STALE_MS" ]]; then
+    json_error "postflight" "Running LaunchDaemon task-card watchdog stale window does not match platform default." "launchd=${launchd_watchdog_stale}; selected=${TASK_CARD_EXECUTION_WATCHDOG_STALE_MS}" 1
+  fi
+  if [[ "$launchd_watchdog_limit" != "$TASK_CARD_EXECUTION_WATCHDOG_LIMIT" ]]; then
+    json_error "postflight" "Running LaunchDaemon task-card watchdog batch limit does not match platform default." "launchd=${launchd_watchdog_limit}; selected=${TASK_CARD_EXECUTION_WATCHDOG_LIMIT}" 1
+  fi
   POSTFLIGHT_JSON="$("$NODE_EXE" -e '
 const payload = {
   activeProfileId: process.argv[1],
   codexHome: process.argv[2],
   muxEndpointFile: process.argv[3],
   defaultShellMode: process.argv[4] || undefined,
+  taskCardExecutionWatchdog: {
+    intervalMs: Number(process.argv[5]),
+    staleMs: Number(process.argv[6]),
+    limit: Number(process.argv[7]),
+  },
   matched: true,
 };
 process.stdout.write(JSON.stringify(payload));
-' "$public_active" "$launchd_codex_home" "$launchd_mux_endpoint" "$public_default_shell")"
+' "$public_active" "$launchd_codex_home" "$launchd_mux_endpoint" "$public_default_shell" "$launchd_watchdog_interval" "$launchd_watchdog_stale" "$launchd_watchdog_limit")"
 }
 
 bootstrap_service_with_retry() {
@@ -623,6 +661,9 @@ plist_set_env CODEX_MOBILE_PROFILE_FILE "$PROFILE_FILE"
 plist_set_env CODEX_MOBILE_RUNTIME_DIR "$RUNTIME_DIR"
 plist_set_env CODEX_MOBILE_PORT "$PORT"
 plist_set_env CODEX_MOBILE_HOST "$HOST"
+plist_set_env CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS "$TASK_CARD_EXECUTION_WATCHDOG_INTERVAL_MS"
+plist_set_env CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_STALE_MS "$TASK_CARD_EXECUTION_WATCHDOG_STALE_MS"
+plist_set_env CODEX_MOBILE_TASK_CARD_EXECUTION_WATCHDOG_LIMIT "$TASK_CARD_EXECUTION_WATCHDOG_LIMIT"
 if [[ -n "$DEFAULT_SHELL_MODE" ]]; then
   plist_set_env CODEX_MOBILE_DEFAULT_SHELL "$DEFAULT_SHELL_MODE"
 fi

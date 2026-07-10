@@ -123,6 +123,62 @@ test("thread message route accepts secretRef attachment metadata without treatin
   assert.equal(response.body.sensitiveContext.secretRefs[0].id, "sec_atta...7890");
 });
 
+test("thread message route bounds requested model to effective dynamic options", async () => {
+  const { route, requests } = createRouteHarness({
+    modelOptions: ["gpt-5.5"],
+    resolveModelOptions: async () => ["gpt-5.6-sol", "gpt-5.5"],
+  });
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/new-message"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "hello dynamic model",
+        model: "gpt-5.6-sol",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  const start = requests.find((entry) => entry.method === "thread/start");
+  const turn = requests.find((entry) => entry.method === "turn/start");
+  assert.equal(start.params.model, "gpt-5.6-sol");
+  assert.equal(turn.params.model, "gpt-5.6-sol");
+});
+
+test("thread message route drops requested model outside effective options", async () => {
+  const { route, requests } = createRouteHarness({
+    modelOptions: ["gpt-5.5"],
+    resolveModelOptions: async () => ["gpt-5.6-sol", "gpt-5.5"],
+  });
+  let response = null;
+  await route.handleRoute({
+    url: new URL("http://127.0.0.1/api/threads/new-message"),
+    method: "POST",
+    readMessageBody: async () => ({
+      fields: {
+        text: "hello rejected model",
+        model: "not-a-provider-model",
+      },
+      uploads: [],
+    }),
+    sendJson: (status, body) => {
+      response = { status, body };
+    },
+  });
+
+  assert.equal(response.status, 200);
+  const start = requests.find((entry) => entry.method === "thread/start");
+  const turn = requests.find((entry) => entry.method === "turn/start");
+  assert.equal(Object.prototype.hasOwnProperty.call(start.params, "model"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(turn.params, "model"), false);
+});
+
 test("thread message route reuses duplicate submissions without resolving runtime settings again", async () => {
   let runtimeResolveCount = 0;
   const { route, requests } = createRouteHarness({

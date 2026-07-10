@@ -590,6 +590,7 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
     return {
       ok: true,
       workspace: publicWorkspace(row),
+      taskCards: active,
       cards: active,
       count: active.length,
     };

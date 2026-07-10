@@ -15,7 +15,10 @@ function createThreadRuntimeSettingsService(dependencies = {}) {
   const maxRuntimeContextScanBytes = Math.max(1, Number(dependencies.maxRuntimeContextScanBytes || 32 * 1024 * 1024));
   const runtimeContextCacheTtlMs = Math.max(1, Number(dependencies.runtimeContextCacheTtlMs || 30_000));
   const runtimeContextCacheMax = Math.max(1, Number(dependencies.runtimeContextCacheMax || 200));
-  const modelOptions = Array.isArray(dependencies.modelOptions) ? dependencies.modelOptions : [];
+  const staticModelOptions = Array.isArray(dependencies.modelOptions) ? dependencies.modelOptions : [];
+  const modelOptionsProvider = typeof dependencies.modelOptions === "function"
+    ? dependencies.modelOptions
+    : () => staticModelOptions;
   const reasoningEffortOptions = Array.isArray(dependencies.reasoningEffortOptions) ? dependencies.reasoningEffortOptions : [];
   const codexConfigDefaults = dependencies.codexConfigDefaults || {};
   const approvalOptions = new Set(["untrusted", "on-request", "on-failure", "never"]);
@@ -167,9 +170,16 @@ function createThreadRuntimeSettingsService(dependencies = {}) {
   function threadRuntimeSettings(threadId, fallbackThread = null) {
     const thread = readStateDbThread(threadId) || fallbackThread;
     const context = readLatestTurnContext(thread) || {};
+    let effectiveModelOptions = staticModelOptions;
+    try {
+      const provided = modelOptionsProvider();
+      effectiveModelOptions = Array.isArray(provided) ? provided : staticModelOptions;
+    } catch (_) {
+      effectiveModelOptions = staticModelOptions;
+    }
     const model = normalizeEnumValue(
       lastString(context.model, thread && thread.model, codexConfigDefaults.model),
-      new Set(modelOptions),
+      new Set(effectiveModelOptions),
     );
     const reasoningEffort = normalizeEnumValue(
       lastString(context.effort, context.reasoning_effort, context.model_reasoning_effort, thread && thread.effort, codexConfigDefaults.reasoningEffort),

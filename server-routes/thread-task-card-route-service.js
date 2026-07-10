@@ -3,6 +3,7 @@
 const path = require("node:path");
 const { createThreadTaskCardRoutingService } = require("../services/task-cards/thread-task-card-routing-service");
 const {
+  hasExactTargetThreadId,
   planHomeAiDeployLaneRouting,
   prioritizeDelegationTargetHints,
 } = require("../services/task-cards/thread-task-card-deploy-lane-policy-service");
@@ -537,6 +538,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
   }
 
   function applyHomeAiDeployLaneRoutingPolicy(payload = {}, sourceSummary = null, options = {}) {
+    const exactTargetThreadIdRequested = options.exactTargetThreadIdRequested === true;
     const readThreadSummary = typeof options.readThreadSummary === "function"
       ? options.readThreadSummary
       : readThreadTaskCardTargetSummary;
@@ -553,6 +555,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       sourceThread,
       targetThreads,
       visibleThreads: threadTaskCardVisibleTargetThreads(),
+      exactTargetThreadIdRequested,
     });
     if (plan.action === "reject") {
       throw threadTaskCardTargetError(
@@ -570,7 +573,17 @@ function createThreadTaskCardRouteService(dependencies = {}) {
         409,
       );
     }
-    if (plan.action !== "retarget") return payload;
+    if (plan.action !== "retarget") {
+      if (exactTargetThreadIdRequested) {
+        return Object.assign({}, payload, {
+          mobileExactTargetRouting: {
+            reason: "exact_target_thread_honored",
+            targetThreadIds,
+          },
+        });
+      }
+      return payload;
+    }
     const nextTargetThreadIds = uniqueThreadTaskCardTargetIds(plan.targetThreadIds);
     const targetWorkspaceIds = Object.assign({}, payload.targetWorkspaceIds && typeof payload.targetWorkspaceIds === "object" ? payload.targetWorkspaceIds : {});
     const deployLaneCwd = plan.deployLane && plan.deployLane.cwd || "";
@@ -666,7 +679,11 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       matchedThreadIds: targetThreadIds,
       sourceRole,
       targetRole,
-      code: routingPayload.mobileDeployLaneRouting ? "home_ai_deploy_lane_routed" : "exact_thread_resolved",
+      code: routingPayload.mobileDeployLaneRouting
+        ? "home_ai_deploy_lane_routed"
+        : routingPayload.mobileExactTargetRouting
+          ? "exact_target_thread_honored"
+          : "exact_thread_resolved",
     };
   }
 
@@ -695,7 +712,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       sourceThreadId: sourceId,
       sourceWorkspaceId: body.sourceWorkspaceId || body.sourceWorkspace || (sourceSummary && sourceSummary.cwd) || "",
       targetThreadIds,
-    }), sourceSummary, { readThreadSummary });
+    }), sourceSummary, { readThreadSummary, exactTargetThreadIdRequested: hasExactTargetThreadId(body) });
     targetThreadIds = uniqueThreadTaskCardTargetIds(routingPayload.targetThreadIds, routingPayload.targetThreadId);
     const targetWorkspaceIds = Object.assign({}, body.targetWorkspaceIds && typeof body.targetWorkspaceIds === "object" ? body.targetWorkspaceIds : {});
     Object.assign(targetWorkspaceIds, routingPayload.targetWorkspaceIds && typeof routingPayload.targetWorkspaceIds === "object" ? routingPayload.targetWorkspaceIds : {});
@@ -734,6 +751,7 @@ function createThreadTaskCardRouteService(dependencies = {}) {
       body: cardBody,
       reasoningEffort,
       mobileDeployLaneRouting: routingPayload.mobileDeployLaneRouting,
+      mobileExactTargetRouting: routingPayload.mobileExactTargetRouting,
     });
   }
 

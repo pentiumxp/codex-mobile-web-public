@@ -79,6 +79,7 @@ function createCoreApiRouteService(deps = {}) {
     requestAuthToken,
     requestAuthTokens,
     requestBaseUrl,
+    resolveModelOptions,
     rolloutWarningBytes,
     runtimePressureDiagnostics,
     safeAppUpdateError,
@@ -130,6 +131,31 @@ function createCoreApiRouteService(deps = {}) {
     return candidates[0] || "";
   }
 
+  function normalizeOptionList(values) {
+    return [...new Set((Array.isArray(values) ? values : [])
+      .map((value) => String(value || "").trim())
+      .filter(Boolean))];
+  }
+
+  async function effectiveModelOptions() {
+    const fallback = normalizeOptionList(modelOptions);
+    if (typeof resolveModelOptions !== "function") return fallback;
+    try {
+      const resolved = normalizeOptionList(await resolveModelOptions());
+      return resolved.length ? resolved : fallback;
+    } catch (_) {
+      return fallback;
+    }
+  }
+
+  function defaultModelForOptions(options = []) {
+    const configured = String(codexConfigDefaults && codexConfigDefaults.model || "").trim();
+    const fallback = String(defaultModel || "").trim();
+    if (configured && options.includes(configured)) return configured;
+    if (fallback && options.includes(fallback)) return fallback;
+    return options[0] || configured || fallback;
+  }
+
   function scheduleQuotaHydration() {
     if (typeof scheduleBackgroundTask !== "function") return;
     scheduleBackgroundTask(() => {
@@ -177,6 +203,7 @@ function createCoreApiRouteService(deps = {}) {
       const buildConfig = deps.currentPublicBuildConfig();
       const workspaceDelegation = workspaceDelegationPublicSettings();
       const activeQuota = liveQuotaSnapshotForProfiles();
+      const runtimeModelOptions = await effectiveModelOptions();
       const profileState = publicConfigRuntimeCache.getProfileState({
         activeQuota,
         loadProfiles: (options) => codexProfileService.profiles(options),
@@ -193,10 +220,10 @@ function createCoreApiRouteService(deps = {}) {
         shellCacheName: buildConfig.shellCacheName,
         ...mediaFileService.publicConfig(),
         rolloutWarningBytes,
-        modelOptions,
+        modelOptions: runtimeModelOptions,
         reasoningEffortOptions,
         permissionModeOptions,
-        defaultModel: codexConfigDefaults.model || defaultModel,
+        defaultModel: defaultModelForOptions(runtimeModelOptions),
         defaultReasoningEffort: codexConfigDefaults.reasoningEffort,
         defaultPermissionMode: defaultPermissionModeFromConfigDefaults(),
         rateLimits: activeRateLimits(),

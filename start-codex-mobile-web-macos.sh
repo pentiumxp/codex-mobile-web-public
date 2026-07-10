@@ -42,6 +42,24 @@ resolve_command() {
   printf '%s\n' "$value"
 }
 
+resolve_codex_command() {
+  local value="$1"
+  if [[ -n "$value" ]]; then
+    resolve_command "$value" codex
+    return 0
+  fi
+  local candidate
+  for candidate in \
+    "/Applications/ChatGPT.app/Contents/Resources/codex" \
+    "/Applications/Codex.app/Contents/Resources/codex"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  resolve_command "" codex
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --host)
@@ -81,7 +99,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 NODE_EXE_VALUE="$(resolve_command "$NODE_EXE_VALUE" node)"
-CODEX_EXE_VALUE="$(resolve_command "$CODEX_EXE_VALUE" codex)"
+CODEX_EXE_VALUE="$(resolve_codex_command "$CODEX_EXE_VALUE")"
 
 if [[ "$NODE_EXE_VALUE" == */* && ! -x "$NODE_EXE_VALUE" ]]; then
   echo "Node executable not found or not executable: $NODE_EXE_VALUE" >&2

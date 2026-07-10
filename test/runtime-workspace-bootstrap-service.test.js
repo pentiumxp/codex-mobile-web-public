@@ -21,6 +21,7 @@ function createHarness(overrides = {}) {
     activeCodexHome: "/home/active/.codex",
     authKeyFile: "/runtime/access_key",
     port: 8787,
+    runtimeRoot: "/runtime",
     env: {},
     processExecPath: "/node/bin/node",
     workspaceRegistryService: {
@@ -95,6 +96,9 @@ test("mcp toolset sync registers every known existing profile home", () => {
   assert.equal(calls.mcp[0].scriptPath, "/repo/scripts/codex-mobile-mcp-server.js");
   assert.equal(calls.mcp[0].baseUrl, "http://mobile.example.test");
   assert.equal(calls.mcp[0].keyFile, "/runtime/access_key");
+  assert.equal(calls.mcp[0].rmwControlUrl, "http://127.0.0.1:8797");
+  assert.equal(calls.mcp[0].rmwControlCredentialFile, "/runtime/rmw-control-credential");
+  assert.equal(calls.mcp[0].rmwControlStateFile, "/runtime/rmw-control-client-state.json");
 });
 
 test("continuation workspace bootstrap registers workspace before trust and mcp sync", () => {

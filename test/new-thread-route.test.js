@@ -234,7 +234,7 @@ test("new-message route can persist an explicit initial thread title", () => {
 test("server default model falls back to GPT-5.5", () => {
   assert.match(serverRuntimeConfigServiceJs, /const MODEL_OPTIONS = optionListFromEnv\("CODEX_MOBILE_MODEL_OPTIONS", \[\s*"gpt-5\.5"/);
   assert.match(serverRuntimeConfigServiceJs, /const DEFAULT_MODEL = MODEL_OPTIONS\[0\] \|\| "gpt-5\.5";/);
-  assert.match(coreApiRouteServiceJs, /defaultModel: codexConfigDefaults\.model \|\| defaultModel/);
+  assert.match(coreApiRouteServiceJs, /defaultModel: defaultModelForOptions\(runtimeModelOptions\)/);
   assert.match(coreApiRouteServiceJs, /defaultPermissionMode: defaultPermissionModeFromConfigDefaults\(\)/);
   assert.match(runtimePermissionPolicyServiceJs, /function defaultPermissionModeFromConfigDefaults\(\)[\s\S]*dangerFullAccess[\s\S]*return "full"/);
   assert.match(runtimePermissionPolicyServiceJs, /disabled:\s*"dangerFullAccess"/);
@@ -245,10 +245,14 @@ test("server resolves the default Codex executable from macOS install paths", ()
   assert.match(serverRuntimeConfigServiceJs, /CODEX_EXE:\s*resolveDefaultCodexExecutable\(\)/);
   assert.match(serverRuntimeUtilsJs, /function resolveDefaultCodexExecutable\(/);
   assert.match(serverRuntimeUtilsJs, /CODEX_MOBILE_CODEX_EXE/);
+  assert.match(serverRuntimeUtilsJs, /function bundledCodexExecutableCandidates\(/);
+  assert.match(serverRuntimeUtilsJs, /\/Applications\/ChatGPT\.app/);
+  assert.match(serverRuntimeUtilsJs, /Contents", "Resources", "codex"/);
   assert.match(serverRuntimeUtilsJs, /function pathEntriesFromEnvPath\(/);
   assert.match(serverRuntimeUtilsJs, /path\.delimiter/);
   assert.match(serverRuntimeUtilsJs, /\/opt\/homebrew\/bin/);
   assert.match(serverRuntimeUtilsJs, /path\.join\(userHome, "\.local", "bin"\)/);
+  assert.match(serverRuntimeUtilsJs, /findExecutableFile\(bundledCodexExecutableCandidates\(\)\)/);
   assert.match(serverRuntimeUtilsJs, /findExecutableInDirs\("codex", commonCodexExecutableDirs\(\)\)/);
 });
 
@@ -285,6 +289,8 @@ test("server hydrates rollout quota snapshots without overwriting live quota", (
   assert.match(codexAppServerClientServiceJs, /shared endpoint missing; starting Mobile-owned mux/, "required shared mode should start a Mobile-owned mux when the profile endpoint is absent");
   assert.match(codexAppServerClientServiceJs, /shouldPreserveProfileMuxAfterFailure/, "live profile mux endpoints should be preserved across listener restarts");
   assert.match(codexAppServerClientServiceJs, /profile mux endpoint unavailable; starting Mobile-owned mux/, "dead profile endpoints should still be replaced by a Mobile-owned mux");
+  assert.match(codexAppServerClientServiceJs, /shouldReplaceProfileMuxForExecutableMismatch[\s\S]*profile mux codex executable changed; starting Mobile-owned mux/, "profile mux endpoints from a stale Codex executable should be replaced by the active Mobile executable");
+  assert.match(codexAppServerClientServiceJs, /if \(endpoint\.codexExe\) resolved\.codexExe = String\(endpoint\.codexExe\)\.slice\(0, 1024\)/, "profile mux endpoint resolver should preserve bounded executable identity for replacement decisions");
   assert.match(serverRuntimeConfigServiceJs, /PERSIST_MOBILE_OWNED_MUX:\s*boolFlag\(env\.CODEX_MOBILE_PERSIST_OWNED_MUX\)/, "server should expose a persistent owned mux mode for Listener restarts");
   assert.match(codexAppServerClientServiceJs, /detached:\s*PERSIST_MOBILE_OWNED_MUX/, "persistent owned mux should detach from the Listener process group");
   assert.match(codexAppServerClientServiceJs, /child\.unref\(\)/, "persistent owned mux should not keep the Listener process alive");

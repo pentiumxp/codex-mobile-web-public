@@ -43,6 +43,97 @@ function recordViteAppPreviewStartFailure(err) {
   return true;
 }
 
+const MODEL_OPTIONS_REFRESH_MIN_INTERVAL_MS = 5000;
+
+function applyRuntimeModelOptionsConfig(config = {}, source = "public-config", options = {}) {
+  const apply = runtimeSettings && typeof runtimeSettings.applyModelOptionsRefresh === "function"
+    ? runtimeSettings.applyModelOptionsRefresh
+    : null;
+  if (!apply) return { changed: false, reason: "runtime_settings_unavailable" };
+  const result = apply(state, config) || {};
+  if (!result.changed) return result;
+  state.modelOptionsLastRefreshAt = Date.now();
+  state.modelOptionsRefreshCount = Number(state.modelOptionsRefreshCount || 0) + 1;
+  if (options.render !== false) {
+    renderComposerSettings();
+    updateComposerControls();
+    renderQuotaUsage();
+    if (state.composerMenuKind === "model") {
+      const modelControl = $("composerModelControl");
+      if (modelControl) openComposerRuntimeMenu("model", modelControl);
+    }
+  }
+  if (result.selectionChanged && options.saveDraft !== false) saveCurrentDraftNow();
+  postClientEvent("model_options_refresh_applied", {
+    source: String(source || "public-config").slice(0, 80),
+    optionsChanged: Boolean(result.optionsChanged),
+    defaultChanged: Boolean(result.defaultChanged),
+    selectionChanged: Boolean(result.selectionChanged),
+    optionCount: Array.isArray(result.modelOptions) ? result.modelOptions.length : 0,
+    hasGpt56: Array.isArray(result.modelOptions) && result.modelOptions.some((value) => /^gpt-5\.6/i.test(String(value || ""))),
+    sameClientBuildId: String(config.clientBuildId || "") === String(CLIENT_BUILD_ID || ""),
+  });
+  return result;
+}
+
+async function fetchPublicConfigForModelOptions() {
+  const suffix = `modelOptionsCheck=${Date.now()}`;
+  if (typeof fetchJsonWithTimeout === "function") {
+    return fetchJsonWithTimeout(`/api/public-config?${suffix}`, {
+      timeoutMs: 12000,
+      cache: "no-store",
+    });
+  }
+  const response = await fetch(`/api/public-config?${suffix}`, {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+  if (!response.ok) throw new Error(`public_config_model_options_refresh_failed:${response.status}`);
+  return response.json();
+}
+
+async function refreshModelOptionsFromPublicConfig(options = {}) {
+  const force = options.force === true;
+  const now = Date.now();
+  const last = Number(state.modelOptionsLastRefreshAt || 0);
+  if (!force && last && now - last < MODEL_OPTIONS_REFRESH_MIN_INTERVAL_MS) return null;
+  if (state.modelOptionsRefreshInFlight) return state.modelOptionsRefreshInFlight;
+  state.modelOptionsLastRefreshAt = now;
+  state.modelOptionsRefreshInFlight = fetchPublicConfigForModelOptions()
+    .then((config) => applyRuntimeModelOptionsConfig(config, options.source || "model-options-refresh"))
+    .catch((err) => {
+      postClientEvent("model_options_refresh_failed", {
+        source: String(options.source || "model-options-refresh").slice(0, 80),
+        errorCode: String(err && err.message || err || "model_options_refresh_failed").slice(0, 120),
+      });
+      return null;
+    })
+    .finally(() => {
+      state.modelOptionsRefreshInFlight = null;
+    });
+  return state.modelOptionsRefreshInFlight;
+}
+
+function scheduleModelOptionsRefresh(delayMs = 0, options = {}) {
+  window.setTimeout(() => {
+    refreshModelOptionsFromPublicConfig(options).catch(() => {});
+  }, Math.max(0, Number(delayMs) || 0));
+}
+
+function handleComposerRuntimeControlWithModelRefresh(event, kind, button) {
+  if (kind !== "model") return handleComposerRuntimeControl(event, kind, button);
+  event.preventDefault();
+  event.stopPropagation();
+  refreshModelOptionsFromPublicConfig({ source: "composer-model-menu", force: true })
+    .finally(() => {
+      handleComposerRuntimeControl({
+        type: event.type,
+        preventDefault() {},
+        stopPropagation() {},
+      }, kind, button);
+    });
+}
+
 function wireUi() {
   $("loginForm").addEventListener("submit", (event) => {
     event.preventDefault();
@@ -172,6 +263,7 @@ function wireUi() {
     if (event.target === $("goalDialog")) closeThreadGoalDialog(false);
   });
   if ($("themeSettingsToggle")) $("themeSettingsToggle").addEventListener("click", () => {
+    refreshModelOptionsFromPublicConfig({ source: "settings-open", force: true }).catch(() => {});
     loadCodexProfiles().catch(showError);
     loadRemoteManagedWorkspaceSettings().catch(showError);
     setTimeout(() => publishPluginNavigationState({ force: true }), 0);
@@ -218,7 +310,7 @@ function wireUi() {
       state.lastComposerRuntimePointerAt = Date.now();
       state.lastComposerRuntimePointerKind = kind;
       state.lastComposerRuntimePointerTarget = button;
-      handleComposerRuntimeControl(event, kind, button);
+      handleComposerRuntimeControlWithModelRefresh(event, kind, button);
     });
     button.addEventListener("click", (event) => {
       const pointerAlreadyHandled = state.lastComposerRuntimePointerTarget === button
@@ -232,7 +324,7 @@ function wireUi() {
         event.stopPropagation();
         return;
       }
-      handleComposerRuntimeControl(event, kind, button);
+      handleComposerRuntimeControlWithModelRefresh(event, kind, button);
     });
   }
   const runtimeMenu = $("composerRuntimeMenu");
@@ -662,6 +754,7 @@ function wireUi() {
     if (document.visibilityState === "visible") {
       ensureAndroidBackToSidebarSentinel();
       schedulePageRefreshCheck(200, { force: true });
+      scheduleModelOptionsRefresh(250, { source: "visibility", force: true });
     }
     scheduleMobileResume("visibility");
   });
@@ -674,6 +767,7 @@ function wireUi() {
     const pluginRouteHint = applyUrlPluginRouteHint({ load: true });
     ensureAndroidBackToSidebarSentinel();
     schedulePageRefreshCheck(200, { force: true });
+    scheduleModelOptionsRefresh(260, { source: "pageshow", force: true });
     scheduleMobileResume("pageshow", threadId || pluginRouteHint ? 240 : 80);
   });
   window.addEventListener("focus", () => {
@@ -681,6 +775,7 @@ function wireUi() {
     const pluginRouteHint = applyUrlPluginRouteHint({ load: true });
     ensureAndroidBackToSidebarSentinel();
     schedulePageRefreshCheck(600);
+    scheduleModelOptionsRefresh(650, { source: "focus" });
     scheduleMobileResume("focus", threadId || pluginRouteHint ? 300 : 150);
   });
   window.addEventListener("blur", () => scheduleVisualRecovery("window-blur", 180, { render: false }));
@@ -784,7 +879,7 @@ async function start() {
   state.maxUploadBytes = Number(config.maxUploadBytes || state.maxUploadBytes);
   state.maxUploadFiles = Number(config.maxUploadFiles || state.maxUploadFiles);
   state.rolloutWarningThresholdBytes = Number(config.rolloutWarningBytes || state.rolloutWarningThresholdBytes);
-  state.modelOptions = normalizeOptionList(config.modelOptions || []);
+  applyRuntimeModelOptionsConfig(config, "startup", { render: false, saveDraft: false });
   state.reasoningEffortOptions = normalizeOptionList(config.reasoningEffortOptions || []);
   state.permissionModeOptions = normalizeOptionList((config.permissionModeOptions || state.permissionModeOptions)
     .map(normalizePermissionModeValue));
@@ -928,6 +1023,8 @@ function createAppShellRuntime() {
   return {
     wireUi: typeof wireUi === "function" ? wireUi : null,
     start: typeof start === "function" ? start : null,
+    applyRuntimeModelOptionsConfig: typeof applyRuntimeModelOptionsConfig === "function" ? applyRuntimeModelOptionsConfig : null,
+    refreshModelOptionsFromPublicConfig: typeof refreshModelOptionsFromPublicConfig === "function" ? refreshModelOptionsFromPublicConfig : null,
     startCodexMobileAppWithRecovery: typeof startCodexMobileAppWithRecovery === "function" ? startCodexMobileAppWithRecovery : null,
   };
 }

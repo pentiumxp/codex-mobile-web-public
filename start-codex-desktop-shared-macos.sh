@@ -49,6 +49,25 @@ resolve_command() {
   printf '%s\n' "$value"
 }
 
+resolve_codex_command() {
+  local value="$1"
+  if [[ -n "$value" ]]; then
+    resolve_command "$value" codex
+    return 0
+  fi
+  local candidate
+  for candidate in \
+    "$CODEX_APP_PATH/Contents/Resources/codex" \
+    "/Applications/ChatGPT.app/Contents/Resources/codex" \
+    "/Applications/Codex.app/Contents/Resources/codex"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  resolve_command "" codex
+}
+
 strip_app_suffix() {
   local name="$1"
   name="${name%.app}"
@@ -171,7 +190,7 @@ fi
 CODEX_APP_NAME="$(resolve_app_name "$CODEX_APP_PATH")"
 
 NODE_EXE_VALUE="$(resolve_command "$NODE_EXE_VALUE" node)"
-REAL_CODEX_EXE="$(resolve_command "$REAL_CODEX_EXE" codex)"
+REAL_CODEX_EXE="$(resolve_codex_command "$REAL_CODEX_EXE")"
 MUX_WRAPPER="$(resolve_command "$MUX_WRAPPER" codex-app-server-mux-macos.sh)"
 
 for executable in "$CODEX_DESKTOP_EXE" "$MUX_WRAPPER" "$NODE_EXE_VALUE" "$REAL_CODEX_EXE"; do

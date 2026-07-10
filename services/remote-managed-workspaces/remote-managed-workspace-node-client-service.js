@@ -11,11 +11,17 @@ function compactOneLine(value) {
 }
 
 const SCOPED_NODE_CREDENTIAL_INVALID_CODE = "remote_managed_workspace_scoped_node_credential_invalid";
+const PAIRING_APPROVAL_REQUIRED_CODE = "remote_managed_workspace_pairing_approval_required";
 const SCOPED_NODE_CREDENTIAL_INVALID_ALIASES = new Set([
   SCOPED_NODE_CREDENTIAL_INVALID_CODE,
   "remote_managed_workspace_scoped_node_credential_is_invalid",
 ]);
+const PAIRING_APPROVAL_REQUIRED_ALIASES = new Set([
+  PAIRING_APPROVAL_REQUIRED_CODE,
+  "remote_managed_workspace_pairing_must_be_approved_before_node_access",
+]);
 const SCOPED_NODE_CREDENTIAL_INVALID_MESSAGE = "remote managed workspace scoped node credential is invalid";
+const PAIRING_APPROVAL_REQUIRED_MESSAGE = "remote managed workspace pairing must be approved before node access";
 
 function compactLower(value) {
   return compactOneLine(value).toLowerCase();
@@ -29,11 +35,15 @@ function normalizeRemoteManagedWorkspaceNodeErrorCode(code, options = {}) {
   const text = compactOneLine(code);
   const lower = text.toLowerCase();
   if (SCOPED_NODE_CREDENTIAL_INVALID_ALIASES.has(lower)) return SCOPED_NODE_CREDENTIAL_INVALID_CODE;
+  if (PAIRING_APPROVAL_REQUIRED_ALIASES.has(lower)) return PAIRING_APPROVAL_REQUIRED_CODE;
   if (isAuthStatus(options.statusCode)) {
     const responseText = compactLower(options.responseText);
     const payloadMessage = compactLower(options.payloadMessage);
     if (responseText === SCOPED_NODE_CREDENTIAL_INVALID_MESSAGE || payloadMessage === SCOPED_NODE_CREDENTIAL_INVALID_MESSAGE) {
       return SCOPED_NODE_CREDENTIAL_INVALID_CODE;
+    }
+    if (responseText === PAIRING_APPROVAL_REQUIRED_MESSAGE || payloadMessage === PAIRING_APPROVAL_REQUIRED_MESSAGE) {
+      return PAIRING_APPROVAL_REQUIRED_CODE;
     }
   }
   return text;
@@ -131,7 +141,57 @@ function errorCodeFromPayload(payload = {}) {
   const invalidCandidate = [...directCandidates, ...issueCandidates]
     .find((entry) => normalizeRemoteManagedWorkspaceNodeErrorCode(entry) === SCOPED_NODE_CREDENTIAL_INVALID_CODE);
   if (invalidCandidate) return invalidCandidate;
+  const pairingApprovalCandidate = [...directCandidates, ...issueCandidates]
+    .find((entry) => normalizeRemoteManagedWorkspaceNodeErrorCode(entry) === PAIRING_APPROVAL_REQUIRED_CODE);
+  if (pairingApprovalCandidate) return pairingApprovalCandidate;
   return directCandidates[0] || issueCandidates[0] || "";
+}
+
+function taskCardIdentity(card = {}) {
+  return compactOneLine(card.taskCardId || card.id);
+}
+
+function normalizeTaskCardArray(value, fieldName) {
+  if (value == null) return [];
+  if (!Array.isArray(value)) throw errorWithStatus(`remote_managed_workspace_poll_${fieldName}_invalid`, 502);
+  return value.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw errorWithStatus(`remote_managed_workspace_poll_${fieldName}_invalid`, 502);
+    }
+    const id = taskCardIdentity(entry);
+    if (!id) throw errorWithStatus("remote_managed_workspace_poll_task_card_id_missing", 502);
+    return entry.taskCardId ? entry : Object.assign({}, entry, { taskCardId: id });
+  });
+}
+
+function normalizePolledTaskCardsPayload(payload = {}) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw errorWithStatus("remote_managed_workspace_poll_payload_invalid", 502);
+  }
+  const source = payload;
+  const canonical = normalizeTaskCardArray(source.taskCards, "task_cards");
+  const legacy = normalizeTaskCardArray(source.cards, "cards");
+  const seen = new Set();
+  const taskCards = [];
+  for (const card of [...canonical, ...legacy]) {
+    const id = taskCardIdentity(card);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    taskCards.push(card);
+  }
+  const hasCount = source.count != null;
+  const count = hasCount ? Number(source.count) : taskCards.length;
+  if (!Number.isInteger(count) || count < 0) {
+    throw errorWithStatus("remote_managed_workspace_poll_count_invalid", 502);
+  }
+  if (count !== taskCards.length) {
+    throw errorWithStatus("remote_managed_workspace_poll_count_mismatch", 502);
+  }
+  return Object.assign({}, source, {
+    taskCards,
+    cards: taskCards,
+    count,
+  });
 }
 
 function defaultFetch() {
@@ -274,7 +334,8 @@ function createRemoteManagedWorkspaceNodeClientService(dependencies = {}) {
 
   async function pollTaskCards(config, payload = {}) {
     const limit = Math.max(1, Math.min(10, Number(payload.limit || 4) || 4));
-    return request(config, "GET", `/api/remote-managed-workspaces/${encodeURIComponent(config.workspaceId)}/task-cards/poll?limit=${limit}`);
+    const result = await request(config, "GET", `/api/remote-managed-workspaces/${encodeURIComponent(config.workspaceId)}/task-cards/poll?limit=${limit}`);
+    return normalizePolledTaskCardsPayload(result);
   }
 
   async function ackTaskCard(config, taskCardId, payload = {}) {
@@ -306,7 +367,7 @@ function createRemoteManagedWorkspaceNodeClientService(dependencies = {}) {
       summary: "remote_task_completed",
     });
     const polled = await pollTaskCards(config, { limit: 1 });
-    const card = Array.isArray(polled.cards) ? polled.cards[0] : null;
+    const card = polled.taskCards[0] || null;
     if (!card) return { ok: true, executed: false, duplicateSuppressed: false };
     await ackTaskCard(config, card.taskCardId, { leaseId: `lease:${card.taskCardId}` });
     const executionKey = compactOneLine(card.idempotencyKey || card.taskCardId);
@@ -347,5 +408,6 @@ function createRemoteManagedWorkspaceNodeClientService(dependencies = {}) {
 module.exports = {
   createRemoteManagedWorkspaceNodeClientService,
   normalizeRemoteManagedWorkspaceNodeErrorCode,
+  normalizePolledTaskCardsPayload,
   validateProjectRoot,
 };

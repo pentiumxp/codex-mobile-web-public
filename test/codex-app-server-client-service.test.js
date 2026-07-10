@@ -2,6 +2,9 @@
 
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
 const { test } = require("node:test");
 
 const canonicalCodexAppServerClientService = require("../services/runtime/codex-app-server-client-service");
@@ -117,6 +120,7 @@ test("app-server endpoint resolver reads bounded mux endpoint shapes", () => {
           port: 4567,
           pid: 1234,
           childPid: 5678,
+          codexExe: "/Applications/ChatGPT.app/Contents/Resources/codex",
           startedAt: "2026-07-05T00:00:00.000Z",
           capabilities: { mobileUserMessageEcho: true },
         });
@@ -132,6 +136,7 @@ test("app-server endpoint resolver reads bounded mux endpoint shapes", () => {
     required: true,
     pid: 1234,
     childPid: 5678,
+    codexExe: "/Applications/ChatGPT.app/Contents/Resources/codex",
     startedAt: "2026-07-05T00:00:00.000Z",
   });
 
@@ -305,6 +310,222 @@ test("app-server client replaces a profile mux only after the endpoint process i
 
   await client.startAndConnect();
   assert.equal(startOwnedMuxCount, 1);
+});
+
+test("app-server client replaces a live profile mux when codex executable changed", async () => {
+  let startOwnedMuxCount = 0;
+  let connectExternalCount = 0;
+  let initializeCount = 0;
+  const endpoint = {
+    protocol: "jsonl-tcp",
+    host: "127.0.0.1",
+    port: 4567,
+    source: "/tmp/profile-mux-endpoint.json",
+    pid: 1234,
+    codexExe: "/Applications/ChatGPT.app/Contents/Resources/codex",
+    required: true,
+  };
+  const client = createCodexAppServerClient({
+    REQUIRE_SHARED_APP_SERVER: true,
+    MUX_ENDPOINT_FILE: "/tmp/profile-mux-endpoint.json",
+    CODEX_EXE: "/Users/xuxin/.local/bin/codex",
+    PERSIST_MOBILE_OWNED_MUX: true,
+    resolveExternalEndpoint: () => endpoint,
+    normalizeFsPath: (value) => String(value || ""),
+  });
+  client.connectEndpoint = async () => {
+    connectExternalCount += 1;
+    throw new Error("external endpoint should not be used");
+  };
+  client.initialize = async () => {
+    initializeCount += 1;
+  };
+  client.startOwnedMuxAndConnect = async () => {
+    startOwnedMuxCount += 1;
+    client.endpoint = {
+      protocol: "jsonl-tcp",
+      host: "127.0.0.1",
+      port: 7654,
+      source: "/tmp/profile-mux-endpoint.json",
+      codexExe: "/Users/xuxin/.local/bin/codex",
+    };
+    client.transportKind = "external-jsonl-tcp";
+    client.ws = { readyState: 1, close() {} };
+  };
+
+  await client.startAndConnect();
+  assert.equal(connectExternalCount, 0);
+  assert.equal(startOwnedMuxCount, 1);
+  assert.equal(initializeCount, 1);
+});
+
+test("app-server client replaces stale profile mux from resolver-declared codex executable", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-app-server-resolver-exe-"));
+  const endpointFile = path.join(tempDir, "profile-mux-endpoint.json");
+  fs.writeFileSync(endpointFile, JSON.stringify({
+    protocol: "jsonl-tcp",
+    host: "127.0.0.1",
+    port: 4567,
+    pid: 1234,
+    codexExe: "/Applications/ChatGPT.app/Contents/Resources/codex",
+  }), "utf8");
+  let startOwnedMuxCount = 0;
+  let connectExternalCount = 0;
+  try {
+    const resolver = createAppServerEndpointResolver({
+      muxEndpointFile: endpointFile,
+      fs,
+    });
+    const resolved = resolver();
+    assert.equal(resolved.codexExe, "/Applications/ChatGPT.app/Contents/Resources/codex");
+    const client = createCodexAppServerClient({
+      REQUIRE_SHARED_APP_SERVER: true,
+      MUX_ENDPOINT_FILE: endpointFile,
+      CODEX_EXE: "/Users/xuxin/.local/bin/codex",
+      PERSIST_MOBILE_OWNED_MUX: true,
+      resolveExternalEndpoint: resolver,
+      normalizeFsPath: (value) => path.resolve(String(value || "")),
+    });
+    client.connectEndpoint = async () => {
+      connectExternalCount += 1;
+      throw new Error("stale profile endpoint should not be connected");
+    };
+    client.initialize = async () => {};
+    client.startOwnedMuxAndConnect = async () => {
+      startOwnedMuxCount += 1;
+      client.endpoint = {
+        protocol: "jsonl-tcp",
+        host: "127.0.0.1",
+        port: 7654,
+        source: endpointFile,
+        codexExe: "/Users/xuxin/.local/bin/codex",
+      };
+      client.transportKind = "external-jsonl-tcp";
+      client.ws = { readyState: 1, close() {} };
+    };
+
+    await client.startAndConnect();
+    assert.equal(connectExternalCount, 0);
+    assert.equal(startOwnedMuxCount, 1);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("app-server client keeps profile mux when codex executable resolves to same real path", async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "codex-app-server-client-"));
+  const realCodex = path.join(tempDir, "codex-real");
+  const symlinkCodex = path.join(tempDir, "codex-link");
+  fs.writeFileSync(realCodex, "#!/bin/sh\n", { mode: 0o755 });
+  fs.symlinkSync(realCodex, symlinkCodex);
+  let startOwnedMuxCount = 0;
+  let connectExternalCount = 0;
+  try {
+    const endpoint = {
+      protocol: "jsonl-tcp",
+      host: "127.0.0.1",
+      port: 4567,
+      source: path.join(tempDir, "profile-mux-endpoint.json"),
+      pid: 1234,
+      codexExe: realCodex,
+      required: true,
+    };
+    const client = createCodexAppServerClient({
+      REQUIRE_SHARED_APP_SERVER: true,
+      MUX_ENDPOINT_FILE: endpoint.source,
+      CODEX_EXE: symlinkCodex,
+      PERSIST_MOBILE_OWNED_MUX: true,
+      resolveExternalEndpoint: () => endpoint,
+      normalizeFsPath: (value) => path.resolve(String(value || "")),
+    });
+    client.connectEndpoint = async (target) => {
+      connectExternalCount += 1;
+      client.endpoint = target;
+      client.transportKind = "external-jsonl-tcp";
+      client.ws = { readyState: 1, close() {} };
+    };
+    client.initialize = async () => {};
+    client.startOwnedMuxAndConnect = async () => {
+      startOwnedMuxCount += 1;
+    };
+
+    await client.startAndConnect();
+    assert.equal(connectExternalCount, 1);
+    assert.equal(startOwnedMuxCount, 0);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test("app-server client keeps legacy profile mux endpoints without codex executable identity", async () => {
+  let startOwnedMuxCount = 0;
+  let connectExternalCount = 0;
+  const endpoint = {
+    protocol: "jsonl-tcp",
+    host: "127.0.0.1",
+    port: 4567,
+    source: "/tmp/profile-mux-endpoint.json",
+    pid: 1234,
+    required: true,
+  };
+  const client = createCodexAppServerClient({
+    REQUIRE_SHARED_APP_SERVER: true,
+    MUX_ENDPOINT_FILE: "/tmp/profile-mux-endpoint.json",
+    CODEX_EXE: "/Users/xuxin/.local/bin/codex",
+    PERSIST_MOBILE_OWNED_MUX: true,
+    resolveExternalEndpoint: () => endpoint,
+    normalizeFsPath: (value) => String(value || ""),
+  });
+  client.connectEndpoint = async (target) => {
+    connectExternalCount += 1;
+    client.endpoint = target;
+    client.transportKind = "external-jsonl-tcp";
+    client.ws = { readyState: 1, close() {} };
+  };
+  client.initialize = async () => {};
+  client.startOwnedMuxAndConnect = async () => {
+    startOwnedMuxCount += 1;
+  };
+
+  await client.startAndConnect();
+  assert.equal(connectExternalCount, 1);
+  assert.equal(startOwnedMuxCount, 0);
+});
+
+test("app-server client does not replace explicit external endpoints for executable mismatch", async () => {
+  let startOwnedMuxCount = 0;
+  let connectExternalCount = 0;
+  const endpoint = {
+    protocol: "jsonl-tcp",
+    host: "127.0.0.1",
+    port: 4567,
+    source: "CODEX_MOBILE_APP_SERVER_TCP",
+    pid: 1234,
+    codexExe: "/Applications/ChatGPT.app/Contents/Resources/codex",
+    required: true,
+  };
+  const client = createCodexAppServerClient({
+    REQUIRE_SHARED_APP_SERVER: true,
+    MUX_ENDPOINT_FILE: "/tmp/profile-mux-endpoint.json",
+    CODEX_EXE: "/Users/xuxin/.local/bin/codex",
+    PERSIST_MOBILE_OWNED_MUX: true,
+    resolveExternalEndpoint: () => endpoint,
+    normalizeFsPath: (value) => String(value || ""),
+  });
+  client.connectEndpoint = async (target) => {
+    connectExternalCount += 1;
+    client.endpoint = target;
+    client.transportKind = "external-jsonl-tcp";
+    client.ws = { readyState: 1, close() {} };
+  };
+  client.initialize = async () => {};
+  client.startOwnedMuxAndConnect = async () => {
+    startOwnedMuxCount += 1;
+  };
+
+  await client.startAndConnect();
+  assert.equal(connectExternalCount, 1);
+  assert.equal(startOwnedMuxCount, 0);
 });
 
 test("JsonLineConnection emits complete json lines and writes newline-delimited messages", () => {

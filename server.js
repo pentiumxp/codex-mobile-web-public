@@ -112,6 +112,7 @@ const { createServerRuntimeConfigService } = require("./services/runtime/server-
 const { createServerHttpRuntimeService } = require("./services/runtime/server-http-runtime-service");
 const { createRuntimeSettingsService } = require("./services/runtime/runtime-settings-service");
 const { createThreadRuntimeSettingsService } = require("./services/runtime/thread-runtime-settings-service");
+const { createModelOptionsRuntimeService } = require("./services/runtime/model-options-runtime-service");
 const { createThreadRolloutRuntimeService } = require("./services/runtime/thread-rollout-runtime-service");
 const { createServerSupportRuntimeService } = require("./services/runtime/server-support-runtime-service");
 const { createRuntimePressureDiagnosticsService } = require("./services/runtime/runtime-pressure-diagnostics-service");
@@ -488,6 +489,7 @@ const runtimeWorkspaceBootstrapService = createRuntimeWorkspaceBootstrapService(
   activeCodexHome: CODEX_HOME,
   authKeyFile: AUTH_KEY_FILE,
   port: PORT,
+  runtimeRoot: RUNTIME_ROOT,
   env: process.env,
   processExecPath: process.execPath,
   workspaceRegistryService,
@@ -806,6 +808,7 @@ function callThreadListServerBoundary(method, args) {
 }
 
 const CODEX_CONFIG_DEFAULTS = readCodexConfigDefaults();
+let modelOptionsRuntimeService = null;
 const runtimePermissionPolicyService = createRuntimePermissionPolicyService({
   path,
   permissionModeOptions: PERMISSION_MODE_OPTIONS,
@@ -830,7 +833,9 @@ const threadRuntimeSettingsService = createThreadRuntimeSettingsService({
   maxRuntimeContextScanBytes: MAX_RUNTIME_CONTEXT_SCAN_BYTES,
   runtimeContextCacheTtlMs: RUNTIME_CONTEXT_CACHE_TTL_MS,
   runtimeContextCacheMax: RUNTIME_CONTEXT_CACHE_MAX,
-  modelOptions: MODEL_OPTIONS,
+  modelOptions: () => (modelOptionsRuntimeService
+    ? modelOptionsRuntimeService.currentModelOptions()
+    : MODEL_OPTIONS),
   reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
   codexConfigDefaults: CODEX_CONFIG_DEFAULTS,
   normalizeFsPath,
@@ -1664,6 +1669,13 @@ const codex = createCodexAppServerClient({
   liveQuotaSnapshotForProfiles,
 });
 
+modelOptionsRuntimeService = createModelOptionsRuntimeService({
+  codex,
+  fallbackModelOptions: MODEL_OPTIONS,
+  defaultModel: DEFAULT_MODEL,
+  readTimeoutMs: Math.min(READ_RPC_TIMEOUT_MS, 3000),
+});
+
 let taskCardExecutionWatchdogTimer = null;
 let taskCardExecutionWatchdogInitialTimer = null;
 let taskCardExecutionWatchdogRunning = false;
@@ -1804,6 +1816,7 @@ const { autoRecoverThreadTurn } = createAutoTurnRecoveryService({
 const threadMessageRouteService = createThreadMessageRouteService({
   codex,
   modelOptions: MODEL_OPTIONS,
+  resolveModelOptions: () => modelOptionsRuntimeService.effectiveModelOptions(),
   reasoningEffortOptions: REASONING_EFFORT_OPTIONS,
   mutationRpcTimeoutMs: MUTATION_RPC_TIMEOUT_MS,
   startThreadFromRequestBody,
@@ -2048,6 +2061,7 @@ const serverRouteCompositionService = createServerRouteCompositionService({
   mergeThreadDisplaySummary,
   mergeThreadSummaryListWithDiagnostics,
   modelOptions: MODEL_OPTIONS,
+  resolveModelOptions: () => modelOptionsRuntimeService.effectiveModelOptions(),
   normalizeFsPath,
   normalizeStaleContextOnlyActiveThread,
   normalizeThreadListResultStatuses,

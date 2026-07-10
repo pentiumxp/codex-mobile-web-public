@@ -1748,6 +1748,59 @@ test("local turn-start overlay clears when rollout tail has a later terminal eve
   }
 });
 
+test("local turn-start overlay clears when terminal return receipt reaches source detail", () => {
+  const threadId = "019e9000-0000-7000-8000-localreceipt";
+  const localTurnId = "turn-local-active";
+  rememberLocalActiveThreadStatus(threadId, localTurnId, { source: "test" });
+  try {
+    const active = applyLocalActiveThreadStatusToSummary({
+      id: threadId,
+      name: "Home AI",
+      updatedAt: 1780722169,
+      status: { type: "idle" },
+    });
+
+    assert.equal(active.status.type, "active");
+    assert.equal(active.activeTurnId, localTurnId);
+    assert.equal(active.mobileLocalActiveStatus.turnId, localTurnId);
+
+    const receiptAttached = Object.assign({}, active, {
+      returnReceiptTaskCardCount: 1,
+      latestReturnReceiptAt: new Date(Date.now() + 1000).toISOString(),
+    });
+    const settled = applyLocalActiveThreadStatusToSummary(receiptAttached);
+
+    assert.equal(settled.status.type, "completed");
+    assert.equal(settled.status.mobileClearedLocalActiveReturnReceipt, true);
+    assert.equal(settled.activeTurnId, undefined);
+    assert.equal(settled.mobileLocalActiveStatus, undefined);
+  } finally {
+    clearLocalActiveThreadStatus(threadId);
+  }
+});
+
+test("local turn-start overlay ignores older terminal return receipt metadata", () => {
+  const threadId = "019e9000-0000-7000-8000-oldreceipt";
+  const localTurnId = "turn-local-active";
+  rememberLocalActiveThreadStatus(threadId, localTurnId, { source: "test" });
+  try {
+    const summary = applyLocalActiveThreadStatusToSummary({
+      id: threadId,
+      name: "Home AI",
+      updatedAt: 1780722169,
+      status: { type: "idle" },
+      returnReceiptTaskCardCount: 1,
+      latestReturnReceiptAt: "2000-01-01T00:00:00.000Z",
+    });
+
+    assert.equal(summary.status.type, "active");
+    assert.equal(summary.activeTurnId, localTurnId);
+    assert.equal(summary.mobileLocalActiveStatus.turnId, localTurnId);
+  } finally {
+    clearLocalActiveThreadStatus(threadId);
+  }
+});
+
 test("local turn-start overlay yields to a different materialized rollout active turn", () => {
   const threadId = "019e9000-0000-7000-8000-localactive3";
   const localTurnId = "turn-local-active";

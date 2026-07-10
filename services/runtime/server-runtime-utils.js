@@ -230,9 +230,30 @@ function createServerRuntimeUtils(dependencies = {}) {
     return Array.from(new Set(dirs));
   }
 
+  function bundledCodexExecutableCandidates() {
+    if (process.platform === "win32") return [];
+    const appPaths = uniqueStrings([
+      env.CODEX_DESKTOP_APP_PATH || "",
+      "/Applications/ChatGPT.app",
+      "/Applications/Codex.app",
+    ]);
+    return appPaths.flatMap((appPath) => [
+      path.join(appPath, "Contents", "Resources", "codex"),
+    ]);
+  }
+
+  function findExecutableFile(candidates) {
+    for (const candidate of candidates || []) {
+      if (isExecutableFile(candidate)) return candidate;
+    }
+    return "";
+  }
+
   function resolveDefaultCodexExecutable() {
     const explicit = String(env.CODEX_MOBILE_CODEX_EXE || "").trim();
     if (explicit) return explicit;
+    const bundled = findExecutableFile(bundledCodexExecutableCandidates());
+    if (bundled) return bundled;
     return findExecutableInDirs("codex", commonCodexExecutableDirs()) || "codex";
   }
 
@@ -263,6 +284,7 @@ function createServerRuntimeUtils(dependencies = {}) {
   return {
     appShellBuildId,
     assertCommandAvailable,
+    bundledCodexExecutableCandidates,
     clientBuildId,
     codexAppServerChildEnv,
     commandNeedsFilesystemCheck,

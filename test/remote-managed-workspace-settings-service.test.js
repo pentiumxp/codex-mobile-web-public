@@ -365,3 +365,47 @@ test("remote managed workspace settings ignore external credential fallback afte
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("remote managed workspace settings ignore external credential fallback after pairing precondition recovery", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-settings-pairing-precondition-"));
+  const projectRoot = path.join(root, "project");
+  fs.mkdirSync(projectRoot, { recursive: true });
+  const service = createRemoteManagedWorkspaceSettingsService({
+    fs,
+    path,
+    settingsFile: path.join(root, "settings.json"),
+    stateFile: path.join(root, "state.json"),
+    enrollmentTokenFile: path.join(root, "secret", "scoped-credential"),
+    env: { STALE_RMW_TOKEN: "stale-env-credential" },
+    now: () => new Date("2026-07-08T00:00:00.000Z"),
+  });
+  try {
+    service.saveSettings({
+      enabled: true,
+      workspaceKind: "remote_managed_workspace",
+      workspaceId: "rmw_env_pairing_precondition",
+      nodeName: "runner-node",
+      centralUrl: "http://127.0.0.1:9999",
+      projectRoot,
+      allowedRoot: root,
+      enrollmentTokenRef: "env:STALE_RMW_TOKEN",
+    });
+    assert.equal(service.configForClient({ requireEnabled: true, requireToken: true }).enrollmentToken, "stale-env-credential");
+
+    service.clearScopedCredentialForRecovery({
+      issueCode: "remote_managed_workspace_pairing_approval_required",
+      failedCredential: "stale-env-credential",
+    });
+    const recovered = service.publicSettings();
+    assert.equal(recovered.scopedCredentialConfigured, false);
+    assert.equal(recovered.pairingStatus, "unconfigured");
+    assert.equal(recovered.issueCodes.includes("remote_managed_workspace_pairing_approval_required"), true);
+    assert.throws(
+      () => service.configForClient({ requireEnabled: true, requireToken: true }),
+      /scoped_node_credential_unavailable/,
+    );
+    assert.doesNotMatch(JSON.stringify(recovered), /stale-env-credential/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

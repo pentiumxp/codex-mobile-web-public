@@ -10,6 +10,7 @@ const test = require("node:test");
 const root = path.resolve(__dirname, "..");
 const launcherPath = path.join(root, "start-codex-desktop-shared-macos.sh");
 const launcher = fs.readFileSync(launcherPath, "utf8");
+const mobileWebLauncher = fs.readFileSync(path.join(root, "start-codex-mobile-web-macos.sh"), "utf8");
 
 function makeFakeApp(tmp, appName) {
   const appPath = path.join(tmp, `${appName}.app`);
@@ -46,6 +47,22 @@ test("macOS desktop launcher defaults to ChatGPT app with Codex fallback", () =>
   assert.match(launcher, /\/Applications\/Codex\.app/);
   assert.match(launcher, /CODEX_APP_PATH="\$\{CODEX_DESKTOP_APP_PATH:-\}"/);
   assert.match(launcher, /CODEX_APP_PATH="\$\(default_app_path\)"/);
+});
+
+test("macOS desktop launcher prefers bundled Codex CLI while preserving override", () => {
+  assert.match(launcher, /resolve_codex_command\(\) \{/);
+  assert.match(launcher, /if \[\[ -n "\$value" \]\]; then[\s\S]*resolve_command "\$value" codex/);
+  assert.match(launcher, /\$CODEX_APP_PATH\/Contents\/Resources\/codex/);
+  assert.match(launcher, /\/Applications\/ChatGPT\.app\/Contents\/Resources\/codex/);
+  assert.match(launcher, /REAL_CODEX_EXE="\$\(resolve_codex_command "\$REAL_CODEX_EXE"\)"/);
+});
+
+test("macOS mobile web launcher prefers bundled Codex CLI while preserving override", () => {
+  assert.match(mobileWebLauncher, /resolve_codex_command\(\) \{/);
+  assert.match(mobileWebLauncher, /if \[\[ -n "\$value" \]\]; then[\s\S]*resolve_command "\$value" codex/);
+  assert.match(mobileWebLauncher, /\/Applications\/ChatGPT\.app\/Contents\/Resources\/codex/);
+  assert.match(mobileWebLauncher, /\/Applications\/Codex\.app\/Contents\/Resources\/codex/);
+  assert.match(mobileWebLauncher, /CODEX_EXE_VALUE="\$\(resolve_codex_command "\$CODEX_EXE_VALUE"\)"/);
 });
 
 test("macOS desktop launcher resolves app executable and force-quit name from bundle metadata", () => {

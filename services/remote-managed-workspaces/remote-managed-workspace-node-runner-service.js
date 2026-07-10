@@ -1,15 +1,25 @@
 "use strict";
 
+const {
+  normalizePolledTaskCardsPayload,
+} = require("./remote-managed-workspace-node-client-service");
+
 function compactOneLine(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 const SCOPED_NODE_CREDENTIAL_INVALID_CODE = "remote_managed_workspace_scoped_node_credential_invalid";
+const PAIRING_APPROVAL_REQUIRED_CODE = "remote_managed_workspace_pairing_approval_required";
 const SCOPED_NODE_CREDENTIAL_INVALID_ALIASES = new Set([
   SCOPED_NODE_CREDENTIAL_INVALID_CODE,
   "remote_managed_workspace_scoped_node_credential_is_invalid",
 ]);
+const PAIRING_APPROVAL_REQUIRED_ALIASES = new Set([
+  PAIRING_APPROVAL_REQUIRED_CODE,
+  "remote_managed_workspace_pairing_must_be_approved_before_node_access",
+]);
 const SCOPED_NODE_CREDENTIAL_INVALID_MESSAGE = "remote managed workspace scoped node credential is invalid";
+const PAIRING_APPROVAL_REQUIRED_MESSAGE = "remote managed workspace pairing must be approved before node access";
 
 function compactLower(value) {
   return compactOneLine(value).toLowerCase();
@@ -19,6 +29,8 @@ function normalizeScopedCredentialInvalidErrorCode(value) {
   const lower = compactLower(value);
   if (SCOPED_NODE_CREDENTIAL_INVALID_ALIASES.has(lower)) return SCOPED_NODE_CREDENTIAL_INVALID_CODE;
   if (lower === SCOPED_NODE_CREDENTIAL_INVALID_MESSAGE) return SCOPED_NODE_CREDENTIAL_INVALID_CODE;
+  if (PAIRING_APPROVAL_REQUIRED_ALIASES.has(lower)) return PAIRING_APPROVAL_REQUIRED_CODE;
+  if (lower === PAIRING_APPROVAL_REQUIRED_MESSAGE) return PAIRING_APPROVAL_REQUIRED_CODE;
   return compactOneLine(value);
 }
 
@@ -36,6 +48,12 @@ function isInvalidScopedCredentialError(err) {
   const statusCode = Number(err && err.statusCode || 0);
   if (statusCode !== 401 && statusCode !== 403) return false;
   return errorCode(err).toLowerCase() === SCOPED_NODE_CREDENTIAL_INVALID_CODE;
+}
+
+function isPairingApprovalRequiredError(err) {
+  const statusCode = Number(err && err.statusCode || 0);
+  if (statusCode !== 401 && statusCode !== 403) return false;
+  return errorCode(err).toLowerCase() === PAIRING_APPROVAL_REQUIRED_CODE;
 }
 
 function classifyConnectionStatus(err) {
@@ -76,6 +94,12 @@ function hasIssueCode(state = {}, code = "") {
   if (!expected) return false;
   const issues = Array.isArray(state.issueCodes) ? state.issueCodes.map((entry) => compactOneLine(entry).toLowerCase()) : [];
   return issues.includes(expected);
+}
+
+function isOrphanedPendingPairing(state = {}) {
+  const status = compactLower(state.pairingStatus);
+  if (status !== "pending_approval" && status !== "requesting_pairing") return false;
+  return !compactOneLine(state.pairingRequestId);
 }
 
 function boundedTerminalWithoutExecutionBridge(card = {}) {
@@ -144,6 +168,23 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
     return settingsService.clearScopedCredentialForRecovery({
       issueCode: SCOPED_NODE_CREDENTIAL_INVALID_CODE,
       failedCredential: config.scopedCredential || config.enrollmentToken || config.token,
+    });
+  }
+
+  function recoverStalePairingPrecondition(err, config = {}, startStatus = {}) {
+    if (!isPairingApprovalRequiredError(err)) return null;
+    if (typeof settingsService.clearScopedCredentialForRecovery !== "function") return null;
+    const failedCredential = compactOneLine(config.scopedCredential || config.enrollmentToken || config.token);
+    if (!failedCredential) return null;
+    const pairingStatus = compactLower(startStatus.pairingStatus);
+    const connectionStatus = compactLower(startStatus.connectionStatus);
+    const hasCredential = startStatus.scopedCredentialConfigured === true || startStatus.enrollmentTokenConfigured === true;
+    if (!hasCredential) return null;
+    if (compactOneLine(startStatus.pairingRequestId)) return null;
+    if (pairingStatus !== "approved" || connectionStatus !== "auth_failed") return null;
+    return settingsService.clearScopedCredentialForRecovery({
+      issueCode: PAIRING_APPROVAL_REQUIRED_CODE,
+      failedCredential,
     });
   }
 
@@ -281,7 +322,8 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
     }
     const config = settingsService.configForPairingIntent({ requireEnabled: options.requireEnabled !== false });
     const state = settingsService.readState();
-    const pollExistingRequest = shouldPollExistingPairingRequest(state, options);
+    const orphanedPendingPairing = isOrphanedPendingPairing(state);
+    const pollExistingRequest = !orphanedPendingPairing && shouldPollExistingPairingRequest(state, options);
     setState({
       connectionStatus: "connecting",
       pairingStatus: pollExistingRequest ? "pending_approval" : "requesting_pairing",
@@ -292,6 +334,19 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       : await nodeClientService.requestPairing(config);
     const nextState = settingsService.applyPairingResult(response.result || response);
     const nextPublic = settingsService.publicSettings(undefined, nextState);
+    if (!pollExistingRequest && isOrphanedPendingPairing(nextPublic)) {
+      const missingRequestState = setState({
+        connectionStatus: "auth_failed",
+        pairingStatus: "auth_failed",
+        issueCode: "remote_managed_workspace_pairing_request_id_missing",
+        lastPairingCheckAt: nowIso(now),
+      });
+      return {
+        approved: false,
+        skipped: "pairing_request_id_missing",
+        status: settingsService.publicSettings(undefined, missingRequestState),
+      };
+    }
     if (nextPublic.scopedCredentialConfigured || nextPublic.enrollmentTokenConfigured) {
       return { approved: true, status: nextPublic };
     }
@@ -487,8 +542,10 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
     if (running && !options.force) return { ok: true, skipped: "already_running", status: publicStatus() };
     running = true;
     let activeConfig = null;
+    let runStartPublicSettings = null;
     try {
       const publicSettings = settingsService.publicSettings();
+      runStartPublicSettings = publicSettings;
       if (!publicSettings.enabled && options.requireEnabled !== false) {
         const state = setState({ connectionStatus: "disconnected", nextRetryAt: "" });
         return { ok: true, skipped: "disabled", status: settingsService.publicSettings(undefined, state) };
@@ -513,7 +570,8 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       });
       await flushQueuedTerminalReturns(config);
       const polled = await nodeClientService.pollTaskCards(config, { limit: 1 });
-      const card = Array.isArray(polled.cards) ? polled.cards[0] : null;
+      const normalizedPoll = normalizePolledTaskCardsPayload(polled);
+      const card = normalizedPoll.taskCards[0] || null;
       let processed = { processed: false };
       if (card) processed = await processCard(config, card);
       const state = setState({
@@ -533,13 +591,22 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
         ok: true,
         registered: registered.result && registered.result.ok === true,
         heartbeatOk: heartbeat && heartbeat.ok === true,
-        polledCount: Number(polled.count || 0),
+        polledCount: normalizedPoll.count,
         processed,
         status: settingsService.publicSettings(undefined, state),
       };
     } catch (err) {
       const invalidScopedCredential = isInvalidScopedCredentialError(err);
-      const recovered = invalidScopedCredential ? recoverInvalidScopedCredential(err, activeConfig || {}) : null;
+      const stalePairingPrecondition = !invalidScopedCredential
+        && isPairingApprovalRequiredError(err)
+        && runStartPublicSettings
+        ? true
+        : false;
+      const recovered = invalidScopedCredential
+        ? recoverInvalidScopedCredential(err, activeConfig || {})
+        : stalePairingPrecondition
+          ? recoverStalePairingPrecondition(err, activeConfig || {}, runStartPublicSettings)
+          : null;
       if (recovered && recovered.staleCredentialFailureIgnored) {
         if (started) schedule(pollIntervalMs);
         const status = settingsService.publicSettings();
@@ -550,7 +617,8 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       const failures = Number(current.consecutiveFailures || 0) + 1;
       const delay = backoffMs(failures, { minBackoffMs, maxBackoffMs });
       const classified = classifyConnectionStatus(err);
-      const pairingPatch = invalidScopedCredential
+      const recoveredStaleCredential = invalidScopedCredential || Boolean(recovered && stalePairingPrecondition);
+      const pairingPatch = recoveredStaleCredential
         ? { lastPairingCheckAt: nowIso(now) }
         : settingsService.publicSettings().scopedCredentialConfigured
         ? {}

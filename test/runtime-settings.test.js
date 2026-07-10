@@ -94,3 +94,59 @@ test("runtime settings pick new-thread selections from pending value, default, t
     options: [],
   }), "full");
 });
+
+test("runtime settings initializes and refreshes model options under the same client build", () => {
+  const state = {
+    modelOptions: [],
+    defaultModel: "",
+    newThreadModel: "",
+    composerModel: "",
+  };
+
+  const startup = runtimeSettings.applyModelOptionsRefresh(state, {
+    clientBuildId: "same-build",
+    defaultModel: "gpt-5.5",
+    modelOptions: ["gpt-5.5", "gpt-5.4"],
+  });
+
+  assert.equal(startup.changed, true);
+  assert.deepEqual(state.modelOptions, ["gpt-5.5", "gpt-5.4"]);
+  assert.equal(state.defaultModel, "gpt-5.5");
+  assert.equal(state.newThreadModel, "gpt-5.5");
+
+  state.composerModel = "gpt-5.4";
+  state.newThreadModel = "gpt-5.5";
+  const refreshed = runtimeSettings.applyModelOptionsRefresh(state, {
+    clientBuildId: "same-build",
+    defaultModel: "gpt-5.5",
+    modelOptions: ["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.4"],
+  });
+
+  assert.equal(refreshed.changed, true);
+  assert.equal(refreshed.optionsChanged, true);
+  assert.equal(refreshed.selectionChanged, false);
+  assert.equal(state.composerModel, "gpt-5.4");
+  assert.equal(state.newThreadModel, "gpt-5.5");
+  assert.ok(state.modelOptions.includes("gpt-5.6-sol"));
+  assert.equal(runtimeSettings.labelForModel("gpt-5.6-luna"), "GPT-5.6 Luna");
+});
+
+test("runtime settings preserves legal model selection and falls back invalid selections", () => {
+  const state = {
+    modelOptions: ["gpt-5.5", "gpt-5.4"],
+    defaultModel: "gpt-5.5",
+    newThreadModel: "gpt-5.4",
+    composerModel: "gpt-removed",
+  };
+
+  const result = runtimeSettings.applyModelOptionsRefresh(state, {
+    defaultModel: "gpt-5.6-sol",
+    modelOptions: ["gpt-5.6-sol", "gpt-5.6-terra"],
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.selectionChanged, true);
+  assert.equal(state.newThreadModel, "gpt-5.6-sol");
+  assert.equal(state.composerModel, "");
+  assert.deepEqual(state.modelOptions, ["gpt-5.6-sol", "gpt-5.6-terra"]);
+});
