@@ -335,6 +335,128 @@ test("remote node runner polls persisted pairing request after offline retry ins
   }
 });
 
+test("remote node runner clears invalid scoped credential and resumes persisted pairing request", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-runner-invalid-scoped-credential-"));
+  const projectRoot = path.join(root, "project");
+  fs.mkdirSync(projectRoot, { recursive: true });
+  const credentialFile = path.join(root, "secret", "scoped-credential");
+  const service = createRemoteManagedWorkspaceSettingsService({
+    fs,
+    path,
+    settingsFile: path.join(root, "settings.json"),
+    stateFile: path.join(root, "state.json"),
+    enrollmentTokenFile: credentialFile,
+    now: () => new Date("2026-07-08T00:00:00.000Z"),
+  });
+  service.enableWorkspace({
+    centralUrl: "http://127.0.0.1:9999",
+    workspace: {
+      cwd: projectRoot,
+      label: "Invalid Scoped Credential Project",
+    },
+  });
+  service.applyPairingResult({
+    pairing: {
+      requestId: "rmw_pair_invalid_scoped_credential",
+      status: "approved",
+      scopedCredential: "stale-scoped-credential",
+    },
+  });
+  const calls = [];
+  let failRegister = true;
+  const nodeClient = Object.assign(fakeNodeClient([], calls), {
+    register: async (config) => {
+      calls.push(["register", config.workspaceId, config.enrollmentToken]);
+      if (failRegister) {
+        const err = new Error("remote_managed_workspace_scoped_node_credential_invalid");
+        err.code = "remote_managed_workspace_scoped_node_credential_invalid";
+        err.statusCode = 401;
+        throw err;
+      }
+      return { result: { ok: true } };
+    },
+    requestPairing: async () => {
+      calls.push(["requestPairing"]);
+      return { result: { pairing: { requestId: "rmw_pair_replacement", status: "pending_approval" } } };
+    },
+    pollPairingStatus: async (_config, requestId) => {
+      calls.push(["pollPairingStatus", requestId]);
+      return {
+        result: {
+          pairing: {
+            requestId,
+            status: "approved",
+            scopedCredential: "fresh-scoped-credential",
+          },
+        },
+      };
+    },
+  });
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: nodeClient,
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+
+    const failed = await runner.runOnce({ force: true, suppressErrors: true });
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error, "remote_managed_workspace_scoped_node_credential_invalid");
+    assert.equal(failed.status.connectionStatus, "auth_failed");
+    assert.equal(failed.status.pairingStatus, "pending_approval");
+    assert.equal(failed.status.pairingRequestId, "rmw_pair_invalid_scoped_credential");
+    assert.equal(failed.status.scopedCredentialConfigured, false);
+    assert.equal(failed.status.issueCodes.includes("remote_managed_workspace_scoped_node_credential_invalid"), true);
+    assert.equal(fs.existsSync(credentialFile), false);
+    assert.deepEqual(calls.map((entry) => entry[0]), ["register"]);
+    assert.doesNotMatch(JSON.stringify(failed.status), /stale-scoped-credential|fresh-scoped-credential/);
+
+    failRegister = false;
+    const recovered = await runner.runOnce({ force: true });
+    assert.equal(recovered.ok, true);
+    assert.equal(recovered.status.connectionStatus, "connected");
+    assert.equal(recovered.status.pairingStatus, "connected");
+    assert.equal(recovered.status.scopedCredentialConfigured, true);
+    assert.equal(fs.readFileSync(credentialFile, "utf8").trim(), "fresh-scoped-credential");
+    assert.equal(calls.some((entry) => entry[0] === "requestPairing"), false);
+    assert.equal(calls.some((entry) => entry[0] === "pollPairingStatus" && entry[1] === "rmw_pair_invalid_scoped_credential"), true);
+    assert.equal(calls.some((entry) => entry[0] === "register" && entry[2] === "fresh-scoped-credential"), true);
+    assert.doesNotMatch(JSON.stringify(recovered.status), /stale-scoped-credential|fresh-scoped-credential/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote node runner keeps scoped credential for ordinary offline trusted route errors", async () => {
+  const { root, service } = makeSettings();
+  const calls = [];
+  const nodeClient = Object.assign(fakeNodeClient([], calls), {
+    register: async (config) => {
+      calls.push(["register", config.workspaceId, config.enrollmentToken]);
+      const err = new Error("fetch failed");
+      err.code = "ECONNRESET";
+      throw err;
+    },
+  });
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: nodeClient,
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+    const failed = await runner.runOnce({ force: true, suppressErrors: true });
+
+    assert.equal(failed.ok, false);
+    assert.equal(failed.status.connectionStatus, "offline");
+    assert.equal(failed.status.scopedCredentialConfigured, true);
+    assert.equal(service.readEnrollmentToken(), "runner-token");
+    assert.equal(calls.some((entry) => entry[0] === "register" && entry[2] === "runner-token"), true);
+    assert.doesNotMatch(JSON.stringify(failed.status), /runner-token/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("remote node runner stops trusted polling while pairing is rejected", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-runner-rejected-"));
   const projectRoot = path.join(root, "project");

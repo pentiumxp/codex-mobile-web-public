@@ -654,6 +654,40 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     return writeState(next);
   }
 
+  function clearScopedCredentialForRecovery(options = {}) {
+    const current = readState();
+    clearEnrollmentToken();
+    const timestamp = nowIso(now);
+    const issueCode = compactOneLine(options.issueCode || "remote_managed_workspace_scoped_node_credential_invalid")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "_")
+      .slice(0, 120);
+    const pairingStatus = current.pairingStatus === "rejected"
+      ? "rejected"
+      : (current.pairingRequestId ? "pending_approval" : "unconfigured");
+    const next = Object.assign({}, current, {
+      connectionStatus: "auth_failed",
+      pairingStatus,
+      pairingApprovedAt: "",
+      lastPairingCheckAt: timestamp,
+      consecutiveFailures: 0,
+      nextRetryAt: "",
+    });
+    if (pairingStatus !== "rejected") {
+      next.pairingRejectedAt = "";
+      next.pairingRejectionReason = "";
+    }
+    if (issueCode) {
+      next.issueCodes = boundedIssueCodes([...(current.issueCodes || []), issueCode]);
+      next.diagnostics = normalizeDiagnostics([...(current.diagnostics || []), {
+        code: issueCode,
+        status: "auth_failed",
+        at: timestamp,
+      }]);
+    }
+    return writeState(next);
+  }
+
   function rememberIdempotencyKey(key) {
     const text = compactOneLine(key);
     if (!text) return readState();
@@ -742,6 +776,7 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
 
   return {
     applyPairingResult,
+    clearScopedCredentialForRecovery,
     configForClient,
     configForPairingIntent,
     disableWorkspace,

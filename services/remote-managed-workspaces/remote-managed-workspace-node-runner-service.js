@@ -14,6 +14,14 @@ function errorCode(err) {
   return compactOneLine(err && (err.code || err.message)) || "remote_managed_workspace_runner_error";
 }
 
+const SCOPED_NODE_CREDENTIAL_INVALID_CODE = "remote_managed_workspace_scoped_node_credential_invalid";
+
+function isInvalidScopedCredentialError(err) {
+  const statusCode = Number(err && err.statusCode || 0);
+  if (statusCode !== 401 && statusCode !== 403) return false;
+  return errorCode(err).toLowerCase() === SCOPED_NODE_CREDENTIAL_INVALID_CODE;
+}
+
 function classifyConnectionStatus(err) {
   const statusCode = Number(err && err.statusCode || 0);
   if (statusCode === 401 || statusCode === 403 || /auth|token|unauthorized|forbidden/i.test(errorCode(err))) {
@@ -105,6 +113,14 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
 
   function publicStatus() {
     return settingsService.publicSettings();
+  }
+
+  function recoverInvalidScopedCredential(err) {
+    if (!isInvalidScopedCredentialError(err)) return null;
+    if (typeof settingsService.clearScopedCredentialForRecovery !== "function") return null;
+    return settingsService.clearScopedCredentialForRecovery({
+      issueCode: SCOPED_NODE_CREDENTIAL_INVALID_CODE,
+    });
   }
 
   function schedule(delayMs) {
@@ -202,18 +218,23 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       };
     }
     const config = settingsService.configForClient({ requireEnabled: false, requireToken: true });
-    setState({ connectionStatus: "connecting", pairingStatus: "approved" });
-    const registered = await nodeClientService.register(config);
-    const state = setState({
-      connectionStatus: "connected",
-      pairingStatus: "connected",
-      issueCodes: [],
-      diagnostics: [],
-      lastRegisterAt: nowIso(now),
-      consecutiveFailures: 0,
-      nextRetryAt: "",
-    });
-    return { ok: true, result: registered.result, status: settingsService.publicSettings(undefined, state) };
+    try {
+      setState({ connectionStatus: "connecting", pairingStatus: "approved" });
+      const registered = await nodeClientService.register(config);
+      const state = setState({
+        connectionStatus: "connected",
+        pairingStatus: "connected",
+        issueCodes: [],
+        diagnostics: [],
+        lastRegisterAt: nowIso(now),
+        consecutiveFailures: 0,
+        nextRetryAt: "",
+      });
+      return { ok: true, result: registered.result, status: settingsService.publicSettings(undefined, state) };
+    } catch (err) {
+      recoverInvalidScopedCredential(err);
+      throw err;
+    }
   }
 
   async function ensurePairingApproved(options = {}) {
@@ -280,7 +301,8 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       try {
         await nodeClientService.returnTaskCard(config, entry.taskCardId, entry.payload || {});
         flushed += 1;
-      } catch (_) {
+      } catch (err) {
+        if (isInvalidScopedCredentialError(err)) throw err;
         remaining.push(entry);
       }
     }
@@ -477,11 +499,15 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
         status: settingsService.publicSettings(undefined, state),
       };
     } catch (err) {
-      const current = settingsService.readState();
+      const invalidScopedCredential = isInvalidScopedCredentialError(err);
+      const recovered = invalidScopedCredential ? recoverInvalidScopedCredential(err) : null;
+      const current = recovered || settingsService.readState();
       const failures = Number(current.consecutiveFailures || 0) + 1;
       const delay = backoffMs(failures, { minBackoffMs, maxBackoffMs });
       const classified = classifyConnectionStatus(err);
-      const pairingPatch = settingsService.publicSettings().scopedCredentialConfigured
+      const pairingPatch = invalidScopedCredential
+        ? { lastPairingCheckAt: nowIso(now) }
+        : settingsService.publicSettings().scopedCredentialConfigured
         ? {}
         : {
             pairingStatus: classified === "offline" ? "offline_retrying" : (classified === "auth_failed" ? "auth_failed" : current.pairingStatus),
