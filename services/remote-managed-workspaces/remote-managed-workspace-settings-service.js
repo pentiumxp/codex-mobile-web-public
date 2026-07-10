@@ -43,6 +43,10 @@ const GENERATED_WORKSPACE_CONFIG_ISSUES = new Set([
   "workspace_id_required",
   "node_name_required",
 ]);
+const INVALID_SCOPED_CREDENTIAL_RECOVERY_ISSUES = new Set([
+  "remote_managed_workspace_scoped_node_credential_invalid",
+  "stale_pairing_request_missing_scoped_credential",
+]);
 const DEFAULT_CAPABILITIES = [
   "task-card-poll",
   "task-card-ack",
@@ -323,9 +327,14 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     return next;
   }
 
-  function readEnrollmentToken(settings = readSettings()) {
+  function shouldIgnoreExternalCredentialFallback(state = readState()) {
+    return boundedIssueCodes(state.issueCodes).some((code) => INVALID_SCOPED_CREDENTIAL_RECOVERY_ISSUES.has(code));
+  }
+
+  function readEnrollmentToken(settings = readSettings(), options = {}) {
     const fileToken = enrollmentTokenFile ? compactOneLine(readSecretFile(enrollmentTokenFile)) : "";
     if (fileToken) return fileToken;
+    if (options.includeExternalFallback === false) return "";
     const ref = compactOneLine(settings && settings.enrollmentTokenRef || "");
     if (/^env:[A-Za-z_][A-Za-z0-9_]*$/.test(ref)) {
       const name = ref.slice(4);
@@ -333,6 +342,12 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
       if (refToken) return refToken;
     }
     return compactOneLine(env[enrollmentTokenEnv] || env.CODEX_MOBILE_REMOTE_MANAGED_WORKSPACE_TOKEN || "");
+  }
+
+  function readEffectiveEnrollmentToken(settings = readSettings(), state = readState()) {
+    return readEnrollmentToken(settings, {
+      includeExternalFallback: !shouldIgnoreExternalCredentialFallback(state),
+    });
   }
 
   function readSecretFile(file) {
@@ -538,13 +553,13 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     if (!saved.enabled) {
       writeState(Object.assign({}, state, {
         connectionStatus: "disconnected",
-        pairingStatus: readEnrollmentToken(saved) ? "approved" : "unconfigured",
+        pairingStatus: readEffectiveEnrollmentToken(saved, state) ? "approved" : "unconfigured",
         issueCodes: [],
         diagnostics: [],
         consecutiveFailures: 0,
         nextRetryAt: "",
       }));
-    } else if (readEnrollmentToken(saved) && ((state.issueCodes || []).includes("enrollment_token_required") || state.pairingStatus === "unconfigured")) {
+    } else if (readEffectiveEnrollmentToken(saved, state) && ((state.issueCodes || []).includes("enrollment_token_required") || state.pairingStatus === "unconfigured")) {
       writeState(Object.assign({}, stateWithoutLegacyCredentialIssues(state), {
         connectionStatus: state.connectionStatus === "auth_failed" ? "disconnected" : state.connectionStatus,
         pairingStatus: state.pairingStatus === "connected" ? "connected" : "approved",
@@ -556,7 +571,7 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
 
   function configForClient(options = {}) {
     const settings = normalizeSettings(readSettings());
-    const token = readEnrollmentToken(settings);
+    const token = readEffectiveEnrollmentToken(settings);
     if (options.requireEnabled !== false && !settings.enabled) throw errorWithStatus("remote_managed_workspace_disabled", 409);
     if (options.requireToken !== false && !token) throw errorWithStatus("scoped_node_credential_unavailable", 409);
     const roots = validateProjectRoots(settings, { requirePaths: true });
@@ -656,6 +671,11 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
 
   function clearScopedCredentialForRecovery(options = {}) {
     const current = readState();
+    const failedCredential = compactOneLine(options.failedCredential);
+    const fileToken = enrollmentTokenFile ? compactOneLine(readSecretFile(enrollmentTokenFile)) : "";
+    if (failedCredential && fileToken && fileToken !== failedCredential) {
+      return Object.assign({}, current, { staleCredentialFailureIgnored: true });
+    }
     clearEnrollmentToken();
     const timestamp = nowIso(now);
     const issueCode = compactOneLine(options.issueCode || "remote_managed_workspace_scoped_node_credential_invalid")
@@ -754,7 +774,7 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
   }
 
   function publicSettings(settings = readSettings(), state = readState()) {
-    const tokenConfigured = Boolean(readEnrollmentToken(settings));
+    const tokenConfigured = Boolean(readEffectiveEnrollmentToken(settings, state));
     const effectiveMode = EFFECTIVE_CONNECTION_MODE;
     const pairingStatus = tokenConfigured && state.pairingStatus === "unconfigured"
       ? "approved"

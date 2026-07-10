@@ -122,11 +122,12 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
     return settingsService.publicSettings();
   }
 
-  function recoverInvalidScopedCredential(err) {
+  function recoverInvalidScopedCredential(err, config = {}) {
     if (!isInvalidScopedCredentialError(err)) return null;
     if (typeof settingsService.clearScopedCredentialForRecovery !== "function") return null;
     return settingsService.clearScopedCredentialForRecovery({
       issueCode: SCOPED_NODE_CREDENTIAL_INVALID_CODE,
+      failedCredential: config.scopedCredential || config.enrollmentToken || config.token,
     });
   }
 
@@ -239,7 +240,7 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       });
       return { ok: true, result: registered.result, status: settingsService.publicSettings(undefined, state) };
     } catch (err) {
-      recoverInvalidScopedCredential(err);
+      recoverInvalidScopedCredential(err, config);
       throw err;
     }
   }
@@ -469,6 +470,7 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
   async function runOnce(options = {}) {
     if (running && !options.force) return { ok: true, skipped: "already_running", status: publicStatus() };
     running = true;
+    let activeConfig = null;
     try {
       const publicSettings = settingsService.publicSettings();
       if (!publicSettings.enabled && options.requireEnabled !== false) {
@@ -485,6 +487,7 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
         };
       }
       const config = settingsService.configForClient({ requireEnabled: options.requireEnabled !== false, requireToken: true });
+      activeConfig = config;
       setState({ connectionStatus: "connecting", pairingStatus: "approved" });
       const registered = await nodeClientService.register(config);
       const heartbeat = await nodeClientService.nodeHeartbeat(config, {
@@ -520,7 +523,13 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       };
     } catch (err) {
       const invalidScopedCredential = isInvalidScopedCredentialError(err);
-      const recovered = invalidScopedCredential ? recoverInvalidScopedCredential(err) : null;
+      const recovered = invalidScopedCredential ? recoverInvalidScopedCredential(err, activeConfig || {}) : null;
+      if (recovered && recovered.staleCredentialFailureIgnored) {
+        if (started) schedule(pollIntervalMs);
+        const status = settingsService.publicSettings();
+        if (options.suppressErrors) return { ok: false, error: "stale_scoped_credential_failure_ignored", status };
+        return { ok: false, skipped: "stale_scoped_credential_failure_ignored", status };
+      }
       const current = recovered || settingsService.readState();
       const failures = Number(current.consecutiveFailures || 0) + 1;
       const delay = backoffMs(failures, { minBackoffMs, maxBackoffMs });

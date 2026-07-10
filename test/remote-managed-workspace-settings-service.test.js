@@ -306,3 +306,62 @@ test("remote managed workspace settings consume pairing approval as write-only s
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("remote managed workspace settings ignore external credential fallback after invalid scoped credential recovery", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-settings-invalid-external-"));
+  const projectRoot = path.join(root, "project");
+  fs.mkdirSync(projectRoot, { recursive: true });
+  const service = createRemoteManagedWorkspaceSettingsService({
+    fs,
+    path,
+    settingsFile: path.join(root, "settings.json"),
+    stateFile: path.join(root, "state.json"),
+    enrollmentTokenFile: path.join(root, "secret", "scoped-credential"),
+    env: { STALE_RMW_TOKEN: "stale-env-credential" },
+    now: () => new Date("2026-07-08T00:00:00.000Z"),
+  });
+  try {
+    service.saveSettings({
+      enabled: true,
+      workspaceKind: "remote_managed_workspace",
+      workspaceId: "rmw_env_invalid",
+      nodeName: "runner-node",
+      centralUrl: "http://127.0.0.1:9999",
+      projectRoot,
+      allowedRoot: root,
+      enrollmentTokenRef: "env:STALE_RMW_TOKEN",
+    });
+    assert.equal(service.publicSettings().scopedCredentialConfigured, true);
+    assert.equal(service.configForClient({ requireEnabled: true, requireToken: true }).enrollmentToken, "stale-env-credential");
+
+    service.clearScopedCredentialForRecovery({
+      issueCode: "remote_managed_workspace_scoped_node_credential_invalid",
+    });
+    const recovered = service.publicSettings();
+    assert.equal(recovered.scopedCredentialConfigured, false);
+    assert.equal(recovered.pairingStatus, "unconfigured");
+    assert.throws(
+      () => service.configForClient({ requireEnabled: true, requireToken: true }),
+      /scoped_node_credential_unavailable/,
+    );
+
+    service.applyPairingResult({
+      pairing: {
+        requestId: "rmw_pair_fresh",
+        status: "approved",
+        scopedCredential: "fresh-write-only-credential",
+      },
+    });
+    assert.equal(service.publicSettings().scopedCredentialConfigured, true);
+    assert.equal(service.configForClient({ requireEnabled: true, requireToken: true }).enrollmentToken, "fresh-write-only-credential");
+    const ignored = service.clearScopedCredentialForRecovery({
+      issueCode: "remote_managed_workspace_scoped_node_credential_invalid",
+      failedCredential: "stale-env-credential",
+    });
+    assert.equal(ignored.staleCredentialFailureIgnored, true);
+    assert.equal(service.configForClient({ requireEnabled: true, requireToken: true }).enrollmentToken, "fresh-write-only-credential");
+    assert.doesNotMatch(JSON.stringify(service.publicSettings()), /stale-env-credential|fresh-write-only-credential/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
