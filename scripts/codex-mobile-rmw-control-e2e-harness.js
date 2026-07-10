@@ -319,6 +319,7 @@ async function runRmwControlE2eHarness() {
     enrollmentTokenFile: path.join(root, "remote-node-scoped-credential"),
   });
   const localCodexRequests = [];
+  let commandExecutionCount = 0;
   const localExecutionService = createRemoteManagedWorkspaceLocalExecutionService({
     fs,
     path,
@@ -331,7 +332,20 @@ async function runRmwControlE2eHarness() {
         }
         if (method === "turn/start") return { turnId: "rmw-control-turn" };
         if (method === "thread/turns/list") {
-          return { turns: [{ id: "rmw-control-turn", status: { type: "completed" }, completedAt: "2026-07-09T00:00:00.000Z" }] };
+          commandExecutionCount += 1;
+          return {
+            turns: [{
+              id: "rmw-control-turn",
+              status: { type: "completed" },
+              completedAt: "2026-07-09T00:00:00.000Z",
+              items: [{
+                id: "rmw-control-command-1",
+                type: "commandExecution",
+                status: "completed",
+                command: `curl -fsS ${projectUrl}/status`,
+              }],
+            }],
+          };
         }
         return { ok: true };
       },
@@ -413,6 +427,12 @@ async function runRmwControlE2eHarness() {
           bodyMarkdown: "Execute bounded fixture task without raw task body exposure.",
           idempotencyKey: "rmw-control-fixture-card",
           reasoningEffort: "medium",
+          executionRequirements: {
+            requiresCommandExecution: true,
+            minimumCompletedCommandCount: 1,
+            requiredCommandClasses: ["localhost_health_probe"],
+            toolSurfaceRequired: true,
+          },
         },
       },
     });
@@ -460,6 +480,9 @@ async function runRmwControlE2eHarness() {
       processedExecuted: processed.processed && processed.processed.processed === true,
       readTerminalStatus: read.structuredContent.card.terminalStatus,
       readTerminalSummaryPresent: Boolean(read.structuredContent.card.terminalSummary),
+      commandExecutionCount,
+      requiredCommandExecutionOk: settingsService.publicSettings().lastExecutionResult
+        && settingsService.publicSettings().lastExecutionResult.ok === true,
       rawTaskBodyExposed: JSON.stringify(combined).includes("Execute bounded fixture task without raw task body exposure."),
       rawReturnBodyExposed: /terminalReturn|raw return body/i.test(JSON.stringify(combined)),
       localCodexThreadStarted: localCodexRequests.some((entry) => entry.method === "thread/start" && entry.cwd === projectRoot),

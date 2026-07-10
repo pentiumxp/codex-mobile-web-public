@@ -190,7 +190,19 @@ async function runRemoteManagedWorkspaceHarness() {
               pendingApprovalCount += 1;
             }
           }
-          return { turns: [{ id: "rmw-local-turn", status: { type: "completed" }, completedAt: "2026-07-08T00:00:00.000Z" }] };
+          return {
+            turns: [{
+              id: "rmw-local-turn",
+              status: { type: "completed" },
+              completedAt: "2026-07-08T00:00:00.000Z",
+              items: commandExecutionCount > 0 ? [{
+                id: "rmw-command-1",
+                type: "commandExecution",
+                status: "completed",
+                command: `curl -fsS ${remoteProject.url}/status`,
+              }] : [],
+            }],
+          };
         }
         return { ok: true };
       },
@@ -250,6 +262,12 @@ async function runRemoteManagedWorkspaceHarness() {
       summary: "bounded fixture task",
       bodyMarkdown: "Run bounded fixture validation.",
       reasoningEffort: "medium",
+      executionRequirements: {
+        requiresCommandExecution: true,
+        minimumCompletedCommandCount: 1,
+        requiredCommandClasses: ["localhost_health_probe"],
+        toolSurfaceRequired: true,
+      },
     }, { skipAuth: true });
     const duplicate = homeAiCentralService.enqueueTaskCard(config.workspaceId, {
       taskCardId: "ttc_remote_fixture_duplicate",
@@ -323,6 +341,10 @@ async function runRemoteManagedWorkspaceHarness() {
         && settingsService.publicSettings().lastExecutionAuthority.approvalResolution
         && settingsService.publicSettings().lastExecutionAuthority.approvalResolution.status || "",
       commandExecutionCount,
+      requiredCommandExecutionOk: settingsService.publicSettings().lastExecutionResult
+        && settingsService.publicSettings().lastExecutionResult.ok === true,
+      requiredCommandExecutionCount: settingsService.publicSettings().lastExecutionResult
+        && settingsService.publicSettings().lastExecutionResult.commandExecutionCount || 0,
       manualRequestApprovalCount,
       pendingApprovalCount,
       localCodexThreadStarted: localCodexRequests.some((entry) => entry.method === "thread/start" && entry.cwd === projectRoot),

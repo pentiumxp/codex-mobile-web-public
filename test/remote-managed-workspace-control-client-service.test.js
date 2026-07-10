@@ -86,6 +86,12 @@ test("RMW control client dispatch and readback hide raw task and return bodies",
       if (init.method === "POST") {
         const body = JSON.parse(init.body);
         assert.equal(body.bodyMarkdown, "raw task body");
+        assert.deepEqual(body.executionRequirements, {
+          requiresCommandExecution: true,
+          minimumCompletedCommandCount: 1,
+          requiredCommandClasses: ["workspace_read"],
+          toolSurfaceRequired: true,
+        });
         return response(200, {
           ok: true,
           duplicate: true,
@@ -94,6 +100,7 @@ test("RMW control client dispatch and readback hide raw task and return bodies",
             status: "queued",
             idempotencyKey: body.idempotencyKey,
             bodyMarkdown: "raw task body",
+            executionRequirements: body.executionRequirements,
           },
         });
       }
@@ -111,6 +118,12 @@ test("RMW control client dispatch and readback hide raw task and return bodies",
             bodyMarkdown: "raw return body",
             logs: "raw logs",
           },
+          executionRequirements: {
+            requiresCommandExecution: true,
+            minimumCompletedCommandCount: 1,
+            requiredCommandClasses: ["workspace_read"],
+            toolSurfaceRequired: true,
+          },
         },
       });
     },
@@ -121,6 +134,12 @@ test("RMW control client dispatch and readback hide raw task and return bodies",
     title: "Dispatch",
     bodyMarkdown: "raw task body",
     idempotencyKey: "idem-127",
+    executionRequirements: {
+      requiresCommandExecution: true,
+      minimumCompletedCommandCount: 1,
+      requiredCommandClasses: ["workspace_read"],
+      toolSurfaceRequired: true,
+    },
   });
   const read = await client.readTaskCard(config, {
     workspaceId: "rmw_127",
@@ -131,6 +150,8 @@ test("RMW control client dispatch and readback hide raw task and return bodies",
   assert.equal(dispatched.duplicate, true);
   assert.equal(read.card.terminalStatus, "completed");
   assert.equal(read.card.terminalSummary, "bounded terminal summary");
+  assert.equal(read.card.executionRequirements.requiresCommandExecution, true);
+  assert.deepEqual(read.card.executionRequirements.requiredCommandClasses, ["workspace_read"]);
   assert.doesNotMatch(JSON.stringify({ dispatched, read }), /raw task body|raw return body|raw logs|rmw_control_secret/i);
 });
 

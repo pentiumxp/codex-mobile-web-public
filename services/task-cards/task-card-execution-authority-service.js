@@ -246,9 +246,14 @@ function looksLikeWorkspaceRead(command) {
     .test(stringValue(command));
 }
 
-function looksLikeWorkspaceTestOrBuild(command) {
+function looksLikeWorkspaceBuild(command) {
   const text = stringValue(command);
-  return /^(?:env\s+[\w.-]+=[^\s]+\s+)*(?:npm|npm\.cmd|pnpm|yarn)\s+(?:(?:run|exec)\s+)?(?:--silent\s+)?(?:test|check|build|lint|typecheck|verify)(?:\b|:)/i.test(text)
+  return /^(?:env\s+[\w.-]+=[^\s]+\s+)*(?:npm|npm\.cmd|pnpm|yarn)\s+(?:(?:run|exec)\s+)?(?:--silent\s+)?(?:build|lint|typecheck|verify)(?:\b|:)/i.test(text);
+}
+
+function looksLikeWorkspaceTest(command) {
+  const text = stringValue(command);
+  return /^(?:env\s+[\w.-]+=[^\s]+\s+)*(?:npm|npm\.cmd|pnpm|yarn)\s+(?:(?:run|exec)\s+)?(?:--silent\s+)?(?:test|check)(?:\b|:)/i.test(text)
     || /^(?:env\s+[\w.-]+=[^\s]+\s+)*node\s+--(?:test|check)\b/i.test(text)
     || /^(?:env\s+[\w.-]+=[^\s]+\s+)*node\s+(?:test\/|scripts\/)[^;&|]*\b(?:test|check|harness|self-check)\b/i.test(text);
 }
@@ -279,7 +284,8 @@ function classifyAuthorityCommand(authority = {}, request = {}, options = {}) {
   if (commandHasUnsafeShellControl(command)) return { action: "deny", reason: "unsafe_shell_control", issueCode: "task_card_authority_unsafe_shell_control" };
   if (commandLooksDestructive(command)) return { action: "deny", reason: "destructive_command", issueCode: "task_card_authority_destructive_command" };
   if (looksLikeLocalhostHealthProbe(command)) return { action: "allow", reason: "localhost_health_probe", scopeClass: "localhost_health_probe" };
-  if (looksLikeWorkspaceTestOrBuild(command)) return { action: "allow", reason: "workspace_test_or_build", scopeClass: "workspace_test" };
+  if (looksLikeWorkspaceBuild(command)) return { action: "allow", reason: "workspace_build", scopeClass: "workspace_build" };
+  if (looksLikeWorkspaceTest(command)) return { action: "allow", reason: "workspace_test", scopeClass: "workspace_test" };
   if (looksLikeWorkspaceRead(command)) return { action: "allow", reason: "workspace_read", scopeClass: "workspace_read" };
   return { action: "deny", reason: "command_class_not_in_authority_scope", issueCode: "task_card_authority_command_scope_denied" };
 }
@@ -347,6 +353,7 @@ module.exports = {
   AUTHORITY_SOURCE,
   AUTHORITY_VERSION,
   authorityExpired,
+  classifyAuthorityCommand,
   authorityDecisionForServerRequest,
   authorityDecisionForStore,
   authorityLogPayload,

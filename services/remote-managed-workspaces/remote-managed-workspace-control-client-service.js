@@ -73,6 +73,40 @@ function boundedCount(...values) {
   return 0;
 }
 
+const REQUIRED_COMMAND_CLASSES = new Set([
+  "workspace_read",
+  "workspace_test",
+  "workspace_build",
+  "localhost_health_probe",
+]);
+
+function normalizeExecutionRequirements(input = {}) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const raw = source.executionRequirements && typeof source.executionRequirements === "object" && !Array.isArray(source.executionRequirements)
+    ? source.executionRequirements
+    : {};
+  const requiresCommandExecution = raw.requiresCommandExecution === true;
+  const minimumCompletedCommandCount = requiresCommandExecution
+    ? Math.max(1, Math.min(20, Math.floor(Number(raw.minimumCompletedCommandCount || 1) || 1)))
+    : 0;
+  const requiredCommandClasses = Array.isArray(raw.requiredCommandClasses)
+    ? Array.from(new Set(raw.requiredCommandClasses
+        .map((entry) => boundedString(entry, "required_command_class", 80, false).toLowerCase())
+        .filter((entry) => REQUIRED_COMMAND_CLASSES.has(entry))))
+        .slice(0, 8)
+    : [];
+  const toolSurfaceRequired = requiresCommandExecution
+    ? (Object.prototype.hasOwnProperty.call(raw, "toolSurfaceRequired") ? raw.toolSurfaceRequired === true : true)
+    : false;
+  if (!requiresCommandExecution && !toolSurfaceRequired && !requiredCommandClasses.length) return null;
+  return {
+    requiresCommandExecution,
+    minimumCompletedCommandCount,
+    requiredCommandClasses,
+    toolSurfaceRequired,
+  };
+}
+
 function publicWorkspace(row = {}) {
   const source = row && typeof row === "object" ? row : {};
   const counts = source.counts && typeof source.counts === "object" ? source.counts : source;
@@ -112,6 +146,7 @@ function publicTaskCard(card = {}) {
     lastHeartbeatAt: boundedString(lease.lastHeartbeatAt || "", "last_heartbeat_at", 80, false),
     createdAt: boundedString(source.createdAt || "", "created_at", 80, false),
     updatedAt: boundedString(source.updatedAt || "", "updated_at", 80, false),
+    executionRequirements: normalizeExecutionRequirements(source) || undefined,
   };
 }
 
@@ -339,6 +374,8 @@ function createRemoteManagedWorkspaceControlClientService(dependencies = {}) {
       idempotencyKey: boundedString(args.idempotencyKey || args.requestId, "idempotency_key", 180, true),
       reasoningEffort: boundedString(args.reasoningEffort || "medium", "reasoning_effort", 20, false) || "medium",
     };
+    const executionRequirements = normalizeExecutionRequirements(args);
+    if (executionRequirements) payload.executionRequirements = executionRequirements;
     const result = await request(
       config,
       "POST",

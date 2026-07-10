@@ -329,6 +329,23 @@ function toolsList() {
           bodyMarkdown: { type: "string", minLength: 1, maxLength: 4000 },
           idempotencyKey: { type: "string", minLength: 1, maxLength: 180 },
           reasoningEffort: { type: "string", enum: ["low", "medium", "high", "xhigh"] },
+          executionRequirements: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              requiresCommandExecution: { type: "boolean" },
+              minimumCompletedCommandCount: { type: "integer", minimum: 1, maximum: 20 },
+              requiredCommandClasses: {
+                type: "array",
+                maxItems: 8,
+                items: {
+                  type: "string",
+                  enum: ["workspace_read", "workspace_test", "workspace_build", "localhost_health_probe"],
+                },
+              },
+              toolSurfaceRequired: { type: "boolean" },
+            },
+          },
         },
       },
       { readOnlyHint: false, destructiveHint: false, openWorldHint: true, idempotentHint: true },

@@ -45,6 +45,12 @@ test("remote managed workspace local execution starts Codex thread, waits for co
                 id: "local-turn-1",
                 status: { type: pollCount >= 2 ? "completed" : "active" },
                 completedAt: pollCount >= 2 ? "2026-07-08T00:00:01.000Z" : "",
+                items: pollCount >= 2 ? [{
+                  id: "cmd-1",
+                  type: "commandExecution",
+                  status: "completed",
+                  command: "git status --short",
+                }] : [],
               }],
             };
           }
@@ -88,6 +94,12 @@ test("remote managed workspace local execution starts Codex thread, waits for co
       summary: "bounded summary",
       bodyMarkdown: "Run the local project task.",
       reasoningEffort: "medium",
+      executionRequirements: {
+        requiresCommandExecution: true,
+        minimumCompletedCommandCount: 1,
+        requiredCommandClasses: ["workspace_read"],
+        toolSurfaceRequired: true,
+      },
     }, {
       config: {
         workspaceId: "rmw_local",
@@ -119,6 +131,10 @@ test("remote managed workspace local execution starts Codex thread, waits for co
     assert.deepEqual(terminal.metadata.executionAuthority.networkScope, ["localhost"]);
     assert.equal(terminal.metadata.executionAuthority.expiresAtPresent, true);
     assert.equal(terminal.metadata.executionAuthority.approvalResolution.status, "configured");
+    assert.equal(terminal.metadata.executionRequirements.requiresCommandExecution, true);
+    assert.equal(terminal.metadata.executionResult.ok, true);
+    assert.equal(terminal.metadata.executionResult.commandExecutionCount, 1);
+    assert.deepEqual(terminal.metadata.executionResult.completedCommandClasses, ["workspace_read"]);
     assert.equal(registeredAuthorities.length, 1);
     assert.equal(registeredAuthorities[0].taskCardId, "ttc_remote_local");
     assert.equal(registeredAuthorities[0].targetThreadId, "local-thread-1");
@@ -173,7 +189,132 @@ test("remote managed workspace local execution starts Codex thread, waits for co
     assert.equal(requests[1].params.threadId, "local-thread-1");
     assert.equal(requests[1].params.effort, "xhigh");
     assert.match(requests[1].params.input[0].text, /Implement bounded local task/);
+    assert.match(requests[1].params.input[0].text, /requiresCommandExecution: true/);
     assert.doesNotMatch(JSON.stringify(terminal), /secret-token-that-must-not-leak/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+async function runRequiredCommandFixture(turnPatch = {}, requirements = {}) {
+  const { root, projectRoot } = makeProject();
+  try {
+    const service = createRemoteManagedWorkspaceLocalExecutionService({
+      fs,
+      path,
+      codex: {
+        request: async (method) => {
+          if (method === "thread/start") return { threadId: "local-thread-required" };
+          if (method === "turn/start") return { turnId: "local-turn-required" };
+          if (method === "thread/turns/list") {
+            return {
+              turns: [Object.assign({
+                id: "local-turn-required",
+                status: { type: "completed" },
+                completedAt: "2026-07-08T00:00:02.000Z",
+              }, turnPatch)],
+            };
+          }
+          return { ok: true };
+        },
+      },
+      notifyLocalTurnStarted: () => "local-turn-required",
+      registerExecutionAuthority: async (authority) => summarizeExecutionAuthority(authority),
+      completionPollIntervalMs: 10,
+      completionTimeoutMs: 50,
+    });
+    const terminal = await service.execute({
+      taskCardId: "ttc_required_command",
+      title: "Required command",
+      bodyMarkdown: "Run required command.",
+      executionRequirements: Object.assign({
+        requiresCommandExecution: true,
+        minimumCompletedCommandCount: 1,
+        requiredCommandClasses: [],
+        toolSurfaceRequired: true,
+      }, requirements),
+    }, {
+      config: {
+        workspaceId: "rmw_local",
+        workspaceKind: "remote_managed_workspace",
+        projectType: "vite_game",
+        projectRoot,
+        allowedRoots: [root],
+        enrollmentToken: "secret-token",
+      },
+    });
+    return { terminal, root, projectRoot };
+  } catch (err) {
+    fs.rmSync(root, { recursive: true, force: true });
+    throw err;
+  }
+}
+
+test("remote managed workspace required command fails closed for assistant-text-only terminal turns", async () => {
+  const { terminal, root } = await runRequiredCommandFixture({ items: [{ id: "msg", type: "assistantMessage", status: "completed" }] });
+  try {
+    assert.equal(terminal.status, "blocked");
+    assert.equal(terminal.summary, "remote_managed_workspace_required_command_execution_missing");
+    assert.equal(terminal.metadata.executionResult.commandExecutionCount, 0);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote managed workspace required command fails closed when command tool surface is unavailable", async () => {
+  const { terminal, root } = await runRequiredCommandFixture({
+    commandToolAvailable: false,
+    items: [{ id: "cmd", type: "commandExecution", status: "completed", command: "git status --short" }],
+  });
+  try {
+    assert.equal(terminal.status, "blocked");
+    assert.equal(terminal.summary, "remote_managed_workspace_command_tool_unavailable");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote managed workspace required command fails closed when completed count is below minimum", async () => {
+  const { terminal, root } = await runRequiredCommandFixture({
+    items: [{ id: "cmd", type: "commandExecution", status: "completed", command: "git status --short" }],
+  }, {
+    minimumCompletedCommandCount: 2,
+  });
+  try {
+    assert.equal(terminal.status, "blocked");
+    assert.equal(terminal.summary, "remote_managed_workspace_required_command_execution_missing");
+    assert.equal(terminal.metadata.executionResult.commandExecutionCount, 1);
+    assert.equal(terminal.metadata.executionResult.minimumCompletedCommandCount, 2);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote managed workspace required command fails closed when required class is missing", async () => {
+  const { terminal, root } = await runRequiredCommandFixture({
+    items: [{ id: "cmd", type: "commandExecution", status: "completed", command: "git status --short" }],
+  }, {
+    requiredCommandClasses: ["workspace_test"],
+  });
+  try {
+    assert.equal(terminal.status, "blocked");
+    assert.equal(terminal.summary, "remote_managed_workspace_required_command_class_missing");
+    assert.deepEqual(terminal.metadata.executionResult.missingCommandClasses, ["workspace_test"]);
+    assert.deepEqual(terminal.metadata.executionResult.completedCommandClasses, ["workspace_read"]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote managed workspace required command accepts workspace build class", async () => {
+  const { terminal, root } = await runRequiredCommandFixture({
+    items: [{ id: "cmd", type: "commandExecution", status: "completed", command: "npm run build" }],
+  }, {
+    requiredCommandClasses: ["workspace_build"],
+  });
+  try {
+    assert.equal(terminal.status, "completed");
+    assert.deepEqual(terminal.metadata.executionResult.completedCommandClasses, ["workspace_build"]);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

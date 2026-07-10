@@ -257,6 +257,62 @@ test("remote node runner executes local bridge, heartbeats while active, and rec
   }
 });
 
+test("remote node runner preserves bounded per-card execution result history", async () => {
+  const { root, service } = makeSettings();
+  const calls = [];
+  const cards = [
+    { taskCardId: "ttc_runner_history_a", idempotencyKey: "idem-history-a", title: "History A" },
+    { taskCardId: "ttc_runner_history_b", idempotencyKey: "idem-history-b", title: "History B" },
+  ];
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: fakeNodeClient(cards, calls),
+      taskCardExecutor: async (card) => ({
+        status: card.taskCardId.endsWith("_a") ? "blocked" : "completed",
+        title: "done",
+        summary: card.taskCardId.endsWith("_a")
+          ? "remote_managed_workspace_required_command_execution_missing"
+          : "local_task_card_execution_completed",
+        metadata: {
+          localExecutionBridge: "codex_mobile_local_runtime",
+          localThreadId: `thread-${card.taskCardId}`,
+          localTurnId: `turn-${card.taskCardId}`,
+          executionResult: {
+            taskCardId: card.taskCardId,
+            workspaceId: "rmw_runner",
+            localThreadId: `thread-${card.taskCardId}`,
+            localTurnId: `turn-${card.taskCardId}`,
+            terminalStatus: card.taskCardId.endsWith("_a") ? "blocked" : "completed",
+            ok: card.taskCardId.endsWith("_b"),
+            issueCode: card.taskCardId.endsWith("_a") ? "remote_managed_workspace_required_command_execution_missing" : "",
+            commandExecutionCount: card.taskCardId.endsWith("_a") ? 0 : 1,
+            minimumCompletedCommandCount: 1,
+            requiredCommandClasses: ["workspace_read"],
+            completedCommandClasses: card.taskCardId.endsWith("_a") ? [] : ["workspace_read"],
+            toolSurfaceRequired: true,
+          },
+        },
+      }),
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+
+    await runner.runOnce({ force: true });
+    const second = await runner.runOnce({ force: true });
+
+    assert.equal(second.status.lastExecutionResult.taskCardId, "ttc_runner_history_b");
+    assert.equal(second.status.lastExecutionResult.commandExecutionCount, 1);
+    assert.deepEqual(
+      second.status.recentExecutionResults.map((entry) => entry.taskCardId),
+      ["ttc_runner_history_a", "ttc_runner_history_b"],
+    );
+    assert.equal(second.status.recentExecutionResults[0].issueCode, "remote_managed_workspace_required_command_execution_missing");
+    assert.doesNotMatch(JSON.stringify(second.status), /runner-token|raw/i);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("remote node runner consumes auto-generated workspace settings", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-runner-generated-"));
   const projectRoot = path.join(root, "project");

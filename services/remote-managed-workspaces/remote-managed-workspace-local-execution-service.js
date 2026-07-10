@@ -10,6 +10,8 @@ const {
   applyReasoningEffortFloor,
 } = require("../task-cards/task-card-runtime-policy-service");
 const {
+  ALLOWED_SCOPE_CLASSES,
+  classifyAuthorityCommand,
   createExecutionAuthorityForCard,
   summarizeExecutionAuthority,
 } = require("../task-cards/task-card-execution-authority-service");
@@ -18,8 +20,12 @@ const MAX_TITLE_CHARS = 120;
 const MAX_SUMMARY_CHARS = 300;
 const MAX_BODY_CHARS = 8_000;
 const MAX_RETURN_BODY_CHARS = 1_200;
+const MAX_REQUIRED_COMMAND_COUNT = 20;
 const DEFAULT_COMPLETION_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_COMPLETION_TIMEOUT_MS = 30 * 60 * 1000;
+const REQUIRED_COMMAND_MISSING_CODE = "remote_managed_workspace_required_command_execution_missing";
+const REQUIRED_COMMAND_CLASS_MISSING_CODE = "remote_managed_workspace_required_command_class_missing";
+const COMMAND_TOOL_UNAVAILABLE_CODE = "remote_managed_workspace_command_tool_unavailable";
 
 function compactOneLine(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -96,6 +102,47 @@ function normalizedCardId(card = {}) {
   return compactOneLine(card.taskCardId || card.id).slice(0, 180);
 }
 
+function booleanFromValue(value) {
+  if (value === true) return true;
+  if (value === false || value == null) return false;
+  return /^(1|true|yes)$/i.test(compactOneLine(value));
+}
+
+function positiveBoundedInteger(value, fallback = 0) {
+  const numeric = Math.trunc(Number(value));
+  if (!Number.isFinite(numeric) || numeric <= 0) return fallback;
+  return Math.max(1, Math.min(MAX_REQUIRED_COMMAND_COUNT, numeric));
+}
+
+function normalizeExecutionRequirements(input = {}) {
+  const source = input && typeof input === "object" && !Array.isArray(input) ? input : {};
+  const raw = source.executionRequirements && typeof source.executionRequirements === "object" && !Array.isArray(source.executionRequirements)
+    ? source.executionRequirements
+    : {};
+  const requiresCommandExecution = booleanFromValue(raw.requiresCommandExecution);
+  const minimumCompletedCommandCount = requiresCommandExecution
+    ? positiveBoundedInteger(raw.minimumCompletedCommandCount, 1)
+    : 0;
+  const allowlist = new Set(ALLOWED_SCOPE_CLASSES);
+  const requiredCommandClasses = Array.isArray(raw.requiredCommandClasses)
+    ? raw.requiredCommandClasses
+        .map((entry) => compactOneLine(entry).toLowerCase())
+        .filter((entry) => allowlist.has(entry))
+        .slice(0, 8)
+    : [];
+  const uniqueClasses = Array.from(new Set(requiredCommandClasses));
+  const toolSurfaceRequired = requiresCommandExecution
+    ? (Object.prototype.hasOwnProperty.call(raw, "toolSurfaceRequired") ? booleanFromValue(raw.toolSurfaceRequired) : true)
+    : false;
+  if (!requiresCommandExecution && !toolSurfaceRequired && uniqueClasses.length === 0) return null;
+  return {
+    requiresCommandExecution,
+    minimumCompletedCommandCount,
+    requiredCommandClasses: uniqueClasses,
+    toolSurfaceRequired,
+  };
+}
+
 function cardText(card = {}) {
   const message = card.message && typeof card.message === "object" ? card.message : {};
   return {
@@ -118,6 +165,16 @@ function cardText(card = {}) {
 
 function buildRemoteTaskPrompt(card = {}, config = {}) {
   const text = cardText(card);
+  const requirements = normalizeExecutionRequirements(card);
+  const requirementLines = requirements ? [
+    "",
+    "Structured execution requirements:",
+    `- requiresCommandExecution: ${requirements.requiresCommandExecution ? "true" : "false"}`,
+    `- minimumCompletedCommandCount: ${requirements.minimumCompletedCommandCount}`,
+    `- requiredCommandClasses: ${requirements.requiredCommandClasses.length ? requirements.requiredCommandClasses.join(",") : "none"}`,
+    `- toolSurfaceRequired: ${requirements.toolSurfaceRequired ? "true" : "false"}`,
+    "If command execution is required, use the standard command execution tool surface. Do not satisfy this task with assistant text only.",
+  ] : [];
   const lines = [
     "[Remote Managed Workspace task card received from Home AI central]",
     "",
@@ -131,10 +188,149 @@ function buildRemoteTaskPrompt(card = {}, config = {}) {
     `# ${text.title || "Remote task"}`,
     text.summary ? `\n${text.summary}` : "",
     text.body ? `\n${text.body}` : "",
+    ...requirementLines,
     "",
     "Return a concise zh-CN final answer with bounded metadata only. Do not include secrets, cookies, launch tokens, raw logs, endpoint bodies, private thread bodies, raw cache JSON, database rows, screenshots, or provider payloads.",
   ];
   return boundedVisibleText(lines.filter((line) => line !== "").join("\n"), MAX_BODY_CHARS + 1200);
+}
+
+function turnItems(turn = {}) {
+  const arrays = [
+    turn.items,
+    turn.outputItems,
+    turn.output,
+    turn.events,
+    turn.messages,
+    turn.steps,
+  ].filter(Array.isArray);
+  return arrays.flat().filter((item) => item && typeof item === "object" && !Array.isArray(item)).slice(0, 200);
+}
+
+function itemType(item = {}) {
+  return compactOneLine(item.type || item.entryType || item.kind || item.name).toLowerCase();
+}
+
+function isCommandExecutionItem(item = {}) {
+  const type = itemType(item);
+  return type === "commandexecution"
+    || type === "command_execution"
+    || type === "execcommand"
+    || type === "exec_command"
+    || type === "item/commandexecution"
+    || type === "item/commandexecution/completed";
+}
+
+function commandItemStatus(item = {}) {
+  return statusText(item.status || item.state || item.result && item.result.status || item.outcome || "");
+}
+
+function isCompletedCommandItem(item = {}) {
+  const status = commandItemStatus(item);
+  if (/^(completed|complete|succeeded|success)$/i.test(status)) return true;
+  if (/^(failed|failure|error|cancelled|canceled|interrupted|stopped|running|active|pending)$/i.test(status)) return false;
+  if (item.completedAt || item.completedAtMs || item.completed_at || item.completed_at_ms) return true;
+  if (Number(item.exitCode) === 0 || Number(item.exit_code) === 0 || Number(item.result && item.result.exitCode) === 0) return true;
+  return false;
+}
+
+function commandTextFromItem(item = {}) {
+  const command = item.command || item.cmd || item.text || item.args && item.args.command || item.params && item.params.command;
+  if (Array.isArray(command)) return command.join(" ");
+  return compactOneLine(command).slice(0, 500);
+}
+
+function commandClassesFromItem(item = {}, execution = {}, config = {}) {
+  const direct = [
+    item.commandClass,
+    item.scopeClass,
+    item.class,
+    item.metadata && item.metadata.commandClass,
+    item.metadata && item.metadata.scopeClass,
+    item.authority && item.authority.scopeClass,
+  ].map((entry) => compactOneLine(entry).toLowerCase()).filter(Boolean);
+  const classList = Array.isArray(item.commandClasses) ? item.commandClasses : Array.isArray(item.scopeClasses) ? item.scopeClasses : [];
+  direct.push(...classList.map((entry) => compactOneLine(entry).toLowerCase()).filter(Boolean));
+  const command = commandTextFromItem(item);
+  if (command && execution.executionAuthority) {
+    const authority = Object.assign({}, execution.executionAuthority, {
+      configured: true,
+      targetThreadId: execution.threadId,
+      turnId: execution.turnId,
+      turnIds: [execution.turnId],
+      workspaceRoot: config.projectRoot,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    });
+    const decision = classifyAuthorityCommand(authority, {
+      method: "item/commandExecution/requestApproval",
+      params: {
+        threadId: execution.threadId,
+        turnId: execution.turnId,
+        cwd: config.projectRoot,
+        command,
+      },
+    });
+    if (decision && decision.scopeClass) direct.push(decision.scopeClass);
+  }
+  const allowlist = new Set(ALLOWED_SCOPE_CLASSES);
+  return Array.from(new Set(direct.filter((entry) => allowlist.has(entry))));
+}
+
+function evaluateExecutionRequirements(requirements, turn = {}, execution = {}, config = {}) {
+  if (!requirements) return null;
+  const authorityConfigured = Boolean(execution.executionAuthority && execution.executionAuthority.configured === true);
+  const toolUnavailable = turn.commandToolAvailable === false
+    || turn.toolSurfaceAvailable === false
+    || turn.commandExecutionToolAvailable === false
+    || !authorityConfigured;
+  if (requirements.toolSurfaceRequired && toolUnavailable) {
+    return {
+      ok: false,
+      issueCode: COMMAND_TOOL_UNAVAILABLE_CODE,
+      commandExecutionCount: 0,
+      minimumCompletedCommandCount: requirements.minimumCompletedCommandCount,
+      requiredCommandClasses: requirements.requiredCommandClasses,
+      completedCommandClasses: [],
+      toolSurfaceRequired: requirements.toolSurfaceRequired,
+    };
+  }
+  const commandItems = turnItems(turn).filter(isCommandExecutionItem);
+  const completedItems = commandItems.filter(isCompletedCommandItem);
+  const completedCommandClasses = Array.from(new Set(completedItems.flatMap((item) => commandClassesFromItem(item, execution, config))));
+  const commandExecutionCount = completedItems.length;
+  if (requirements.requiresCommandExecution && commandExecutionCount < requirements.minimumCompletedCommandCount) {
+    return {
+      ok: false,
+      issueCode: REQUIRED_COMMAND_MISSING_CODE,
+      commandExecutionCount,
+      minimumCompletedCommandCount: requirements.minimumCompletedCommandCount,
+      requiredCommandClasses: requirements.requiredCommandClasses,
+      completedCommandClasses,
+      toolSurfaceRequired: requirements.toolSurfaceRequired,
+    };
+  }
+  const missingClasses = (requirements.requiredCommandClasses || []).filter((entry) => !completedCommandClasses.includes(entry));
+  if (missingClasses.length) {
+    return {
+      ok: false,
+      issueCode: REQUIRED_COMMAND_CLASS_MISSING_CODE,
+      commandExecutionCount,
+      minimumCompletedCommandCount: requirements.minimumCompletedCommandCount,
+      requiredCommandClasses: requirements.requiredCommandClasses,
+      completedCommandClasses,
+      missingCommandClasses: missingClasses,
+      toolSurfaceRequired: requirements.toolSurfaceRequired,
+    };
+  }
+  return {
+    ok: true,
+    issueCode: "",
+    commandExecutionCount,
+    minimumCompletedCommandCount: requirements.minimumCompletedCommandCount,
+    requiredCommandClasses: requirements.requiredCommandClasses,
+    completedCommandClasses,
+    toolSurfaceRequired: requirements.toolSurfaceRequired,
+  };
 }
 
 function threadIdFromStartResult(result = {}) {
@@ -395,12 +591,30 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
   function terminalForCompletedTurn(card, config, execution, completion) {
     const turn = completion.turn || {};
     const turnStatus = statusText(turn.status || turn.state) || (completion.completed ? "completed" : "timeout");
-    const terminalStatus = completion.completed ? terminalStatusForTurn(turn) : "partially_completed";
+    const requirements = normalizeExecutionRequirements(card);
+    const executionResult = completion.completed
+      ? evaluateExecutionRequirements(requirements, turn, execution, config)
+      : requirements
+        ? {
+            ok: false,
+            issueCode: "local_task_card_execution_completion_timeout",
+            commandExecutionCount: 0,
+            minimumCompletedCommandCount: requirements.minimumCompletedCommandCount,
+            requiredCommandClasses: requirements.requiredCommandClasses,
+            completedCommandClasses: [],
+            toolSurfaceRequired: requirements.toolSurfaceRequired,
+          }
+        : null;
+    const executionIssue = executionResult && executionResult.ok === false ? executionResult.issueCode : "";
+    const terminalStatus = executionIssue
+      ? "blocked"
+      : completion.completed ? terminalStatusForTurn(turn) : "partially_completed";
     const timeout = completion.completed ? "" : "local_task_card_execution_completion_timeout";
+    const issueCode = executionIssue || timeout;
     return {
       status: terminalStatus,
       title: terminalStatus === "completed" ? "远程任务执行完成" : "远程任务执行未闭合",
-      summary: terminalStatus === "completed" ? "local_task_card_execution_completed" : timeout,
+      summary: terminalStatus === "completed" ? "local_task_card_execution_completed" : issueCode,
       body: boundedVisibleText([
         "## Remote Managed Workspace 回卡",
         "",
@@ -411,7 +625,8 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
         `- localThreadId: ${execution.threadId}`,
         `- localTurnId: ${execution.turnId}`,
         `- turnStatus: ${turnStatus}`,
-        timeout ? `- issueCode: ${timeout}` : "",
+        issueCode ? `- issueCode: ${issueCode}` : "",
+        executionResult ? `- commandExecutionCount: ${executionResult.commandExecutionCount || 0}` : "",
       ].filter(Boolean).join("\n"), MAX_RETURN_BODY_CHARS),
       metadata: {
         bridge: "codex_mobile_local_runtime",
@@ -422,8 +637,16 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
         localTurnId: execution.turnId,
         turnStatus,
         completed: completion.completed === true,
-        issueCode: timeout,
+        issueCode,
         executionAuthority: execution.executionAuthority || null,
+        executionRequirements: requirements || null,
+        executionResult: executionResult ? Object.assign({
+          taskCardId: normalizedCardId(card),
+          workspaceId: compactOneLine(config.workspaceId).slice(0, 180),
+          localThreadId: execution.threadId,
+          localTurnId: execution.turnId,
+          terminalStatus,
+        }, executionResult) : null,
       },
     };
   }
@@ -470,6 +693,8 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
 module.exports = {
   buildRemoteTaskPrompt,
   createRemoteManagedWorkspaceLocalExecutionService,
+  evaluateExecutionRequirements,
   isCompletedTurn,
   isCompletedStatus,
+  normalizeExecutionRequirements,
 };

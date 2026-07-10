@@ -128,6 +128,16 @@ function boundedTerminalForExecutionError(card = {}, err = {}) {
   };
 }
 
+function boundedExecutionResultHistory(history = [], result = null) {
+  const source = Array.isArray(history) ? history.slice() : [];
+  const item = result && typeof result === "object" && !Array.isArray(result) ? result : null;
+  if (!item) return source.slice(-50);
+  const taskCardId = compactOneLine(item.taskCardId || "");
+  const next = source.filter((entry) => compactOneLine(entry && entry.taskCardId) !== taskCardId);
+  next.push(Object.assign({}, item, { recordedAt: nowIso(Date.now) }));
+  return next.slice(-50);
+}
+
 function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
   const settingsService = dependencies.settingsService;
   const nodeClientService = dependencies.nodeClientService;
@@ -503,9 +513,13 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
     const terminalMetadata = terminal && terminal.metadata && typeof terminal.metadata === "object"
       ? terminal.metadata
       : {};
+    const terminalExecutionResult = terminalMetadata.executionResult && typeof terminalMetadata.executionResult === "object"
+      ? terminalMetadata.executionResult
+      : null;
     try {
       await nodeClientService.returnTaskCard(config, taskCardId, terminal);
     } catch (err) {
+      const currentState = settingsService.readState();
       settingsService.queueTerminalReturn({
         workspaceId: config.workspaceId,
         taskCardId,
@@ -522,9 +536,12 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
         lastLocalTurnId: compactOneLine(terminalMetadata.localTurnId || "").slice(0, 180),
         lastExecutionBridgeStatus: compactOneLine(terminalMetadata.localExecutionBridge || terminalMetadata.bridge || terminal.summary || "").slice(0, 120),
         lastExecutionAuthority: terminalMetadata.executionAuthority || null,
+        lastExecutionResult: terminalExecutionResult,
+        executionResultHistory: boundedExecutionResultHistory(currentState.executionResultHistory, terminalExecutionResult),
       });
       throw err;
     }
+    const currentState = settingsService.readState();
     setState({
       activeTaskCardId: "",
       activeLocalThreadId: "",
@@ -536,6 +553,8 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       lastLocalTurnId: compactOneLine(terminalMetadata.localTurnId || "").slice(0, 180),
       lastExecutionBridgeStatus: compactOneLine(terminalMetadata.localExecutionBridge || terminalMetadata.bridge || terminal.summary || "").slice(0, 120),
       lastExecutionAuthority: terminalMetadata.executionAuthority || null,
+      lastExecutionResult: terminalExecutionResult,
+      executionResultHistory: boundedExecutionResultHistory(currentState.executionResultHistory, terminalExecutionResult),
     });
     return { processed: true, duplicateSuppressed: false, terminalStatus: terminal.status || "" };
   }

@@ -15,6 +15,12 @@ const DEFAULT_ROLES = [
   "external_project_deploy",
 ];
 const RETURN_STATUSES = new Set(["completed", "blocked", "redirected", "rejected", "partially_completed"]);
+const REQUIRED_COMMAND_CLASSES = new Set([
+  "workspace_read",
+  "workspace_test",
+  "workspace_build",
+  "localhost_health_probe",
+]);
 const ESCALATION_REASONS = new Set([
   "high_risk",
   "blocked",
@@ -241,10 +247,37 @@ function publicTaskCard(card = {}) {
     status: card.status || "queued",
     terminalStatus: card.terminalStatus || "",
     reasoningEffort: card.reasoningEffort || "",
+    executionRequirements: card.executionRequirements || undefined,
     locale: card.locale || "zh-CN",
     executionLease: Object.assign({}, card.executionLease || {}),
     createdAt: card.createdAt || "",
     updatedAt: card.updatedAt || "",
+  };
+}
+
+function normalizeExecutionRequirements(input = {}) {
+  const raw = input && input.executionRequirements && typeof input.executionRequirements === "object" && !Array.isArray(input.executionRequirements)
+    ? input.executionRequirements
+    : {};
+  const requiresCommandExecution = raw.requiresCommandExecution === true;
+  const minimumCompletedCommandCount = requiresCommandExecution
+    ? Math.max(1, Math.min(20, Math.floor(Number(raw.minimumCompletedCommandCount || 1) || 1)))
+    : 0;
+  const requiredCommandClasses = Array.isArray(raw.requiredCommandClasses)
+    ? Array.from(new Set(raw.requiredCommandClasses
+        .map((entry) => boundedString(entry, "required_command_class", 80, false).toLowerCase())
+        .filter((entry) => REQUIRED_COMMAND_CLASSES.has(entry))))
+        .slice(0, 8)
+    : [];
+  const toolSurfaceRequired = requiresCommandExecution
+    ? (Object.prototype.hasOwnProperty.call(raw, "toolSurfaceRequired") ? raw.toolSurfaceRequired === true : true)
+    : false;
+  if (!requiresCommandExecution && !requiredCommandClasses.length && !toolSurfaceRequired) return null;
+  return {
+    requiresCommandExecution,
+    minimumCompletedCommandCount,
+    requiredCommandClasses,
+    toolSurfaceRequired,
   };
 }
 
@@ -525,6 +558,7 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
       summary: boundedString(input.summary, "task_card_summary", 500, false),
       bodyMarkdown: boundedString(input.bodyMarkdown || input.body || "", "task_card_body_markdown", 4000, false),
       reasoningEffort: boundedString(input.reasoningEffort || "medium", "task_card_reasoning_effort", 20, false) || "medium",
+      executionRequirements: normalizeExecutionRequirements(input),
       locale: "zh-CN",
     };
     assertNoForbiddenPayloadClasses({
@@ -534,6 +568,7 @@ function createRemoteManagedWorkspaceService(dependencies = {}) {
       summary: card.summary,
       bodyMarkdown: card.bodyMarkdown,
       reasoningEffort: card.reasoningEffort,
+      executionRequirements: card.executionRequirements,
       locale: card.locale,
     }, "task_card");
     return card;

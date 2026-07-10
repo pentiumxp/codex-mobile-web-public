@@ -160,6 +160,12 @@ test("remote task-card relay is idempotent and tracks per-card heartbeat plus zh
     summary: "bounded",
     bodyMarkdown: "Run one bounded task.",
     reasoningEffort: "medium",
+    executionRequirements: {
+      requiresCommandExecution: true,
+      minimumCompletedCommandCount: 1,
+      requiredCommandClasses: ["workspace_read"],
+      toolSurfaceRequired: true,
+    },
   }, { token: "token" });
   const duplicate = service.enqueueTaskCard("rmw_test", {
     taskCardId: "ttc_remote_b",
@@ -168,8 +174,12 @@ test("remote task-card relay is idempotent and tracks per-card heartbeat plus zh
   }, { token: "token" });
 
   assert.equal(first.duplicate, false);
+  assert.equal(first.card.executionRequirements.requiresCommandExecution, true);
+  assert.deepEqual(first.card.executionRequirements.requiredCommandClasses, ["workspace_read"]);
   assert.equal(duplicate.duplicate, true);
-  assert.equal(service.pollTaskCards("rmw_test", { limit: 4 }, { token: "token" }).count, 1);
+  const polled = service.pollTaskCards("rmw_test", { limit: 4 }, { token: "token" });
+  assert.equal(polled.count, 1);
+  assert.equal(polled.taskCards[0].executionRequirements.minimumCompletedCommandCount, 1);
 
   const acked = service.ackTaskCard("rmw_test", "ttc_remote_a", { leaseId: "lease-a" }, { token: "token" });
   assert.equal(acked.card.executionLease.ackedAt, "2026-07-08T00:00:00.000Z");

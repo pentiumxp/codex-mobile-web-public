@@ -174,6 +174,8 @@ function blankState() {
     lastReturnStatus: "",
     lastExecutionBridgeStatus: "",
     lastExecutionAuthority: null,
+    lastExecutionResult: null,
+    executionResultHistory: [],
     lastRegisterAt: "",
     lastConnectionCheckAt: "",
     pairingStatus: "unconfigured",
@@ -238,6 +240,36 @@ function normalizeExecutionAuthoritySummary(value) {
   if (out.approvalResolution && !out.approvalResolution.issueCodes.length) delete out.approvalResolution.issueCodes;
   if (out.approvalResolution && !out.approvalResolution.status) delete out.approvalResolution;
   return out.configured ? out : null;
+}
+
+function normalizeExecutionResultSummary(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const out = {
+    taskCardId: compactOneLine(source.taskCardId).slice(0, 180),
+    workspaceId: compactOneLine(source.workspaceId).slice(0, 180),
+    localThreadId: compactOneLine(source.localThreadId).slice(0, 180),
+    localTurnId: compactOneLine(source.localTurnId).slice(0, 180),
+    terminalStatus: compactOneLine(source.terminalStatus).slice(0, 80),
+    ok: source.ok === true,
+    issueCode: compactOneLine(source.issueCode).toLowerCase().replace(/[^a-z0-9_-]+/g, "_").slice(0, 120),
+    commandExecutionCount: Math.max(0, Math.min(100, Math.floor(Number(source.commandExecutionCount || 0) || 0))),
+    minimumCompletedCommandCount: Math.max(0, Math.min(20, Math.floor(Number(source.minimumCompletedCommandCount || 0) || 0))),
+    requiredCommandClasses: normalizeStringList(source.requiredCommandClasses, [], 12),
+    completedCommandClasses: normalizeStringList(source.completedCommandClasses, [], 12),
+    missingCommandClasses: normalizeStringList(source.missingCommandClasses, [], 12),
+    toolSurfaceRequired: source.toolSurfaceRequired === true,
+    recordedAt: compactOneLine(source.recordedAt).slice(0, 80),
+  };
+  for (const key of Object.keys(out)) {
+    if (Array.isArray(out[key]) && out[key].length === 0) delete out[key];
+    else if (out[key] == null || out[key] === "" || out[key] === false) delete out[key];
+  }
+  return out.taskCardId ? out : null;
+}
+
+function normalizeExecutionResultHistory(value) {
+  const source = Array.isArray(value) ? value : [];
+  return source.map(normalizeExecutionResultSummary).filter(Boolean).slice(-50);
 }
 
 function normalizeConnectionMode(value) {
@@ -328,6 +360,8 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     loaded.queuedTerminalReturns = Array.isArray(loaded.queuedTerminalReturns) ? loaded.queuedTerminalReturns.slice(-20) : [];
     loaded.executedIdempotencyKeys = normalizeStringList(loaded.executedIdempotencyKeys, [], 200);
     loaded.lastExecutionAuthority = normalizeExecutionAuthoritySummary(loaded.lastExecutionAuthority);
+    loaded.lastExecutionResult = normalizeExecutionResultSummary(loaded.lastExecutionResult);
+    loaded.executionResultHistory = normalizeExecutionResultHistory(loaded.executionResultHistory);
     return loaded;
   }
 
@@ -350,6 +384,8 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     next.lastReturnStatus = compactOneLine(next.lastReturnStatus).slice(0, 80);
     next.lastExecutionBridgeStatus = compactOneLine(next.lastExecutionBridgeStatus).slice(0, 120);
     next.lastExecutionAuthority = normalizeExecutionAuthoritySummary(next.lastExecutionAuthority);
+    next.lastExecutionResult = normalizeExecutionResultSummary(next.lastExecutionResult);
+    next.executionResultHistory = normalizeExecutionResultHistory(next.executionResultHistory);
     next.pairingRequestId = compactOneLine(next.pairingRequestId).slice(0, 180);
     next.pairingRequestedAt = compactOneLine(next.pairingRequestedAt).slice(0, 80);
     next.pairingApprovedAt = compactOneLine(next.pairingApprovedAt).slice(0, 80);
@@ -856,6 +892,8 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
       lastReturnStatus: state.lastReturnStatus || "",
       lastExecutionBridgeStatus: state.lastExecutionBridgeStatus || "",
       lastExecutionAuthority: normalizeExecutionAuthoritySummary(state.lastExecutionAuthority),
+      lastExecutionResult: normalizeExecutionResultSummary(state.lastExecutionResult),
+      recentExecutionResults: normalizeExecutionResultHistory(state.executionResultHistory),
       lastRegisterAt: state.lastRegisterAt || "",
       lastConnectionCheckAt: state.lastConnectionCheckAt || "",
       issueCodes: boundedIssueCodes(state.issueCodes),
