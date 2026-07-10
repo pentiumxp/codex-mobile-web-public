@@ -9,6 +9,13 @@ const {
   scopeSecretRefs,
   secretRefReceiptText,
 } = require("../runtime/home-ai-secret-ref-service");
+const {
+  authorityExpired,
+  authorityDecisionForStore,
+  authorityLogPayload,
+  createExecutionAuthorityForCard,
+  summarizeExecutionAuthority,
+} = require("./task-card-execution-authority-service");
 
 const MAX_TITLE_CHARS = 120;
 const MAX_SUMMARY_CHARS = 300;
@@ -163,7 +170,7 @@ function clone(value) {
 }
 
 function defaultStore() {
-  return { cards: [], workflows: [] };
+  return { cards: [], workflows: [], executionAuthorities: [] };
 }
 
 function delay(ms) {
@@ -210,6 +217,7 @@ function loadStore(file) {
   return {
     cards: parsed.cards,
     workflows: Array.isArray(parsed.workflows) ? parsed.workflows : [],
+    executionAuthorities: Array.isArray(parsed.executionAuthorities) ? parsed.executionAuthorities : [],
   };
 }
 
@@ -1136,6 +1144,8 @@ function publicCard(card, threadId, nowMs = Date.now()) {
   out.canRevoke = role === "source" && !out.terminal && out.status === "pending";
   out.executionState = taskCardExecutionState(out, nowMs);
   out.executionLease = publicExecutionLease(out.executionLease, nowMs);
+  out.executionAuthority = summarizeExecutionAuthority(out.executionAuthority, nowMs);
+  if (!out.executionAuthority) delete out.executionAuthority;
   return out;
 }
 
@@ -1278,6 +1288,11 @@ function summarizePublicCardExecutionLease(lease = {}) {
   });
 }
 
+function summarizePublicCardExecutionAuthority(authority = {}) {
+  if (authority && typeof authority === "object" && Array.isArray(authority.scopeClasses)) return authority;
+  return summarizeExecutionAuthority(authority, Date.now());
+}
+
 function summarizePublicCard(card) {
   const out = {
     id: boundedMetadataString(card && card.id, 180),
@@ -1294,6 +1309,7 @@ function summarizePublicCard(card) {
     sensitiveContext: publicSensitiveContext(card && card.sensitiveContext),
     audit: summarizePublicCardAudit(card && card.audit),
     executionLease: summarizePublicCardExecutionLease(card && card.executionLease),
+    executionAuthority: summarizePublicCardExecutionAuthority(card && card.executionAuthority),
     executionState: boundedMetadataString(card && card.executionState, 80),
     injectionRuntime: omitEmptyObject({
       reasoningEffort: boundedMetadataString(card && card.injectionRuntime && card.injectionRuntime.reasoningEffort, 40),
@@ -2218,6 +2234,11 @@ function createThreadTaskCardService(options = {}) {
         }
         if (cardCanOwnExecutionLease(card)) {
           card.executionLease = leaseForApprovedCard(card, execution, timestamp);
+          const authority = createExecutionAuthorityForCard(card, execution, {
+            now: Date.parse(timestamp),
+            ttlMs: watchdogStaleAfterMsValue(card.executionLease && card.executionLease.watchdogStaleAfterMs),
+          });
+          if (authority) card.executionAuthority = authority;
         }
       }
       return {
@@ -2351,6 +2372,40 @@ function createThreadTaskCardService(options = {}) {
     const card = findById(store, id);
     if (!card) throw errorWithStatus("task_card_not_found", 404);
     return publicCard(card, threadId || card.source.threadId || card.target.threadId || "", Date.parse(nowIso(options.now)) || Date.now());
+  }
+
+  function authorityDecisionForServerRequest(request) {
+    const store = readStore();
+    const activeAuthorityCards = safeArray(store.cards).filter((card) => card
+      && card.status === "approved"
+      && !cardIsTerminal(card)
+      && card.executionAuthority
+      && leaseIsActive(card.executionLease));
+    const activeExecutionAuthorities = safeArray(store.executionAuthorities)
+      .filter((authority) => authority && authority.configured === true);
+    return authorityDecisionForStore({
+      cards: activeAuthorityCards,
+      executionAuthorities: activeExecutionAuthorities,
+    }, request, {
+      now: Date.parse(nowIso(options.now)) || Date.now(),
+    });
+  }
+
+  async function registerExecutionAuthority(authority = {}) {
+    if (!authority || typeof authority !== "object" || authority.configured !== true) return null;
+    const timestampMs = Date.parse(nowIso(options.now)) || Date.now();
+    const taskCardId = boundedMetadataString(authority.taskCardId, 180);
+    const turnId = boundedMetadataString(authority.turnId, 220);
+    const generation = boundedMetadataString(authority.generation || `${taskCardId}:${turnId}`, 500);
+    if (!taskCardId || !turnId || !generation) return null;
+    return withStore(async (store) => {
+      const current = safeArray(store.executionAuthorities)
+        .filter((entry) => entry && entry.configured === true && !authorityExpired(entry, timestampMs))
+        .filter((entry) => boundedMetadataString(entry.generation || `${entry.taskCardId || ""}:${entry.turnId || ""}`, 500) !== generation);
+      current.push(clone(authority));
+      store.executionAuthorities = current.slice(-100);
+      return summarizeExecutionAuthority(authority, timestampMs);
+    });
   }
 
   async function approve(cardId, actorThreadId) {
@@ -3250,6 +3305,8 @@ function createThreadTaskCardService(options = {}) {
   return {
     approve,
     approveFromSource,
+    authorityDecisionForServerRequest,
+    authorityLogPayload,
     cancelExecution,
     create,
     createMany,
@@ -3263,6 +3320,7 @@ function createThreadTaskCardService(options = {}) {
     pendingCountForThread,
     pendingCountsForThread,
     pendingCountsForThreads,
+    registerExecutionAuthority,
     summaryCountsForThread,
     summaryCountsForThreads,
     pauseExecution,

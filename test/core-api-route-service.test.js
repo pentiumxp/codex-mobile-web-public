@@ -21,6 +21,34 @@ test("core API route adapter re-exports server-routes service", () => {
   assert.equal(adapter.createCoreApiRouteService, canonical.createCoreApiRouteService);
 });
 
+test("core approval route returns bounded stale and duplicate statuses", async () => {
+  const statuses = [];
+  const service = createCoreApiRouteService({
+    codex: {
+      answerServerRequest(requestId) {
+        if (requestId === "stale") throw new Error("Approval request is no longer pending");
+        throw new Error("Approval request has already been answered");
+      },
+    },
+  });
+
+  for (const requestId of ["stale", "duplicate"]) {
+    const handled = await service.handleAuthorizedRoute({
+      url: new URL(`http://127.0.0.1:8787/api/approvals/${requestId}`),
+      req: { method: "POST", headers: {} },
+      res: {},
+      readBody: async () => ({ decision: "allow_once" }),
+      sendJson: (status, body) => statuses.push({ requestId, status, body }),
+    });
+    assert.deepEqual(handled, { handled: true });
+  }
+
+  assert.equal(statuses[0].status, 404);
+  assert.equal(statuses[0].body.code, "approval_request_no_longer_pending");
+  assert.equal(statuses[1].status, 409);
+  assert.equal(statuses[1].body.code, "approval_request_already_answered");
+});
+
 test("core public config route uses injected runtime dependencies", async () => {
   let refreshedRateLimits = false;
   let loadedRecentRateLimits = false;

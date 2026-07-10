@@ -220,6 +220,19 @@ test("remote node runner executes local bridge, heartbeats while active, and rec
             localExecutionBridge: "codex_mobile_local_runtime",
             localThreadId: "local-thread-runner",
             localTurnId: "local-turn-runner",
+            executionAuthority: {
+              configured: true,
+              source: "remote_managed_workspace",
+              version: "task-card-execution-authority-v1",
+              taskCardId: "ttc_runner_local",
+              workflowId: "rmw:rmw_runner:ttc_runner_local",
+              targetThreadId: "local-thread-runner",
+              targetWorkspaceId: "rmw_runner",
+              scopeClasses: ["workspace_read", "localhost_health_probe"],
+              networkScope: ["localhost"],
+              expiresAtPresent: true,
+              approvalResolution: { status: "configured" },
+            },
           },
         };
       },
@@ -234,6 +247,9 @@ test("remote node runner executes local bridge, heartbeats while active, and rec
     assert.equal(result.status.lastLocalThreadId, "local-thread-runner");
     assert.equal(result.status.lastLocalTurnId, "local-turn-runner");
     assert.equal(result.status.lastExecutionBridgeStatus, "codex_mobile_local_runtime");
+    assert.equal(result.status.lastExecutionAuthority.configured, true);
+    assert.equal(result.status.lastExecutionAuthority.source, "remote_managed_workspace");
+    assert.deepEqual(result.status.lastExecutionAuthority.networkScope, ["localhost"]);
     assert.equal(result.status.activeTaskCardId, "");
     assert.doesNotMatch(JSON.stringify(result.status), /runner-token/);
   } finally {

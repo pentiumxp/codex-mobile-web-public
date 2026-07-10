@@ -25,6 +25,10 @@ const {
 const {
   createRemoteManagedWorkspaceRouteService,
 } = require("../server-routes/remote-managed-workspace-route-service");
+const {
+  authorityDecisionForServerRequest,
+  summarizeExecutionAuthority,
+} = require("../services/task-cards/task-card-execution-authority-service");
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -151,6 +155,10 @@ async function runRemoteManagedWorkspaceHarness() {
     enrollmentTokenFile: path.join(root, "remote-node-enrollment-token"),
   });
   const localCodexRequests = [];
+  const registeredAuthorities = [];
+  let commandExecutionCount = 0;
+  let manualRequestApprovalCount = 0;
+  let pendingApprovalCount = 0;
   const localExecutionService = createRemoteManagedWorkspaceLocalExecutionService({
     fs,
     path,
@@ -165,6 +173,23 @@ async function runRemoteManagedWorkspaceHarness() {
           return { turnId: "rmw-local-turn" };
         }
         if (method === "thread/turns/list") {
+          if (registeredAuthorities.length && commandExecutionCount === 0) {
+            const decision = authorityDecisionForServerRequest(registeredAuthorities[0], {
+              id: "rmw-command-approval",
+              method: "item/commandExecution/requestApproval",
+              params: {
+                threadId: "rmw-local-thread",
+                turnId: "rmw-local-turn",
+                cwd: projectRoot,
+                command: `curl -fsS ${remoteProject.url}/status`,
+              },
+            });
+            if (decision && decision.action === "allow") commandExecutionCount += 1;
+            else {
+              manualRequestApprovalCount += 1;
+              pendingApprovalCount += 1;
+            }
+          }
           return { turns: [{ id: "rmw-local-turn", status: { type: "completed" }, completedAt: "2026-07-08T00:00:00.000Z" }] };
         }
         return { ok: true };
@@ -180,6 +205,10 @@ async function runRemoteManagedWorkspaceHarness() {
     resolveThreadRuntimeSettings: async () => ({ reasoningEffort: "medium" }),
     readStartThreadDeveloperInstructions: () => "",
     notifyLocalTurnStarted: () => "rmw-local-turn",
+    registerExecutionAuthority: async (authority) => {
+      registeredAuthorities.push(authority);
+      return summarizeExecutionAuthority(authority);
+    },
     rememberStartedThread: () => true,
     persistThreadTitleToSessionIndex: () => true,
     tryUpdateThreadTitle: async () => true,
@@ -278,6 +307,24 @@ async function runRemoteManagedWorkspaceHarness() {
       terminalBridge: snapshot.taskCards[config.workspaceId][0].terminalReturn
         && snapshot.taskCards[config.workspaceId][0].terminalReturn.metadata
         && snapshot.taskCards[config.workspaceId][0].terminalReturn.metadata.localExecutionBridge || "",
+      authorityConfigured: settingsService.publicSettings().lastExecutionAuthority
+        && settingsService.publicSettings().lastExecutionAuthority.configured === true,
+      authoritySource: settingsService.publicSettings().lastExecutionAuthority
+        && settingsService.publicSettings().lastExecutionAuthority.source || "",
+      authorityVersion: settingsService.publicSettings().lastExecutionAuthority
+        && settingsService.publicSettings().lastExecutionAuthority.version || "",
+      authorityScopeClasses: settingsService.publicSettings().lastExecutionAuthority
+        && settingsService.publicSettings().lastExecutionAuthority.scopeClasses || [],
+      authorityNetworkScope: settingsService.publicSettings().lastExecutionAuthority
+        && settingsService.publicSettings().lastExecutionAuthority.networkScope || [],
+      authorityExpiresAtPresent: settingsService.publicSettings().lastExecutionAuthority
+        && settingsService.publicSettings().lastExecutionAuthority.expiresAtPresent === true,
+      authorityResolutionStatus: settingsService.publicSettings().lastExecutionAuthority
+        && settingsService.publicSettings().lastExecutionAuthority.approvalResolution
+        && settingsService.publicSettings().lastExecutionAuthority.approvalResolution.status || "",
+      commandExecutionCount,
+      manualRequestApprovalCount,
+      pendingApprovalCount,
       localCodexThreadStarted: localCodexRequests.some((entry) => entry.method === "thread/start" && entry.cwd === projectRoot),
       localCodexTurnStarted: localCodexRequests.some((entry) => entry.method === "turn/start" && entry.threadId === "rmw-local-thread"),
       localExecutionThreadId: settingsService.publicSettings().lastLocalThreadId,

@@ -521,6 +521,7 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
         lastLocalThreadId: compactOneLine(terminalMetadata.localThreadId || "").slice(0, 180),
         lastLocalTurnId: compactOneLine(terminalMetadata.localTurnId || "").slice(0, 180),
         lastExecutionBridgeStatus: compactOneLine(terminalMetadata.localExecutionBridge || terminalMetadata.bridge || terminal.summary || "").slice(0, 120),
+        lastExecutionAuthority: terminalMetadata.executionAuthority || null,
       });
       throw err;
     }
@@ -534,6 +535,7 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       lastLocalThreadId: compactOneLine(terminalMetadata.localThreadId || "").slice(0, 180),
       lastLocalTurnId: compactOneLine(terminalMetadata.localTurnId || "").slice(0, 180),
       lastExecutionBridgeStatus: compactOneLine(terminalMetadata.localExecutionBridge || terminalMetadata.bridge || terminal.summary || "").slice(0, 120),
+      lastExecutionAuthority: terminalMetadata.executionAuthority || null,
     });
     return { processed: true, duplicateSuppressed: false, terminalStatus: terminal.status || "" };
   }

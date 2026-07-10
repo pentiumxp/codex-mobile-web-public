@@ -842,8 +842,23 @@ function createCoreApiRouteService(deps = {}) {
     if (approvalResponse && req.method === "POST") {
       const requestId = decodeURIComponent(approvalResponse[1]);
       const body = await readBody();
-      const request = codex.answerServerRequest(requestId, body);
-      sendJson(200, { ok: true, request });
+      try {
+        const request = codex.answerServerRequest(requestId, body);
+        sendJson(200, { ok: true, request });
+      } catch (err) {
+        const message = String(err && err.message || err || "approval_request_failed");
+        const stale = /no longer pending|not pending|not found|not available/i.test(message);
+        const alreadyAnswered = /already been answered|already answered/i.test(message);
+        sendJson(stale ? 404 : alreadyAnswered ? 409 : err && err.statusCode || 500, {
+          ok: false,
+          error: message,
+          code: stale
+            ? "approval_request_no_longer_pending"
+            : alreadyAnswered
+              ? "approval_request_already_answered"
+              : "approval_request_failed",
+        });
+      }
       return { handled: true };
     }
     return { handled: false };

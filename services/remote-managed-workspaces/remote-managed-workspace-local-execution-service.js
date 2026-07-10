@@ -9,6 +9,10 @@ const {
 const {
   applyReasoningEffortFloor,
 } = require("../task-cards/task-card-runtime-policy-service");
+const {
+  createExecutionAuthorityForCard,
+  summarizeExecutionAuthority,
+} = require("../task-cards/task-card-execution-authority-service");
 
 const MAX_TITLE_CHARS = 120;
 const MAX_SUMMARY_CHARS = 300;
@@ -189,6 +193,9 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
   const tryUpdateThreadTitle = typeof dependencies.tryUpdateThreadTitle === "function"
     ? dependencies.tryUpdateThreadTitle
     : async () => false;
+  const registerExecutionAuthority = typeof dependencies.registerExecutionAuthority === "function"
+    ? dependencies.registerExecutionAuthority
+    : null;
 
   function requireCodex() {
     if (!codex || typeof codex.request !== "function") {
@@ -301,6 +308,90 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
     }
   }
 
+  function workflowIdForCard(card = {}, config = {}) {
+    const workflow = card.workflow && typeof card.workflow === "object" ? card.workflow : {};
+    return compactOneLine(
+      workflow.id
+        || card.workflowId
+        || card.workflow_id
+        || card.workflow && card.workflow.workflowId
+        || `rmw:${config.workspaceId || "workspace"}:${normalizedCardId(card)}`,
+    ).slice(0, 220);
+  }
+
+  function sourceThreadIdForCard(card = {}) {
+    const source = card.source && typeof card.source === "object" ? card.source : {};
+    return compactOneLine(
+      source.threadId
+        || source.thread_id
+        || card.sourceThreadId
+        || card.source_thread_id
+        || "home_ai_rmw_control",
+    ).slice(0, 220);
+  }
+
+  function sourceWorkspaceIdForCard(card = {}) {
+    const source = card.source && typeof card.source === "object" ? card.source : {};
+    return compactOneLine(
+      source.workspaceId
+        || source.workspace_id
+        || card.sourceWorkspaceId
+        || card.source_workspace_id
+        || "home_ai_central",
+    ).slice(0, 260);
+  }
+
+  function authorityCardForRemoteExecution(card = {}, config = {}) {
+    const taskCardId = normalizedCardId(card);
+    return {
+      id: taskCardId,
+      taskCardId,
+      workflow: {
+        mode: "autonomous",
+        id: workflowIdForCard(card, config),
+        authorized: true,
+        routeKind: "remote_managed_workspace",
+      },
+      source: {
+        threadId: sourceThreadIdForCard(card),
+        workspaceId: sourceWorkspaceIdForCard(card),
+      },
+      target: {
+        threadId: "",
+        workspaceId: compactOneLine(config.workspaceId).slice(0, 260),
+        role: "external_project_main",
+      },
+      delivery: {
+        approvalMode: "remote_managed_workspace_central",
+        targetApprovalBypassed: true,
+      },
+    };
+  }
+
+  async function configureExecutionAuthority(card = {}, config = {}, execution = {}) {
+    const authorityCard = authorityCardForRemoteExecution(card, config);
+    authorityCard.target.threadId = execution.threadId;
+    const authority = createExecutionAuthorityForCard(authorityCard, execution, {
+      trustedAutonomous: true,
+      source: "remote_managed_workspace",
+      workflowId: authorityCard.workflow.id,
+      targetWorkspaceId: config.workspaceId,
+      workspaceRoot: config.projectRoot,
+      now,
+    });
+    const summary = summarizeExecutionAuthority(authority, now());
+    if (authority && registerExecutionAuthority) {
+      try {
+        return await registerExecutionAuthority(authority) || summary;
+      } catch (err) {
+        if (logger && typeof logger.error === "function") {
+          logger.error(`[remote-managed-workspace-local-execution] authority registration failed: ${compactOneLine(err && err.message || String(err)).slice(0, 180)}`);
+        }
+      }
+    }
+    return summary;
+  }
+
   function terminalForCompletedTurn(card, config, execution, completion) {
     const turn = completion.turn || {};
     const turnStatus = statusText(turn.status || turn.state) || (completion.completed ? "completed" : "timeout");
@@ -332,6 +423,7 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
         turnStatus,
         completed: completion.completed === true,
         issueCode: timeout,
+        executionAuthority: execution.executionAuthority || null,
       },
     };
   }
@@ -355,6 +447,7 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
       requestedReasoningEffort,
       reasoningEffort: runtimeSettings.reasoningEffort || "",
     };
+    execution.executionAuthority = await configureExecutionAuthority(card, config, execution);
     if (typeof options.onExecutionStarted === "function") {
       options.onExecutionStarted(execution);
     }

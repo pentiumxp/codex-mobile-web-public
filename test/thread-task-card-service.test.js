@@ -10,6 +10,9 @@ const {
   createThreadTaskCardService,
   normalizeCreateRequest,
 } = require("../services/task-cards/thread-task-card-service");
+const {
+  createExecutionAuthorityForCard,
+} = require("../services/task-cards/task-card-execution-authority-service");
 
 const canonicalTaskCardService = require("../services/task-cards/thread-task-card-service");
 const adapterTaskCardService = require("../adapters/thread-task-card-service");
@@ -186,6 +189,146 @@ test("create persists a pending task card and lists it for source and target thr
     pendingIncoming: 1,
     pendingOutgoing: 0,
   });
+});
+
+test("source-direct autonomous approval persists bounded execution authority", async () => {
+  const storageFile = tempFile("authority-cards.json");
+  const service = createThreadTaskCardService({
+    storageFile,
+    now: () => Date.parse("2026-07-10T00:00:00.000Z"),
+    executeApprovedCard: async () => ({
+      threadId: "thread-dst",
+      turnId: "turn-authority",
+      result: { turnId: "turn-authority" },
+      runtime: {
+        approvalPolicy: "never",
+        sandboxPolicyType: "dangerFullAccess",
+      },
+    }),
+  });
+  const card = await service.create({
+    sourceWorkspaceId: "/source",
+    sourceThreadId: "thread-src",
+    sourceTurnId: "turn-src",
+    sourceThreadTitle: "Source",
+    targetWorkspaceId: "/workspace/project",
+    targetThreadId: "thread-dst",
+    idempotencyKey: "authority:1",
+    format: "markdown",
+    title: "Autonomous",
+    summary: "Run bounded task.",
+    body: "Run bounded task.",
+    workflowMode: "autonomous",
+    workflowId: "twf_authority",
+  });
+
+  await service.approveFromSource(card.id, "thread-src");
+  const readback = service.get(card.id, "thread-dst");
+  assert.equal(readback.delivery.targetApprovalBypassed, true);
+  assert.equal(readback.executionAuthority.configured, true);
+  assert.equal(readback.executionAuthority.source, "trusted_autonomous_task_card");
+  assert.deepEqual(readback.executionAuthority.scopeClasses, [
+    "workspace_read",
+    "workspace_test",
+    "workspace_build",
+    "localhost_health_probe",
+  ]);
+
+  const restarted = createThreadTaskCardService({
+    storageFile,
+    now: () => Date.parse("2026-07-10T00:10:00.000Z"),
+  });
+  const decision = restarted.authorityDecisionForServerRequest({
+    id: "approval-1",
+    method: "item/commandExecution/requestApproval",
+    params: {
+      threadId: "thread-dst",
+      turnId: "turn-authority",
+      cwd: "/workspace/project",
+      command: "curl -fsS http://127.0.0.1:8787/api/readyz",
+    },
+  });
+  assert.equal(decision.action, "allow");
+  assert.equal(decision.responseDecision, "allow_once");
+});
+
+test("external RMW execution authority is restart-durable without creating a task card", async () => {
+  const storageFile = tempFile("rmw-authority.json");
+  const service = createThreadTaskCardService({
+    storageFile,
+    now: () => Date.parse("2026-07-10T00:00:00.000Z"),
+  });
+  const authority = createExecutionAuthorityForCard({
+    id: "rmwtc_authority",
+    workflow: {
+      mode: "autonomous",
+      id: "rmw:rmw_workspace:rmwtc_authority",
+      authorized: true,
+      routeKind: "remote_managed_workspace",
+    },
+    source: {
+      threadId: "home_ai_rmw_control",
+      workspaceId: "home_ai_central",
+    },
+    target: {
+      threadId: "rmw-thread",
+      workspaceId: "rmw_workspace",
+      role: "external_project_main",
+    },
+    delivery: {
+      targetApprovalBypassed: true,
+      approvalMode: "remote_managed_workspace_central",
+    },
+  }, {
+    threadId: "rmw-thread",
+    turnId: "rmw-turn",
+  }, {
+    trustedAutonomous: true,
+    source: "remote_managed_workspace",
+    targetWorkspaceId: "rmw_workspace",
+    workspaceRoot: "/workspace/rmw-project",
+    now: () => Date.parse("2026-07-10T00:00:00.000Z"),
+  });
+
+  const summary = await service.registerExecutionAuthority(authority);
+  assert.equal(summary.configured, true);
+  assert.equal(summary.source, "remote_managed_workspace");
+  assert.equal(summary.targetThreadId, "rmw-thread");
+
+  const restarted = createThreadTaskCardService({
+    storageFile,
+    now: () => Date.parse("2026-07-10T00:01:00.000Z"),
+  });
+  const decision = restarted.authorityDecisionForServerRequest({
+    id: "approval-rmw",
+    method: "item/commandExecution/requestApproval",
+    params: {
+      threadId: "rmw-thread",
+      turnId: "rmw-turn",
+      cwd: "/workspace/rmw-project",
+      command: "node --test test/remote-managed-workspace-local-execution-service.test.js",
+    },
+  });
+  assert.equal(decision.action, "allow");
+  assert.equal(decision.responseDecision, "allow_once");
+
+  const denied = restarted.authorityDecisionForServerRequest({
+    id: "approval-rmw-denied",
+    method: "item/commandExecution/requestApproval",
+    params: {
+      threadId: "rmw-thread",
+      turnId: "rmw-turn",
+      cwd: "/workspace/rmw-project",
+      command: "curl -fsS https://example.test/status",
+    },
+  });
+  assert.equal(denied.action, "deny");
+  assert.equal(denied.reason, "external_network_not_in_scope");
+
+  const stored = JSON.parse(fs.readFileSync(storageFile, "utf8"));
+  assert.equal(stored.cards.length, 0);
+  assert.equal(stored.executionAuthorities.length, 1);
+  assert.doesNotMatch(JSON.stringify(stored.executionAuthorities), /signature|token|credential|secret/i);
 });
 
 test("task-card read helpers reuse unchanged store snapshots", async () => {

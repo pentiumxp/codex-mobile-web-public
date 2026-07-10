@@ -221,6 +221,8 @@ function createCodexAppServerClient(dependencies = {}) {
     maybeApplyQueuedThreadSideChat,
     maybeSendTurnCompletedPush,
     publicServerRequest,
+    taskCardExecutionAuthorityDecisionForRequest,
+    taskCardExecutionAuthorityLogPayload,
     workspaceSourceWriteGuardDecisionForRequest,
     serverRequestResponsePayload,
     workspaceSourceWriteGuardLogPayload,
@@ -758,6 +760,7 @@ class CodexAppServerClient {
       decision: null,
       respondedAt: null,
     };
+    if (this.answerTaskCardExecutionAuthorityRequest(request)) return;
     if (this.answerWorkspaceSourceWriteGuardRequest(request)) return;
     if (this.answerCodeGraphReadOnlyMcpElicitationRequest(request)) return;
     this.serverRequests.set(key, request);
@@ -771,6 +774,35 @@ class CodexAppServerClient {
         broadcast({ type: "serverRequestResolved", requestId: key, request: publicServerRequest(request) });
         setTimeout(() => this.serverRequests.delete(key), 15000).unref();
       });
+    }
+  }
+
+  answerTaskCardExecutionAuthorityRequest(request) {
+    if (typeof taskCardExecutionAuthorityDecisionForRequest !== "function") return false;
+    const decision = taskCardExecutionAuthorityDecisionForRequest(request);
+    if (!decision || !decision.action) return false;
+    const responseDecision = decision.responseDecision || (decision.action === "deny" ? "deny" : "allow_once");
+    try {
+      const payload = serverRequestResponsePayload(request, { decision: responseDecision });
+      this.sendServerRequestResponse(request, payload);
+      request.status = "responded";
+      request.decision = decision.action === "deny" ? "task_card_authority_deny" : "task_card_authority_allow";
+      request.respondedAt = Date.now();
+      const logPayload = typeof taskCardExecutionAuthorityLogPayload === "function"
+        ? taskCardExecutionAuthorityLogPayload(request, Object.assign({}, decision, { responseDecision }))
+        : {
+          requestId: shortIdentifier(request && request.id),
+          method: request && request.method || "",
+          action: decision.action,
+          responseDecision,
+          reason: decision.reason || "",
+          issueCode: decision.issueCode || "",
+        };
+      console.log(`[task-card-execution-authority] ${JSON.stringify(logPayload)}`);
+      return true;
+    } catch (err) {
+      console.error(`[task-card-execution-authority] failed request=${shortIdentifier(request && request.id)}: ${err.message || String(err)}`);
+      return false;
     }
   }
 

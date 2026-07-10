@@ -91,6 +91,20 @@ test("remote managed workspace settings persist masked readback and separate tok
       lastLocalThreadId: "local-thread-last",
       lastLocalTurnId: "local-turn-last",
       lastExecutionBridgeStatus: "codex_mobile_local_runtime",
+      lastExecutionAuthority: {
+        configured: true,
+        source: "remote_managed_workspace",
+        version: "task-card-execution-authority-v1",
+        taskCardId: "ttc_last",
+        workflowId: "rmw:rmw_test:ttc_last",
+        targetThreadId: "local-thread-last",
+        targetWorkspaceId: "rmw_test",
+        scopeClasses: ["workspace_read", "localhost_health_probe"],
+        networkScope: ["localhost"],
+        expiresAtPresent: true,
+        approvalResolution: { status: "configured" },
+        rawAuthorityToken: "must-not-leak",
+      },
     });
     const publicStatus = service.publicSettings(undefined, state);
     assert.equal(publicStatus.activeTaskCardId, "ttc_active");
@@ -99,7 +113,10 @@ test("remote managed workspace settings persist masked readback and separate tok
     assert.equal(publicStatus.lastLocalThreadId, "local-thread-last");
     assert.equal(publicStatus.lastLocalTurnId, "local-turn-last");
     assert.equal(publicStatus.lastExecutionBridgeStatus, "codex_mobile_local_runtime");
-    assert.doesNotMatch(JSON.stringify(publicStatus), /rmw-secret-token/);
+    assert.equal(publicStatus.lastExecutionAuthority.configured, true);
+    assert.equal(publicStatus.lastExecutionAuthority.source, "remote_managed_workspace");
+    assert.deepEqual(publicStatus.lastExecutionAuthority.networkScope, ["localhost"]);
+    assert.doesNotMatch(JSON.stringify(publicStatus), /rmw-secret-token|must-not-leak/);
 
     const settingsFile = JSON.stringify(JSON.parse(fs.readFileSync(path.join(root, "settings.json"), "utf8")));
     assert.doesNotMatch(settingsFile, /rmw-secret-token/);

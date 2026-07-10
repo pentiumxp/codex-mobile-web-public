@@ -173,6 +173,7 @@ function blankState() {
     lastLocalTurnId: "",
     lastReturnStatus: "",
     lastExecutionBridgeStatus: "",
+    lastExecutionAuthority: null,
     lastRegisterAt: "",
     lastConnectionCheckAt: "",
     pairingStatus: "unconfigured",
@@ -206,6 +207,37 @@ function normalizeDiagnostics(value) {
       at: compactOneLine(item.at).slice(0, 80),
     };
   }).filter((entry) => entry.code).slice(-20);
+}
+
+function normalizeExecutionAuthoritySummary(value) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const resolution = source.approvalResolution && typeof source.approvalResolution === "object"
+    ? source.approvalResolution
+    : {};
+  const out = {
+    configured: source.configured === true,
+    source: compactOneLine(source.source).slice(0, 80),
+    version: compactOneLine(source.version).slice(0, 80),
+    taskCardId: compactOneLine(source.taskCardId).slice(0, 180),
+    workflowId: compactOneLine(source.workflowId).slice(0, 220),
+    targetThreadId: compactOneLine(source.targetThreadId).slice(0, 220),
+    targetWorkspaceId: compactOneLine(source.targetWorkspaceId).slice(0, 260),
+    scopeClasses: normalizeStringList(source.scopeClasses, [], 12),
+    networkScope: normalizeStringList(source.networkScope, [], 12),
+    expiresAtPresent: source.expiresAtPresent === true,
+    expired: source.expired === true,
+    approvalResolution: {
+      status: compactOneLine(resolution.status || "configured").slice(0, 80),
+      issueCodes: boundedIssueCodes(resolution.issueCodes),
+    },
+  };
+  for (const key of Object.keys(out)) {
+    if (Array.isArray(out[key]) && out[key].length === 0) delete out[key];
+    else if (out[key] == null || out[key] === "" || out[key] === false) delete out[key];
+  }
+  if (out.approvalResolution && !out.approvalResolution.issueCodes.length) delete out.approvalResolution.issueCodes;
+  if (out.approvalResolution && !out.approvalResolution.status) delete out.approvalResolution;
+  return out.configured ? out : null;
 }
 
 function normalizeConnectionMode(value) {
@@ -295,6 +327,7 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     loaded.diagnostics = normalizeDiagnostics(loaded.diagnostics);
     loaded.queuedTerminalReturns = Array.isArray(loaded.queuedTerminalReturns) ? loaded.queuedTerminalReturns.slice(-20) : [];
     loaded.executedIdempotencyKeys = normalizeStringList(loaded.executedIdempotencyKeys, [], 200);
+    loaded.lastExecutionAuthority = normalizeExecutionAuthoritySummary(loaded.lastExecutionAuthority);
     return loaded;
   }
 
@@ -316,6 +349,7 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     next.lastLocalTurnId = compactOneLine(next.lastLocalTurnId).slice(0, 180);
     next.lastReturnStatus = compactOneLine(next.lastReturnStatus).slice(0, 80);
     next.lastExecutionBridgeStatus = compactOneLine(next.lastExecutionBridgeStatus).slice(0, 120);
+    next.lastExecutionAuthority = normalizeExecutionAuthoritySummary(next.lastExecutionAuthority);
     next.pairingRequestId = compactOneLine(next.pairingRequestId).slice(0, 180);
     next.pairingRequestedAt = compactOneLine(next.pairingRequestedAt).slice(0, 80);
     next.pairingApprovedAt = compactOneLine(next.pairingApprovedAt).slice(0, 80);
@@ -821,6 +855,7 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
       lastLocalTurnId: state.lastLocalTurnId || "",
       lastReturnStatus: state.lastReturnStatus || "",
       lastExecutionBridgeStatus: state.lastExecutionBridgeStatus || "",
+      lastExecutionAuthority: normalizeExecutionAuthoritySummary(state.lastExecutionAuthority),
       lastRegisterAt: state.lastRegisterAt || "",
       lastConnectionCheckAt: state.lastConnectionCheckAt || "",
       issueCodes: boundedIssueCodes(state.issueCodes),

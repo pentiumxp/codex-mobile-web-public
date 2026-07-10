@@ -9,6 +9,10 @@ const { test } = require("node:test");
 const {
   createRemoteManagedWorkspaceLocalExecutionService,
 } = require("../services/remote-managed-workspaces/remote-managed-workspace-local-execution-service");
+const {
+  authorityDecisionForServerRequest,
+  summarizeExecutionAuthority,
+} = require("../services/task-cards/task-card-execution-authority-service");
 
 function makeProject() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-local-exec-"));
@@ -22,6 +26,7 @@ test("remote managed workspace local execution starts Codex thread, waits for co
   const { root, projectRoot } = makeProject();
   const requests = [];
   const heartbeats = [];
+  const registeredAuthorities = [];
   let pollCount = 0;
   let nowMs = Date.parse("2026-07-08T00:00:00.000Z");
   try {
@@ -64,6 +69,10 @@ test("remote managed workspace local execution starts Codex thread, waits for co
       rememberStartedThread: () => true,
       persistThreadTitleToSessionIndex: () => true,
       tryUpdateThreadTitle: async () => true,
+      registerExecutionAuthority: async (authority) => {
+        registeredAuthorities.push(authority);
+        return summarizeExecutionAuthority(authority, nowMs);
+      },
       completionPollIntervalMs: 10,
       completionTimeoutMs: 50,
       now: () => nowMs,
@@ -98,6 +107,63 @@ test("remote managed workspace local execution starts Codex thread, waits for co
     assert.equal(terminal.metadata.localThreadId, "local-thread-1");
     assert.equal(terminal.metadata.localTurnId, "local-turn-1");
     assert.equal(terminal.metadata.turnStatus, "completed");
+    assert.equal(terminal.metadata.executionAuthority.configured, true);
+    assert.equal(terminal.metadata.executionAuthority.source, "remote_managed_workspace");
+    assert.equal(terminal.metadata.executionAuthority.version, "task-card-execution-authority-v1");
+    assert.deepEqual(terminal.metadata.executionAuthority.scopeClasses, [
+      "workspace_read",
+      "workspace_test",
+      "workspace_build",
+      "localhost_health_probe",
+    ]);
+    assert.deepEqual(terminal.metadata.executionAuthority.networkScope, ["localhost"]);
+    assert.equal(terminal.metadata.executionAuthority.expiresAtPresent, true);
+    assert.equal(terminal.metadata.executionAuthority.approvalResolution.status, "configured");
+    assert.equal(registeredAuthorities.length, 1);
+    assert.equal(registeredAuthorities[0].taskCardId, "ttc_remote_local");
+    assert.equal(registeredAuthorities[0].targetThreadId, "local-thread-1");
+    assert.equal(registeredAuthorities[0].turnId, "local-turn-1");
+    assert.equal(registeredAuthorities[0].targetWorkspaceId, "rmw_local");
+    assert.equal(registeredAuthorities[0].workspaceRoot, projectRoot);
+    assert.equal(
+      authorityDecisionForServerRequest(registeredAuthorities[0], {
+        id: "approval-rmw",
+        method: "item/commandExecution/requestApproval",
+        params: {
+          threadId: "local-thread-1",
+          turnId: "local-turn-1",
+          cwd: projectRoot,
+          command: "git status --short",
+        },
+      }, { now: nowMs }).action,
+      "allow",
+    );
+    assert.equal(
+      authorityDecisionForServerRequest(registeredAuthorities[0], {
+        id: "approval-rmw-outside",
+        method: "item/commandExecution/requestApproval",
+        params: {
+          threadId: "local-thread-1",
+          turnId: "local-turn-1",
+          cwd: path.dirname(root),
+          command: "git status --short",
+        },
+      }, { now: nowMs }).reason,
+      "cwd_outside_authority_workspace",
+    );
+    assert.equal(
+      authorityDecisionForServerRequest(registeredAuthorities[0], {
+        id: "approval-rmw-danger",
+        method: "item/commandExecution/requestApproval",
+        params: {
+          threadId: "local-thread-1",
+          turnId: "local-turn-1",
+          cwd: projectRoot,
+          command: "rm -rf tmp",
+        },
+      }, { now: nowMs }).reason,
+      "destructive_command",
+    );
     assert.equal(heartbeats.some((entry) => entry.started === true), true);
     assert.equal(heartbeats.some((entry) => entry.status === "working" && entry.localThreadId === "local-thread-1"), true);
     assert.equal(requests[0].method, "thread/start");

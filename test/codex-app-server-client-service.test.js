@@ -17,12 +17,95 @@ const {
   parseTcpEndpoint,
   safeJsonByteLength,
 } = canonicalCodexAppServerClientService;
+const {
+  createAppServerRequestPolicyService,
+} = require("../services/runtime/app-server-request-policy-service");
 
 test("app-server client adapter re-exports the canonical runtime service boundary", () => {
   assert.equal(
     adapterCodexAppServerClientService.createCodexAppServerClient,
     canonicalCodexAppServerClientService.createCodexAppServerClient,
   );
+});
+
+test("app-server client consumes task-card execution authority before manual approval broadcast", () => {
+  const sent = [];
+  const broadcasts = [];
+  const policy = createAppServerRequestPolicyService();
+  const client = createCodexAppServerClient({
+    SERVER_REQUEST_METHODS: policy.SERVER_REQUEST_METHODS,
+    publicServerRequest: policy.publicServerRequest,
+    serverRequestResponsePayload: policy.serverRequestResponsePayload,
+    taskCardExecutionAuthorityDecisionForRequest: () => ({
+      action: "allow",
+      responseDecision: "allow_once",
+      reason: "localhost_health_probe",
+      scopeClass: "localhost_health_probe",
+      authority: {
+        taskCardId: "ttc_authority",
+        workflowId: "twf_authority",
+      },
+    }),
+    taskCardExecutionAuthorityLogPayload: () => ({ action: "allow", reason: "localhost_health_probe" }),
+    workspaceSourceWriteGuardDecisionForRequest: () => null,
+    broadcast: (event) => broadcasts.push(event),
+  });
+  client.ready = true;
+  client.ws = {
+    readyState: 1,
+    send(payload) {
+      sent.push(JSON.parse(payload));
+    },
+  };
+
+  client.handleServerRequest({
+    jsonrpc: "2.0",
+    id: "approval-1",
+    method: "item/commandExecution/requestApproval",
+    params: {
+      threadId: "thread-target",
+      turnId: "turn-target",
+      cwd: "/workspace/project",
+      command: "curl -fsS http://127.0.0.1:8787/api/readyz",
+    },
+  });
+
+  assert.deepEqual(sent, [{
+    jsonrpc: "2.0",
+    id: "approval-1",
+    result: { decision: "accept" },
+  }]);
+  assert.equal(client.pendingServerRequests().length, 0);
+  assert.equal(broadcasts.some((event) => event.type === "serverRequest"), false);
+});
+
+test("app-server client keeps ordinary approvals manual when no task-card authority matches", () => {
+  const broadcasts = [];
+  const policy = createAppServerRequestPolicyService();
+  const client = createCodexAppServerClient({
+    SERVER_REQUEST_METHODS: policy.SERVER_REQUEST_METHODS,
+    publicServerRequest: policy.publicServerRequest,
+    serverRequestResponsePayload: policy.serverRequestResponsePayload,
+    taskCardExecutionAuthorityDecisionForRequest: () => null,
+    workspaceSourceWriteGuardDecisionForRequest: () => null,
+    codeGraphReadOnlyMcpElicitationDecision: () => null,
+    broadcast: (event) => broadcasts.push(event),
+  });
+
+  client.handleServerRequest({
+    jsonrpc: "2.0",
+    id: "approval-ordinary",
+    method: "item/commandExecution/requestApproval",
+    params: {
+      threadId: "thread-ordinary",
+      turnId: "turn-ordinary",
+      cwd: "/workspace/project",
+      command: "git status",
+    },
+  });
+
+  assert.equal(client.pendingServerRequests().length, 1);
+  assert.equal(broadcasts.filter((event) => event.type === "serverRequest").length, 1);
 });
 
 test("app-server client refreshes rate limits from the latest live getter", async () => {
