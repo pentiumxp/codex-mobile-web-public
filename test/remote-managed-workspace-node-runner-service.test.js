@@ -824,11 +824,11 @@ test("remote node runner fails closed when recreated pairing request has no id",
   }
 });
 
-test("remote node runner does not clear credential for pairing precondition with active request", async () => {
+test("remote node runner does not clear credential for pairing precondition with active pending request", async () => {
   const { root, service } = makeSettings();
   service.updateConnectionState({
     connectionStatus: "auth_failed",
-    pairingStatus: "approved",
+    pairingStatus: "pending_approval",
     pairingRequestId: "rmw_pair_active_request",
   });
   const calls = [];
@@ -1000,6 +1000,119 @@ test("remote node runner retires stale paired request without credential after i
     assert.equal(fs.readFileSync(credentialFile, "utf8").trim(), "fresh-rekey-credential");
     assert.equal(calls.some((entry) => entry[0] === "register" && entry[2] === "fresh-rekey-credential"), true);
     assert.doesNotMatch(JSON.stringify(recovered.status), /consumed-scoped-credential|fresh-rekey-credential/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote node runner precisely recovers consumed approved request after pairing approval precondition", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-runner-consumed-request-recovery-"));
+  const projectRoot = path.join(root, "project");
+  fs.mkdirSync(projectRoot, { recursive: true });
+  const credentialFile = path.join(root, "secret", "scoped-credential");
+  const service = createRemoteManagedWorkspaceSettingsService({
+    fs,
+    path,
+    settingsFile: path.join(root, "settings.json"),
+    stateFile: path.join(root, "state.json"),
+    enrollmentTokenFile: credentialFile,
+    now: () => new Date("2026-07-08T00:00:00.000Z"),
+  });
+  service.enableWorkspace({
+    centralUrl: "http://127.0.0.1:9999",
+    workspace: {
+      cwd: projectRoot,
+      label: "Consumed Request Recovery",
+    },
+  });
+  service.applyPairingResult({
+    pairingRequest: {
+      requestId: "rmw_pair_consumed_precondition",
+      status: "approved",
+      scopedCredential: "consumed-precondition-credential",
+    },
+  });
+  service.updateConnectionState({
+    connectionStatus: "auth_failed",
+    pairingStatus: "approved",
+    issueCode: "remote_managed_workspace_pairing_approval_required",
+  });
+  const calls = [];
+  let failRegister = true;
+  let freshRequestApproved = false;
+  const nodeClient = Object.assign(fakeNodeClient([], calls), {
+    register: async (config) => {
+      calls.push(["register", config.workspaceId, config.enrollmentToken]);
+      if (failRegister) {
+        const err = new Error("remote_managed_workspace_pairing_approval_required");
+        err.code = "remote_managed_workspace_pairing_approval_required";
+        err.statusCode = 403;
+        throw err;
+      }
+      assert.equal(config.enrollmentToken, "fresh-consumed-recovery-credential");
+      return { result: { ok: true } };
+    },
+    requestPairing: async () => {
+      calls.push(["requestPairing"]);
+      return { result: { pairingRequest: { requestId: "rmw_pair_consumed_rekey", status: "pending_approval" } } };
+    },
+    pollPairingStatus: async (_config, requestId) => {
+      calls.push(["pollPairingStatus", requestId]);
+      return {
+        result: {
+          pairingRequest: freshRequestApproved
+            ? { requestId, status: "approved", scopedCredential: "fresh-consumed-recovery-credential" }
+            : { requestId, status: "pending_approval" },
+        },
+      };
+    },
+    nodeHeartbeat: async (config) => {
+      calls.push(["nodeHeartbeat", config.enrollmentToken]);
+      assert.equal(config.enrollmentToken, "fresh-consumed-recovery-credential");
+      return { ok: true };
+    },
+    pollTaskCards: async (config) => {
+      calls.push(["pollTaskCards", config.enrollmentToken]);
+      assert.equal(config.enrollmentToken, "fresh-consumed-recovery-credential");
+      return { ok: true, taskCards: [], count: 0 };
+    },
+  });
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: nodeClient,
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+
+    const recovered = await runner.runOnce({ force: true, suppressErrors: true });
+    assert.equal(recovered.ok, false);
+    assert.equal(recovered.status.pairingStatus, "requesting_pairing");
+    assert.equal(recovered.status.pairingRequestId, "");
+    assert.equal(recovered.status.scopedCredentialConfigured, false);
+    assert.equal(recovered.status.issueCodes.includes("remote_managed_workspace_consumed_pairing_request_recovered"), true);
+    assert.equal(fs.existsSync(credentialFile), false);
+    assert.equal(calls.filter((entry) => entry[0] === "requestPairing").length, 0);
+
+    const pending = await runner.runOnce({ force: true });
+    assert.equal(pending.skipped, "pending_approval");
+    assert.equal(pending.status.pairingRequestId, "rmw_pair_consumed_rekey");
+    assert.equal(calls.filter((entry) => entry[0] === "requestPairing").length, 1);
+
+    const stillPending = await runner.runOnce({ force: true });
+    assert.equal(stillPending.skipped, "pending_approval");
+    assert.equal(calls.filter((entry) => entry[0] === "requestPairing").length, 1);
+    assert.equal(calls.some((entry) => entry[0] === "pollPairingStatus" && entry[1] === "rmw_pair_consumed_rekey"), true);
+
+    freshRequestApproved = true;
+    failRegister = false;
+    const connected = await runner.runOnce({ force: true });
+    assert.equal(connected.ok, true);
+    assert.equal(connected.status.connectionStatus, "connected");
+    assert.equal(connected.status.pairingStatus, "connected");
+    assert.equal(connected.status.scopedCredentialConfigured, true);
+    assert.equal(fs.readFileSync(credentialFile, "utf8").trim(), "fresh-consumed-recovery-credential");
+    assert.equal(calls.some((entry) => entry[0] === "register" && entry[2] === "fresh-consumed-recovery-credential"), true);
+    assert.doesNotMatch(JSON.stringify(connected.status), /consumed-precondition-credential|fresh-consumed-recovery-credential/);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

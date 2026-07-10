@@ -840,6 +840,68 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     return writeState(next);
   }
 
+  function recoverConsumedPairingRequestForRecovery(options = {}) {
+    const current = readState();
+    const expectedRequestId = compactOneLine(options.pairingRequestId || options.expectedPairingRequestId || "").slice(0, 180);
+    const failedCredential = compactOneLine(options.failedCredential);
+    const issueCode = compactOneLine(options.issueCode || "remote_managed_workspace_pairing_approval_required")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "_")
+      .slice(0, 120);
+    const reject = (code) => Object.assign({}, current, {
+      consumedPairingRequestRecoveryIgnored: true,
+      consumedPairingRequestRecoveryIssueCode: code,
+    });
+    if (issueCode !== "remote_managed_workspace_pairing_approval_required") {
+      return reject("remote_managed_workspace_consumed_request_recovery_issue_mismatch");
+    }
+    const pairingStatus = normalizePairingStatus(options.pairingStatus || current.pairingStatus);
+    if (pairingStatus !== "approved" && pairingStatus !== "connected") {
+      return reject("remote_managed_workspace_consumed_request_recovery_pairing_status_mismatch");
+    }
+    if (normalizeStatus(options.connectionStatus || current.connectionStatus) !== "auth_failed") {
+      return reject("remote_managed_workspace_consumed_request_recovery_connection_status_mismatch");
+    }
+    if (!expectedRequestId || !current.pairingRequestId || current.pairingRequestId !== expectedRequestId) {
+      return reject("remote_managed_workspace_consumed_request_recovery_request_id_mismatch");
+    }
+    if (!failedCredential) {
+      return reject("remote_managed_workspace_consumed_request_recovery_failed_credential_missing");
+    }
+    const fileToken = enrollmentTokenFile ? compactOneLine(readSecretFile(enrollmentTokenFile)) : "";
+    if (!fileToken) {
+      return reject("remote_managed_workspace_consumed_request_recovery_credential_missing");
+    }
+    if (fileToken !== failedCredential) {
+      return reject("remote_managed_workspace_consumed_request_recovery_credential_mismatch");
+    }
+    clearEnrollmentToken();
+    const timestamp = nowIso(now);
+    const next = Object.assign({}, current, {
+      connectionStatus: "auth_failed",
+      pairingStatus: "requesting_pairing",
+      pairingRequestId: "",
+      pairingRequestedAt: "",
+      pairingApprovedAt: "",
+      pairingRejectedAt: "",
+      pairingRejectionReason: "",
+      lastPairingCheckAt: timestamp,
+      consecutiveFailures: 0,
+      nextRetryAt: "",
+    });
+    next.issueCodes = boundedIssueCodes([
+      ...(current.issueCodes || []),
+      issueCode,
+      "remote_managed_workspace_consumed_pairing_request_recovered",
+    ]);
+    next.diagnostics = normalizeDiagnostics([...(current.diagnostics || []), {
+      code: "remote_managed_workspace_consumed_pairing_request_recovered",
+      status: "auth_failed",
+      at: timestamp,
+    }]);
+    return Object.assign(writeState(next), { consumedPairingRequestRecovered: true });
+  }
+
   function rememberIdempotencyKey(key) {
     const text = compactOneLine(key);
     if (!text) return readState();
@@ -941,6 +1003,7 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     readEnrollmentToken,
     readSettings,
     readState,
+    recoverConsumedPairingRequestForRecovery,
     rememberIdempotencyKey,
     replaceQueuedTerminalReturns,
     retireStalePairingRequestForRecovery,

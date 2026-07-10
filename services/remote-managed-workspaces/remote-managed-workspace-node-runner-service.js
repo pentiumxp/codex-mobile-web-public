@@ -194,7 +194,18 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
     const connectionStatus = compactLower(startStatus.connectionStatus);
     const hasCredential = startStatus.scopedCredentialConfigured === true || startStatus.enrollmentTokenConfigured === true;
     if (!hasCredential) return null;
-    if (compactOneLine(startStatus.pairingRequestId)) return null;
+    const pairingRequestId = compactOneLine(startStatus.pairingRequestId).slice(0, 180);
+    if (pairingRequestId) {
+      if ((pairingStatus !== "approved" && pairingStatus !== "connected") || connectionStatus !== "auth_failed") return null;
+      if (typeof settingsService.recoverConsumedPairingRequestForRecovery !== "function") return null;
+      return settingsService.recoverConsumedPairingRequestForRecovery({
+        issueCode: PAIRING_APPROVAL_REQUIRED_CODE,
+        pairingRequestId,
+        failedCredential,
+        pairingStatus,
+        connectionStatus,
+      });
+    }
     if (pairingStatus !== "approved" || connectionStatus !== "auth_failed") return null;
     return settingsService.clearScopedCredentialForRecovery({
       issueCode: PAIRING_APPROVAL_REQUIRED_CODE,

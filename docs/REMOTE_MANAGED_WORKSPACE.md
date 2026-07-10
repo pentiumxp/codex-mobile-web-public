@@ -100,6 +100,28 @@ AI exposes a persistent session endpoint, Codex Mobile reports
 `effectiveConnectionMode=http_polling` and uses HTTP polling fallback. The
 fallback is still remote-to-central outbound only.
 
+## Pairing Recovery
+
+Codex Mobile may only clear a consumed approved pairing request through the
+internal compare-protected recovery action owned by
+`remote-managed-workspace-settings-service.js`. The runner may invoke that
+action after Home AI returns `remote_managed_workspace_pairing_approval_required`
+for a trusted node credential only when the bounded start-of-run evidence shows
+`connectionStatus=auth_failed`, `pairingStatus=approved|connected`, a scoped
+credential is configured, and a local `pairingRequestId` is present. The
+settings action then compares the current local request id and current local
+secret entry with the failed request/credential values before mutating state.
+
+On an exact match, Codex Mobile clears only the matching stale scoped credential
+and the local old request binding, records
+`remote_managed_workspace_consumed_pairing_request_recovered`, preserves the
+workspace/node/project identity, and transitions to `requesting_pairing`. The
+next runner cycle creates one fresh URL-only pairing request through the normal
+request path; it does not auto-approve and does not delete Home AI's old central
+request history. If the request id, credential, issue code, pairing status, or
+auth-failed evidence does not match, recovery fails closed with bounded metadata
+and leaves the current credential/request untouched.
+
 Task-card relay is outbound from the remote node to Home AI. `ack`, heartbeat,
 and terminal return are per task card, not per Worker lane. Terminal return
 payloads are normalized to `zh-CN` for Owner-visible receipts.

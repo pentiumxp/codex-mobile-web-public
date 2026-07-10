@@ -493,3 +493,140 @@ test("remote managed workspace settings ignore external credential fallback afte
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("remote managed workspace settings precisely recovers consumed approved pairing request", () => {
+  const { root, projectRoot, service } = makeTempService();
+  try {
+    service.enableWorkspace({
+      centralUrl: "http://127.0.0.1:8797",
+      workspace: { cwd: projectRoot, label: "Consumed Recovery" },
+    });
+    service.applyPairingResult({
+      pairingRequest: {
+        requestId: "rmw_pair_consumed",
+        status: "approved",
+        scopedCredential: "consumed-scoped-credential",
+      },
+    });
+    service.updateConnectionState({
+      connectionStatus: "auth_failed",
+      pairingStatus: "approved",
+      issueCode: "remote_managed_workspace_pairing_approval_required",
+    });
+
+    const recovered = service.recoverConsumedPairingRequestForRecovery({
+      issueCode: "remote_managed_workspace_pairing_approval_required",
+      pairingRequestId: "rmw_pair_consumed",
+      failedCredential: "consumed-scoped-credential",
+    });
+    const publicStatus = service.publicSettings();
+    assert.equal(recovered.consumedPairingRequestRecovered, true);
+    assert.equal(publicStatus.pairingStatus, "requesting_pairing");
+    assert.equal(publicStatus.pairingRequestId, "");
+    assert.equal(publicStatus.scopedCredentialConfigured, false);
+    assert.equal(publicStatus.issueCodes.includes("remote_managed_workspace_consumed_pairing_request_recovered"), true);
+    assert.throws(
+      () => service.configForClient({ requireEnabled: true, requireToken: true }),
+      /scoped_node_credential_unavailable/,
+    );
+    assert.doesNotMatch(JSON.stringify(publicStatus), /consumed-scoped-credential/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote managed workspace settings blocks consumed recovery on request or credential race", () => {
+  const { root, projectRoot, service } = makeTempService();
+  try {
+    service.enableWorkspace({
+      centralUrl: "http://127.0.0.1:8797",
+      workspace: { cwd: projectRoot, label: "Consumed Recovery Race" },
+    });
+    service.applyPairingResult({
+      pairing: {
+        requestId: "rmw_pair_newer",
+        status: "approved",
+        scopedCredential: "fresh-scoped-credential",
+      },
+    });
+    service.updateConnectionState({
+      connectionStatus: "auth_failed",
+      pairingStatus: "approved",
+      issueCode: "remote_managed_workspace_pairing_approval_required",
+    });
+
+    const requestMismatch = service.recoverConsumedPairingRequestForRecovery({
+      issueCode: "remote_managed_workspace_pairing_approval_required",
+      pairingRequestId: "rmw_pair_old",
+      failedCredential: "fresh-scoped-credential",
+    });
+    assert.equal(requestMismatch.consumedPairingRequestRecoveryIgnored, true);
+    assert.equal(
+      requestMismatch.consumedPairingRequestRecoveryIssueCode,
+      "remote_managed_workspace_consumed_request_recovery_request_id_mismatch",
+    );
+    assert.equal(service.publicSettings().pairingRequestId, "rmw_pair_newer");
+
+    const credentialMismatch = service.recoverConsumedPairingRequestForRecovery({
+      issueCode: "remote_managed_workspace_pairing_approval_required",
+      pairingRequestId: "rmw_pair_newer",
+      failedCredential: "old-scoped-credential",
+    });
+    assert.equal(credentialMismatch.consumedPairingRequestRecoveryIgnored, true);
+    assert.equal(
+      credentialMismatch.consumedPairingRequestRecoveryIssueCode,
+      "remote_managed_workspace_consumed_request_recovery_credential_mismatch",
+    );
+    assert.equal(service.configForClient({ requireEnabled: true, requireToken: true }).scopedCredential, "fresh-scoped-credential");
+    assert.doesNotMatch(JSON.stringify(service.publicSettings()), /fresh-scoped-credential|old-scoped-credential/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote managed workspace settings does not clear active pending or generic auth recovery shapes", () => {
+  const { root, projectRoot, service } = makeTempService();
+  try {
+    service.enableWorkspace({
+      centralUrl: "http://127.0.0.1:8797",
+      workspace: { cwd: projectRoot, label: "Pending Recovery Guard" },
+    });
+    service.applyPairingResult({
+      pairing: {
+        requestId: "rmw_pair_pending",
+        status: "pending_approval",
+      },
+    });
+    service.saveSettings({ enrollmentToken: "pending-credential" });
+    service.updateConnectionState({
+      connectionStatus: "auth_failed",
+      issueCode: "remote_managed_workspace_pairing_approval_required",
+    });
+
+    const pending = service.recoverConsumedPairingRequestForRecovery({
+      issueCode: "remote_managed_workspace_pairing_approval_required",
+      pairingRequestId: "rmw_pair_pending",
+      failedCredential: "pending-credential",
+    });
+    assert.equal(pending.consumedPairingRequestRecoveryIgnored, true);
+    assert.equal(
+      pending.consumedPairingRequestRecoveryIssueCode,
+      "remote_managed_workspace_consumed_request_recovery_pairing_status_mismatch",
+    );
+    const generic = service.recoverConsumedPairingRequestForRecovery({
+      issueCode: "remote_managed_workspace_scoped_node_credential_invalid",
+      pairingRequestId: "rmw_pair_pending",
+      failedCredential: "pending-credential",
+    });
+    assert.equal(generic.consumedPairingRequestRecoveryIgnored, true);
+    assert.equal(
+      generic.consumedPairingRequestRecoveryIssueCode,
+      "remote_managed_workspace_consumed_request_recovery_issue_mismatch",
+    );
+    assert.equal(service.publicSettings().pairingRequestId, "rmw_pair_pending");
+    assert.equal(service.configForClient({ requireEnabled: true, requireToken: true }).scopedCredential, "pending-credential");
+    assert.doesNotMatch(JSON.stringify(service.publicSettings()), /pending-credential/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});

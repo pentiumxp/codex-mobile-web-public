@@ -131,6 +131,75 @@ function assertNoRawTokenMaterial(value, token) {
   }
 }
 
+async function runConsumedPairingRecoverySlice(baseRoot) {
+  const root = path.join(baseRoot, "consumed-pairing-recovery");
+  const projectRoot = path.join(root, "project");
+  fs.mkdirSync(projectRoot, { recursive: true });
+  const credentialFile = path.join(root, "secret", "scoped-credential");
+  const settingsService = createRemoteManagedWorkspaceSettingsService({
+    fs,
+    path,
+    settingsFile: path.join(root, "settings.json"),
+    stateFile: path.join(root, "state.json"),
+    enrollmentTokenFile: credentialFile,
+  });
+  settingsService.enableWorkspace({
+    centralUrl: "http://127.0.0.1:1",
+    workspace: { cwd: projectRoot, label: "Consumed Pairing Recovery" },
+  });
+  settingsService.applyPairingResult({
+    pairingRequest: {
+      requestId: "rmw_pair_consumed_harness",
+      status: "approved",
+      scopedCredential: "consumed-harness-credential",
+    },
+  });
+  settingsService.updateConnectionState({
+    connectionStatus: "auth_failed",
+    pairingStatus: "approved",
+    issueCode: "remote_managed_workspace_pairing_approval_required",
+  });
+  const calls = [];
+  const nodeClientService = {
+    register: async (config) => {
+      calls.push(["register", config.workspaceId]);
+      const err = new Error("remote_managed_workspace_pairing_approval_required");
+      err.code = "remote_managed_workspace_pairing_approval_required";
+      err.statusCode = 403;
+      throw err;
+    },
+    requestPairing: async () => {
+      calls.push(["requestPairing"]);
+      return { result: { pairingRequest: { requestId: "rmw_pair_consumed_harness_fresh", status: "pending_approval" } } };
+    },
+    pollPairingStatus: async (_config, requestId) => {
+      calls.push(["pollPairingStatus", requestId]);
+      return { result: { pairingRequest: { requestId, status: "pending_approval" } } };
+    },
+  };
+  const runner = createRemoteManagedWorkspaceNodeRunnerService({
+    settingsService,
+    nodeClientService,
+  });
+  const recovered = await runner.runOnce({ force: true, suppressErrors: true });
+  const pending = await runner.runOnce({ force: true });
+  const stillPending = await runner.runOnce({ force: true });
+  const status = settingsService.publicSettings();
+  assertNoRawTokenMaterial(status, "consumed-harness-credential");
+  return {
+    ok: recovered.ok === false
+      && recovered.status.pairingRequestId === ""
+      && pending.status.pairingRequestId === "rmw_pair_consumed_harness_fresh"
+      && stillPending.status.pairingRequestId === "rmw_pair_consumed_harness_fresh",
+    recoveredIssuePresent: recovered.status.issueCodes.includes("remote_managed_workspace_consumed_pairing_request_recovered"),
+    scopedCredentialCleared: recovered.status.scopedCredentialConfigured === false && !fs.existsSync(credentialFile),
+    oldRequestCleared: recovered.status.pairingRequestId === "",
+    freshRequestCreated: pending.status.pairingRequestId === "rmw_pair_consumed_harness_fresh",
+    duplicatePostSuppressed: calls.filter((entry) => entry[0] === "requestPairing").length === 1,
+    pendingPollUsed: calls.some((entry) => entry[0] === "pollPairingStatus" && entry[1] === "rmw_pair_consumed_harness_fresh"),
+  };
+}
+
 async function runRemoteManagedWorkspaceHarness() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "codex-mobile-rmw-"));
   const projectRoot = path.join(root, "remote-project");
@@ -315,6 +384,8 @@ async function runRemoteManagedWorkspaceHarness() {
       nextStep: "route deploy separately",
     });
 
+    const consumedRecovery = await runConsumedPairingRecoverySlice(root);
+    if (!consumedRecovery.ok) throw new Error("remote_managed_workspace_consumed_pairing_recovery_harness_failed");
     const snapshot = homeAiCentralService.snapshot();
     assertNoForbiddenPayloadClasses(snapshot, "harness_snapshot");
     assertNoRawTokenMaterial(savedSettings, "rmw_scoped_");
@@ -361,6 +432,9 @@ async function runRemoteManagedWorkspaceHarness() {
         && settingsService.publicSettings().lastExecutionAuthority.approvalResolution
         && settingsService.publicSettings().lastExecutionAuthority.approvalResolution.status || "",
       commandExecutionCount,
+      consumedPairingRecoveryOk: consumedRecovery.ok === true,
+      consumedPairingRecoveryFreshRequestCreated: consumedRecovery.freshRequestCreated === true,
+      consumedPairingRecoveryDuplicatePostSuppressed: consumedRecovery.duplicatePostSuppressed === true,
       requiredCommandExecutionOk: settingsService.publicSettings().lastExecutionResult
         && settingsService.publicSettings().lastExecutionResult.ok === true,
       requiredCommandExecutionCount: settingsService.publicSettings().lastExecutionResult
@@ -397,5 +471,6 @@ if (require.main === module) {
 }
 
 module.exports = {
+  runConsumedPairingRecoverySlice,
   runRemoteManagedWorkspaceHarness,
 };

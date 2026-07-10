@@ -33,6 +33,9 @@ const {
   handleMessage,
 } = require("./codex-mobile-mcp-server");
 const {
+  runConsumedPairingRecoverySlice,
+} = require("./codex-mobile-remote-managed-workspace-harness");
+const {
   authorityDecisionForServerRequest,
   summarizeExecutionAuthority,
 } = require("../services/task-cards/task-card-execution-authority-service");
@@ -499,6 +502,8 @@ async function runRmwControlE2eHarness() {
       method: "tools/call",
       params: { name: "rmw_list_workspaces", arguments: {} },
     });
+    const consumedRecovery = await runConsumedPairingRecoverySlice(root);
+    if (!consumedRecovery.ok) throw new Error("remote_managed_workspace_consumed_pairing_recovery_harness_failed");
     const combined = { listed: listed.structuredContent, dispatched: dispatched.structuredContent, read: read.structuredContent };
     assertNoForbiddenPayloadClasses(combined, "rmw_control_e2e_result");
     assertNoRawMaterial(combined, [fs.readFileSync(controlCredentialFile, "utf8").trim()]);
@@ -522,6 +527,9 @@ async function runRmwControlE2eHarness() {
       readRetryOfTaskCardId: read.structuredContent.card.retryOfTaskCardId,
       readTerminalSummaryPresent: Boolean(read.structuredContent.card.terminalSummary),
       commandExecutionCount,
+      consumedPairingRecoveryOk: consumedRecovery.ok === true,
+      consumedPairingRecoveryFreshRequestCreated: consumedRecovery.freshRequestCreated === true,
+      consumedPairingRecoveryDuplicatePostSuppressed: consumedRecovery.duplicatePostSuppressed === true,
       manualRequestApprovalCount,
       pendingApprovalCount,
       requiredCommandExecutionOk: settingsService.publicSettings().lastExecutionResult
