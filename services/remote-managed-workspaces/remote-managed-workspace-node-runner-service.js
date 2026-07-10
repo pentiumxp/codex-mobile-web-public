@@ -4,6 +4,24 @@ function compactOneLine(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+const SCOPED_NODE_CREDENTIAL_INVALID_CODE = "remote_managed_workspace_scoped_node_credential_invalid";
+const SCOPED_NODE_CREDENTIAL_INVALID_ALIASES = new Set([
+  SCOPED_NODE_CREDENTIAL_INVALID_CODE,
+  "remote_managed_workspace_scoped_node_credential_is_invalid",
+]);
+const SCOPED_NODE_CREDENTIAL_INVALID_MESSAGE = "remote managed workspace scoped node credential is invalid";
+
+function compactLower(value) {
+  return compactOneLine(value).toLowerCase();
+}
+
+function normalizeScopedCredentialInvalidErrorCode(value) {
+  const lower = compactLower(value);
+  if (SCOPED_NODE_CREDENTIAL_INVALID_ALIASES.has(lower)) return SCOPED_NODE_CREDENTIAL_INVALID_CODE;
+  if (lower === SCOPED_NODE_CREDENTIAL_INVALID_MESSAGE) return SCOPED_NODE_CREDENTIAL_INVALID_CODE;
+  return compactOneLine(value);
+}
+
 function nowIso(now) {
   const value = typeof now === "function" ? now() : Date.now();
   const date = value instanceof Date ? value : new Date(value);
@@ -11,10 +29,8 @@ function nowIso(now) {
 }
 
 function errorCode(err) {
-  return compactOneLine(err && (err.code || err.message)) || "remote_managed_workspace_runner_error";
+  return normalizeScopedCredentialInvalidErrorCode(err && (err.code || err.message)) || "remote_managed_workspace_runner_error";
 }
-
-const SCOPED_NODE_CREDENTIAL_INVALID_CODE = "remote_managed_workspace_scoped_node_credential_invalid";
 
 function isInvalidScopedCredentialError(err) {
   const statusCode = Number(err && err.statusCode || 0);

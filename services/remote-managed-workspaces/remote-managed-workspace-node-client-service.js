@@ -10,10 +10,41 @@ function compactOneLine(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function errorWithStatus(code, statusCode = 400) {
+const SCOPED_NODE_CREDENTIAL_INVALID_CODE = "remote_managed_workspace_scoped_node_credential_invalid";
+const SCOPED_NODE_CREDENTIAL_INVALID_ALIASES = new Set([
+  SCOPED_NODE_CREDENTIAL_INVALID_CODE,
+  "remote_managed_workspace_scoped_node_credential_is_invalid",
+]);
+const SCOPED_NODE_CREDENTIAL_INVALID_MESSAGE = "remote managed workspace scoped node credential is invalid";
+
+function compactLower(value) {
+  return compactOneLine(value).toLowerCase();
+}
+
+function isAuthStatus(statusCode) {
+  return Number(statusCode || 0) === 401 || Number(statusCode || 0) === 403;
+}
+
+function normalizeRemoteManagedWorkspaceNodeErrorCode(code, options = {}) {
+  const text = compactOneLine(code);
+  const lower = text.toLowerCase();
+  if (SCOPED_NODE_CREDENTIAL_INVALID_ALIASES.has(lower)) return SCOPED_NODE_CREDENTIAL_INVALID_CODE;
+  if (isAuthStatus(options.statusCode)) {
+    const responseText = compactLower(options.responseText);
+    const payloadMessage = compactLower(options.payloadMessage);
+    if (responseText === SCOPED_NODE_CREDENTIAL_INVALID_MESSAGE || payloadMessage === SCOPED_NODE_CREDENTIAL_INVALID_MESSAGE) {
+      return SCOPED_NODE_CREDENTIAL_INVALID_CODE;
+    }
+  }
+  return text;
+}
+
+function errorWithStatus(code, statusCode = 400, metadata = {}) {
   const err = new Error(code);
   err.code = code;
   err.statusCode = statusCode;
+  if (metadata.originalCode && metadata.originalCode !== code) err.originalCode = metadata.originalCode;
+  if (metadata.parseErrorCode) err.parseErrorCode = metadata.parseErrorCode;
   return err;
 }
 
@@ -77,14 +108,30 @@ function validateProjectRoot(input = {}, dependencies = {}) {
   };
 }
 
-async function readJsonResponse(response) {
+async function readResponsePayload(response) {
   const text = await response.text();
-  if (!text) return {};
+  if (!text) return { payload: {}, rawText: "" };
   try {
-    return JSON.parse(text);
+    return { payload: JSON.parse(text), rawText: "" };
   } catch (_) {
-    throw errorWithStatus("remote_managed_workspace_response_not_json", response.status || 500);
+    return {
+      payload: {},
+      rawText: text,
+      parseErrorCode: "remote_managed_workspace_response_not_json",
+    };
   }
+}
+
+function errorCodeFromPayload(payload = {}) {
+  const directCandidates = [payload.error, payload.code, payload.issueCode, payload.errorCode]
+    .map((entry) => compactOneLine(entry))
+    .filter(Boolean);
+  const issueCodes = Array.isArray(payload.issueCodes) ? payload.issueCodes : [];
+  const issueCandidates = issueCodes.map((entry) => compactOneLine(entry)).filter(Boolean);
+  const invalidCandidate = [...directCandidates, ...issueCandidates]
+    .find((entry) => normalizeRemoteManagedWorkspaceNodeErrorCode(entry) === SCOPED_NODE_CREDENTIAL_INVALID_CODE);
+  if (invalidCandidate) return invalidCandidate;
+  return directCandidates[0] || issueCandidates[0] || "";
 }
 
 function defaultFetch() {
@@ -160,11 +207,19 @@ function createRemoteManagedWorkspaceNodeClientService(dependencies = {}) {
       headers,
       body: body == null ? undefined : JSON.stringify(body),
     });
-    const payload = await readJsonResponse(response);
+    const { payload, rawText, parseErrorCode } = await readResponsePayload(response);
     if (!response.ok) {
-      const code = compactOneLine(payload.error || payload.code || `remote_managed_workspace_http_${response.status}`);
-      throw errorWithStatus(code, response.status);
+      const originalCode = errorCodeFromPayload(payload)
+        || parseErrorCode
+        || `remote_managed_workspace_http_${response.status}`;
+      const code = normalizeRemoteManagedWorkspaceNodeErrorCode(originalCode, {
+        statusCode: response.status,
+        responseText: rawText,
+        payloadMessage: payload.message,
+      });
+      throw errorWithStatus(code, response.status, { originalCode, parseErrorCode });
     }
+    if (parseErrorCode) throw errorWithStatus(parseErrorCode, response.status || 500, { parseErrorCode });
     return payload;
   }
 
@@ -291,5 +346,6 @@ function createRemoteManagedWorkspaceNodeClientService(dependencies = {}) {
 
 module.exports = {
   createRemoteManagedWorkspaceNodeClientService,
+  normalizeRemoteManagedWorkspaceNodeErrorCode,
   validateProjectRoot,
 };

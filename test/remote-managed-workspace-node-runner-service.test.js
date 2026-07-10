@@ -427,6 +427,51 @@ test("remote node runner clears invalid scoped credential and resumes persisted 
   }
 });
 
+test("remote node runner normalizes invalid scoped credential alias and creates fresh pairing request", async () => {
+  const { root, service } = makeSettings();
+  const calls = [];
+  const nodeClient = Object.assign(fakeNodeClient([], calls), {
+    register: async (config) => {
+      calls.push(["register", config.workspaceId, config.enrollmentToken]);
+      const err = new Error("remote_managed_workspace_scoped_node_credential_is_invalid");
+      err.code = "remote_managed_workspace_scoped_node_credential_is_invalid";
+      err.statusCode = 403;
+      throw err;
+    },
+    requestPairing: async () => {
+      calls.push(["requestPairing"]);
+      return { result: { pairing: { requestId: "rmw_pair_alias_recovery", status: "pending_approval" } } };
+    },
+    pollPairingStatus: async (_config, requestId) => {
+      calls.push(["pollPairingStatus", requestId]);
+      return { result: { pairing: { requestId, status: "pending_approval" } } };
+    },
+  });
+  try {
+    const runner = createRemoteManagedWorkspaceNodeRunnerService({
+      settingsService: service,
+      nodeClientService: nodeClient,
+      now: () => new Date("2026-07-08T00:00:00.000Z"),
+    });
+
+    const failed = await runner.runOnce({ force: true, suppressErrors: true });
+    assert.equal(failed.ok, false);
+    assert.equal(failed.error, "remote_managed_workspace_scoped_node_credential_invalid");
+    assert.equal(failed.status.connectionStatus, "auth_failed");
+    assert.equal(failed.status.scopedCredentialConfigured, false);
+    assert.equal(failed.status.issueCodes.includes("remote_managed_workspace_scoped_node_credential_invalid"), true);
+    assert.equal(calls.some((entry) => entry[0] === "register" && entry[2] === "runner-token"), true);
+
+    const pending = await runner.runOnce({ force: true });
+    assert.equal(pending.skipped, "pending_approval");
+    assert.equal(pending.status.pairingRequestId, "rmw_pair_alias_recovery");
+    assert.equal(calls.filter((entry) => entry[0] === "requestPairing").length, 1);
+    assert.doesNotMatch(JSON.stringify(pending.status), /runner-token/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("remote node runner retires stale paired request without credential after invalid credential recovery", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "rmw-runner-stale-paired-request-"));
   const projectRoot = path.join(root, "project");
