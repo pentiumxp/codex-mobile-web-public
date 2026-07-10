@@ -2,12 +2,13 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CODEX_APP_PATH="${CODEX_DESKTOP_APP_PATH:-/Applications/Codex.app}"
+CODEX_APP_PATH="${CODEX_DESKTOP_APP_PATH:-}"
 CODEX_DESKTOP_EXE="${CODEX_DESKTOP_EXE:-}"
 CODEX_HOME_VALUE="${CODEX_HOME:-$HOME/.codex}"
 REAL_CODEX_EXE="${CODEX_MUX_CODEX_EXE:-}"
 NODE_EXE_VALUE="${CODEX_MUX_NODE_EXE:-}"
 MUX_WRAPPER="${CODEX_CLI_PATH:-$SCRIPT_DIR/codex-app-server-mux-macos.sh}"
+CODEX_APP_NAME=""
 PRINT_ONLY=0
 FORCE_QUIT=0
 
@@ -16,7 +17,8 @@ usage() {
 Usage: ./start-codex-desktop-shared-macos.sh [options]
 
 Options:
-  --app <path>           Codex.app path, default /Applications/Codex.app
+  --app <path>           Desktop app path, default /Applications/ChatGPT.app
+                         with /Applications/Codex.app fallback
   --desktop-exe <path>   Codex executable path inside the app bundle
   --codex <path|name>    Real Codex CLI executable, default command -v codex
   --node <path|name>     Node executable for the mux wrapper, default command -v node
@@ -47,8 +49,70 @@ resolve_command() {
   printf '%s\n' "$value"
 }
 
+strip_app_suffix() {
+  local name="$1"
+  name="${name%.app}"
+  printf '%s\n' "$name"
+}
+
+default_app_path() {
+  if [[ -d "/Applications/ChatGPT.app" ]]; then
+    printf '%s\n' "/Applications/ChatGPT.app"
+    return 0
+  fi
+  if [[ -d "/Applications/Codex.app" ]]; then
+    printf '%s\n' "/Applications/Codex.app"
+    return 0
+  fi
+  printf '%s\n' "/Applications/ChatGPT.app"
+}
+
+read_info_plist_value() {
+  local app_path="$1"
+  local key="$2"
+  local plist="$app_path/Contents/Info.plist"
+  if [[ ! -f "$plist" || ! -x "/usr/libexec/PlistBuddy" ]]; then
+    return 0
+  fi
+  /usr/libexec/PlistBuddy -c "Print :$key" "$plist" 2>/dev/null || true
+}
+
+bundle_base_name() {
+  local app_path="$1"
+  strip_app_suffix "$(basename "$app_path")"
+}
+
+resolve_desktop_executable() {
+  local app_path="$1"
+  local executable_name
+  executable_name="$(read_info_plist_value "$app_path" "CFBundleExecutable")"
+  if [[ -z "$executable_name" ]]; then
+    executable_name="$(bundle_base_name "$app_path")"
+  fi
+  printf '%s\n' "$app_path/Contents/MacOS/$executable_name"
+}
+
+resolve_app_name() {
+  local app_path="$1"
+  local name
+  name="$(read_info_plist_value "$app_path" "CFBundleName")"
+  if [[ -z "$name" ]]; then
+    name="$(read_info_plist_value "$app_path" "CFBundleDisplayName")"
+  fi
+  if [[ -z "$name" ]]; then
+    name="$(bundle_base_name "$app_path")"
+  fi
+  printf '%s\n' "$name"
+}
+
+escape_pgrep_pattern() {
+  printf '%s\n' "$1" | sed 's/[][(){}.^$?*+|\\]/\\&/g'
+}
+
 codex_is_running() {
-  pgrep -f "/Contents/MacOS/Codex" >/dev/null 2>&1
+  local pattern
+  pattern="$(escape_pgrep_pattern "$CODEX_DESKTOP_EXE")"
+  pgrep -f "$pattern" >/dev/null 2>&1
 }
 
 while [[ $# -gt 0 ]]; do
@@ -97,9 +161,14 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ -z "$CODEX_DESKTOP_EXE" ]]; then
-  CODEX_DESKTOP_EXE="$CODEX_APP_PATH/Contents/MacOS/Codex"
+if [[ -z "$CODEX_APP_PATH" ]]; then
+  CODEX_APP_PATH="$(default_app_path)"
 fi
+
+if [[ -z "$CODEX_DESKTOP_EXE" ]]; then
+  CODEX_DESKTOP_EXE="$(resolve_desktop_executable "$CODEX_APP_PATH")"
+fi
+CODEX_APP_NAME="$(resolve_app_name "$CODEX_APP_PATH")"
 
 NODE_EXE_VALUE="$(resolve_command "$NODE_EXE_VALUE" node)"
 REAL_CODEX_EXE="$(resolve_command "$REAL_CODEX_EXE" codex)"
@@ -113,7 +182,11 @@ for executable in "$CODEX_DESKTOP_EXE" "$MUX_WRAPPER" "$NODE_EXE_VALUE" "$REAL_C
 done
 
 if [[ "$FORCE_QUIT" -eq 1 ]]; then
-  osascript -e 'tell application "Codex" to quit' >/dev/null 2>&1 || true
+  osascript - "$CODEX_APP_NAME" >/dev/null 2>&1 <<'APPLESCRIPT' || true
+on run argv
+  tell application (item 1 of argv) to quit
+end run
+APPLESCRIPT
   for _ in {1..30}; do
     codex_is_running || break
     sleep 1
@@ -132,6 +205,9 @@ export CODEX_MUX_CODEX_EXE="$REAL_CODEX_EXE"
 export CODEX_MUX_NODE_EXE="$NODE_EXE_VALUE"
 
 echo "Codex Desktop shared app-server launch environment:"
+echo "  Desktop app: $CODEX_APP_PATH"
+echo "  Desktop app name: $CODEX_APP_NAME"
+echo "  Desktop executable: $CODEX_DESKTOP_EXE"
 echo "  CODEX_CLI_PATH=$CODEX_CLI_PATH"
 echo "  CODEX_MUX_SCRIPT_PATH=$CODEX_MUX_SCRIPT_PATH"
 echo "  CODEX_MUX_CODEX_EXE=$CODEX_MUX_CODEX_EXE"

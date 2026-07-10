@@ -10616,8 +10616,10 @@ If Codex is still running, the launcher exits instead of attaching to the wrong 
 
 Useful launcher overrides:
 
-- `--app /Applications/Codex.app`
-- `--desktop-exe /Applications/Codex.app/Contents/MacOS/Codex`
+- `--app /Applications/ChatGPT.app`
+- `--desktop-exe /Applications/ChatGPT.app/Contents/MacOS/ChatGPT`
+- `--app /Applications/Codex.app` for older Codex Desktop bundles
+- `--desktop-exe /Applications/Codex.app/Contents/MacOS/Codex` for older Codex Desktop bundles
 - `--codex "$(command -v codex)"`
 - `--node "$(command -v node)"`
 - `--codex-home "$HOME/.codex"`
@@ -10632,7 +10634,11 @@ The launcher sets:
 - `CODEX_MUX_NODE_EXE`
 - `CODEX_MUX_KEEP_ALIVE=1`
 
-It launches `/Applications/Codex.app/Contents/MacOS/Codex` directly so the environment is inherited.
+By default, the launcher uses `/Applications/ChatGPT.app` and its
+`Contents/MacOS/ChatGPT` executable for process detection. If `ChatGPT.app` is
+not installed but an older `/Applications/Codex.app` exists, it falls back to
+the legacy bundle and `Contents/MacOS/Codex`. It starts the selected bundle with
+the shared mux environment.
 
 ### macOS Bridge Verification Checklist
 
