@@ -55,6 +55,13 @@ function shouldPollExistingPairingRequest(state = {}, options = {}) {
   return true;
 }
 
+function hasIssueCode(state = {}, code = "") {
+  const expected = compactOneLine(code).toLowerCase();
+  if (!expected) return false;
+  const issues = Array.isArray(state.issueCodes) ? state.issueCodes.map((entry) => compactOneLine(entry).toLowerCase()) : [];
+  return issues.includes(expected);
+}
+
 function boundedTerminalWithoutExecutionBridge(card = {}) {
   return {
     status: "partially_completed",
@@ -272,7 +279,20 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       return { approved: true, status: nextPublic };
     }
     if (nextPublic.pairingStatus === "approved") {
-      const state = setState({
+      if (pollExistingRequest
+        && hasIssueCode(state, SCOPED_NODE_CREDENTIAL_INVALID_CODE)
+        && typeof settingsService.retireStalePairingRequestForRecovery === "function") {
+        const retiredState = settingsService.retireStalePairingRequestForRecovery({
+          pairingRequestId: state.pairingRequestId,
+          issueCode: "stale_pairing_request_missing_scoped_credential",
+        });
+        return {
+          approved: false,
+          skipped: "stale_pairing_request_retired",
+          status: settingsService.publicSettings(undefined, retiredState),
+        };
+      }
+      const missingCredentialState = setState({
         connectionStatus: "auth_failed",
         pairingStatus: "auth_failed",
         issueCode: "scoped_node_credential_missing_after_approval",
@@ -281,7 +301,7 @@ function createRemoteManagedWorkspaceNodeRunnerService(dependencies = {}) {
       return {
         approved: false,
         skipped: "approval_missing_scoped_credential",
-        status: settingsService.publicSettings(undefined, state),
+        status: settingsService.publicSettings(undefined, missingCredentialState),
       };
     }
     return {

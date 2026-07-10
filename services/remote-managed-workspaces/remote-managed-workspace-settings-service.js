@@ -688,6 +688,42 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     return writeState(next);
   }
 
+  function retireStalePairingRequestForRecovery(options = {}) {
+    const current = readState();
+    const expectedRequestId = compactOneLine(options.pairingRequestId || "").slice(0, 180);
+    if (expectedRequestId && compactOneLine(current.pairingRequestId) !== expectedRequestId) return current;
+    const issueCodes = boundedIssueCodes(current.issueCodes);
+    if (!issueCodes.includes("remote_managed_workspace_scoped_node_credential_invalid")) return current;
+    const timestamp = nowIso(now);
+    const issueCode = compactOneLine(options.issueCode || "stale_pairing_request_missing_scoped_credential")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]+/g, "_")
+      .slice(0, 120);
+    const next = Object.assign({}, current, {
+      connectionStatus: "auth_failed",
+      pairingStatus: "unconfigured",
+      pairingRequestId: "",
+      pairingApprovedAt: "",
+      pairingRequestedAt: "",
+      lastPairingCheckAt: timestamp,
+      consecutiveFailures: 0,
+      nextRetryAt: "",
+    });
+    if (current.pairingStatus !== "rejected") {
+      next.pairingRejectedAt = "";
+      next.pairingRejectionReason = "";
+    }
+    if (issueCode) {
+      next.issueCodes = boundedIssueCodes([...issueCodes, issueCode]);
+      next.diagnostics = normalizeDiagnostics([...(current.diagnostics || []), {
+        code: issueCode,
+        status: "auth_failed",
+        at: timestamp,
+      }]);
+    }
+    return writeState(next);
+  }
+
   function rememberIdempotencyKey(key) {
     const text = compactOneLine(key);
     if (!text) return readState();
@@ -788,6 +824,7 @@ function createRemoteManagedWorkspaceSettingsService(dependencies = {}) {
     readState,
     rememberIdempotencyKey,
     replaceQueuedTerminalReturns,
+    retireStalePairingRequestForRecovery,
     saveSettings,
     updateConnectionState,
     validateProjectRoots,
