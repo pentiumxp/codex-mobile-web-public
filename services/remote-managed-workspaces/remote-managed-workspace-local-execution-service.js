@@ -26,6 +26,8 @@ const DEFAULT_COMPLETION_TIMEOUT_MS = 30 * 60 * 1000;
 const REQUIRED_COMMAND_MISSING_CODE = "remote_managed_workspace_required_command_execution_missing";
 const REQUIRED_COMMAND_CLASS_MISSING_CODE = "remote_managed_workspace_required_command_class_missing";
 const COMMAND_TOOL_UNAVAILABLE_CODE = "remote_managed_workspace_command_tool_unavailable";
+const COMMAND_TOOL_SURFACE_UNAVAILABLE_CODE = "remote_managed_workspace_command_tool_surface_unavailable";
+const LOCAL_EXECUTION_CONTRACT_VERSION = "remote-managed-workspace-local-execution-v1";
 
 function compactOneLine(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
@@ -143,6 +145,36 @@ function normalizeExecutionRequirements(input = {}) {
   };
 }
 
+function normalizeToolSurfaceAvailability(value = {}, requirements = null) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const required = Boolean(requirements && requirements.toolSurfaceRequired);
+  const available = required
+    ? source.available !== false && source.commandExecutionToolAvailable !== false
+    : true;
+  const status = required
+    ? available ? "available" : "unavailable"
+    : "not_required";
+  const issueCode = available
+    ? ""
+    : compactOneLine(source.issueCode || COMMAND_TOOL_SURFACE_UNAVAILABLE_CODE)
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "_")
+        .slice(0, 120);
+  const out = {
+    required,
+    available,
+    status: compactOneLine(source.status || status).slice(0, 80),
+    source: compactOneLine(source.source || (required ? "local_execution_authority_bridge" : "not_required")).slice(0, 120),
+    commandExecutionToolAvailable: available,
+    authorityBridgeAvailable: source.authorityBridgeAvailable !== false,
+    issueCode,
+    checkedAt: compactOneLine(source.checkedAt).slice(0, 80),
+  };
+  if (!out.issueCode) delete out.issueCode;
+  if (!out.checkedAt) delete out.checkedAt;
+  return out;
+}
+
 function cardText(card = {}) {
   const message = card.message && typeof card.message === "object" ? card.message : {};
   return {
@@ -193,6 +225,60 @@ function buildRemoteTaskPrompt(card = {}, config = {}) {
     "Return a concise zh-CN final answer with bounded metadata only. Do not include secrets, cookies, launch tokens, raw logs, endpoint bodies, private thread bodies, raw cache JSON, database rows, screenshots, or provider payloads.",
   ];
   return boundedVisibleText(lines.filter((line) => line !== "").join("\n"), MAX_BODY_CHARS + 1200);
+}
+
+function buildRequiredCommandDeveloperInstructions(requirements = null, availability = null) {
+  if (!requirements || !requirements.requiresCommandExecution) return "";
+  return [
+    "Remote Managed Workspace structured execution contract:",
+    "- This turn has trusted structured executionRequirements in remoteManagedWorkspaceExecution.",
+    "- You must use the standard command execution tool surface before the final answer.",
+    `- Complete at least ${requirements.minimumCompletedCommandCount} command execution item(s).`,
+    `- Required command classes: ${requirements.requiredCommandClasses.length ? requirements.requiredCommandClasses.join(", ") : "none"}.`,
+    "- Do not satisfy this task with assistant text only.",
+    "- Keep commands within the configured task-card execution authority; unsafe, destructive, outside-workspace, external-network, privileged, or secret-path commands are out of scope.",
+    availability && availability.available === false
+      ? `- Tool surface availability is ${availability.status || "unavailable"}; do not proceed as completed.`
+      : "",
+  ].filter(Boolean).join("\n");
+}
+
+function appendDeveloperInstructions(params = {}, instructions = "", marker = "") {
+  const text = compactOneLine(marker) && String(instructions || "").includes(marker)
+    ? String(instructions || "").trim()
+    : String(instructions || "").trim();
+  if (!text) return params;
+  const existing = String(params.developerInstructions || "").trim();
+  if (marker && existing.includes(marker)) return params;
+  params.developerInstructions = existing ? `${existing}\n\n${text}` : text;
+  return params;
+}
+
+function buildRemoteManagedWorkspaceTurnContract(card = {}, config = {}, requirements = null, availability = null) {
+  if (!requirements) return null;
+  const text = cardText(card);
+  const toolSurfaceAvailability = normalizeToolSurfaceAvailability(availability, requirements);
+  return {
+    contractVersion: LOCAL_EXECUTION_CONTRACT_VERSION,
+    source: "remote_managed_workspace",
+    taskCardId: text.id,
+    idempotencyKey: text.idempotencyKey,
+    workspaceId: compactOneLine(config.workspaceId).slice(0, 180),
+    projectType: compactOneLine(config.projectType || "unknown").slice(0, 120),
+    executionRequirements: requirements,
+    requiredToolSurface: {
+      commandExecution: requirements.requiresCommandExecution === true,
+      minimumCompletedCommandCount: requirements.minimumCompletedCommandCount,
+      requiredCommandClasses: requirements.requiredCommandClasses,
+      toolSurfaceRequired: requirements.toolSurfaceRequired,
+    },
+    toolSurfaceAvailability,
+    terminalValidation: {
+      requireBoundedCommandEvidence: requirements.requiresCommandExecution === true,
+      rejectTextOnlyCompletion: requirements.requiresCommandExecution === true,
+      rejectZeroResponseItems: requirements.requiresCommandExecution === true,
+    },
+  };
 }
 
 function turnItems(turn = {}) {
@@ -279,6 +365,19 @@ function commandClassesFromItem(item = {}, execution = {}, config = {}) {
 function evaluateExecutionRequirements(requirements, turn = {}, execution = {}, config = {}) {
   if (!requirements) return null;
   const authorityConfigured = Boolean(execution.executionAuthority && execution.executionAuthority.configured === true);
+  const availability = normalizeToolSurfaceAvailability(execution.toolSurfaceAvailability, requirements);
+  if (requirements.toolSurfaceRequired && availability.available === false) {
+    return {
+      ok: false,
+      issueCode: availability.issueCode || COMMAND_TOOL_SURFACE_UNAVAILABLE_CODE,
+      commandExecutionCount: 0,
+      minimumCompletedCommandCount: requirements.minimumCompletedCommandCount,
+      requiredCommandClasses: requirements.requiredCommandClasses,
+      completedCommandClasses: [],
+      toolSurfaceRequired: requirements.toolSurfaceRequired,
+      toolSurfaceAvailability: availability,
+    };
+  }
   const toolUnavailable = turn.commandToolAvailable === false
     || turn.toolSurfaceAvailable === false
     || turn.commandExecutionToolAvailable === false
@@ -292,6 +391,12 @@ function evaluateExecutionRequirements(requirements, turn = {}, execution = {}, 
       requiredCommandClasses: requirements.requiredCommandClasses,
       completedCommandClasses: [],
       toolSurfaceRequired: requirements.toolSurfaceRequired,
+      toolSurfaceAvailability: Object.assign({}, availability, {
+        available: false,
+        status: "unavailable",
+        commandExecutionToolAvailable: false,
+        issueCode: COMMAND_TOOL_UNAVAILABLE_CODE,
+      }),
     };
   }
   const commandItems = turnItems(turn).filter(isCommandExecutionItem);
@@ -307,6 +412,7 @@ function evaluateExecutionRequirements(requirements, turn = {}, execution = {}, 
       requiredCommandClasses: requirements.requiredCommandClasses,
       completedCommandClasses,
       toolSurfaceRequired: requirements.toolSurfaceRequired,
+      toolSurfaceAvailability: availability,
     };
   }
   const missingClasses = (requirements.requiredCommandClasses || []).filter((entry) => !completedCommandClasses.includes(entry));
@@ -320,6 +426,7 @@ function evaluateExecutionRequirements(requirements, turn = {}, execution = {}, 
       completedCommandClasses,
       missingCommandClasses: missingClasses,
       toolSurfaceRequired: requirements.toolSurfaceRequired,
+      toolSurfaceAvailability: availability,
     };
   }
   return {
@@ -330,6 +437,7 @@ function evaluateExecutionRequirements(requirements, turn = {}, execution = {}, 
     requiredCommandClasses: requirements.requiredCommandClasses,
     completedCommandClasses,
     toolSurfaceRequired: requirements.toolSurfaceRequired,
+    toolSurfaceAvailability: availability,
   };
 }
 
@@ -392,6 +500,14 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
   const registerExecutionAuthority = typeof dependencies.registerExecutionAuthority === "function"
     ? dependencies.registerExecutionAuthority
     : null;
+  const resolveCommandToolSurfaceAvailability = typeof dependencies.resolveCommandToolSurfaceAvailability === "function"
+    ? dependencies.resolveCommandToolSurfaceAvailability
+    : async (_requirements) => ({
+        required: Boolean(_requirements && _requirements.toolSurfaceRequired),
+        available: Boolean(!_requirements || !_requirements.toolSurfaceRequired || registerExecutionAuthority),
+        source: "local_execution_authority_bridge",
+        authorityBridgeAvailable: Boolean(registerExecutionAuthority),
+      });
 
   function requireCodex() {
     if (!codex || typeof codex.request !== "function") {
@@ -453,12 +569,21 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
     return { threadId, thread };
   }
 
-  async function startLocalTurn(card, config, threadId, runtimeSettings) {
+  async function startLocalTurn(card, config, threadId, runtimeSettings, toolSurfaceAvailability) {
     const prompt = buildRemoteTaskPrompt(card, config);
+    const requirements = normalizeExecutionRequirements(card);
+    const turnContract = buildRemoteManagedWorkspaceTurnContract(card, config, requirements, toolSurfaceAvailability);
     const params = applyTurnRuntimeSettings({
       threadId,
       input: [{ type: "text", text: prompt }],
+      remoteManagedWorkspaceExecution: turnContract || undefined,
     }, runtimeSettings || {});
+    appendDeveloperInstructions(
+      params,
+      buildRequiredCommandDeveloperInstructions(requirements, toolSurfaceAvailability),
+      "Remote Managed Workspace structured execution contract:",
+    );
+    if (!params.remoteManagedWorkspaceExecution) delete params.remoteManagedWorkspaceExecution;
     const result = await requireCodex().request("turn/start", params, {
       timeoutMs: mutationRpcTimeoutMs,
       retry: false,
@@ -588,6 +713,78 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
     return summary;
   }
 
+  async function commandToolSurfaceAvailability(card, config, runtimeSettings) {
+    const requirements = normalizeExecutionRequirements(card);
+    const fallback = normalizeToolSurfaceAvailability(null, requirements);
+    if (!requirements || !requirements.toolSurfaceRequired) return fallback;
+    let raw = null;
+    try {
+      raw = await resolveCommandToolSurfaceAvailability(requirements, config, runtimeSettings);
+    } catch (err) {
+      raw = {
+        available: false,
+        source: "local_execution_authority_bridge",
+        issueCode: COMMAND_TOOL_SURFACE_UNAVAILABLE_CODE,
+        status: "unavailable",
+      };
+      if (logger && typeof logger.error === "function") {
+        logger.error(`[remote-managed-workspace-local-execution] tool surface availability failed: ${compactOneLine(err && err.message || String(err)).slice(0, 180)}`);
+      }
+    }
+    return normalizeToolSurfaceAvailability(raw, requirements);
+  }
+
+  function terminalForToolSurfaceUnavailable(card, config, availability) {
+    const requirements = normalizeExecutionRequirements(card);
+    const issueCode = availability && availability.issueCode || COMMAND_TOOL_SURFACE_UNAVAILABLE_CODE;
+    const executionResult = {
+      ok: false,
+      issueCode,
+      commandExecutionCount: 0,
+      minimumCompletedCommandCount: requirements ? requirements.minimumCompletedCommandCount : 0,
+      requiredCommandClasses: requirements ? requirements.requiredCommandClasses : [],
+      completedCommandClasses: [],
+      toolSurfaceRequired: Boolean(requirements && requirements.toolSurfaceRequired),
+      toolSurfaceAvailability: availability || null,
+    };
+    return {
+      status: "blocked",
+      title: "远程任务执行未闭合",
+      summary: issueCode,
+      body: boundedVisibleText([
+        "## Remote Managed Workspace 回卡",
+        "",
+        "- status: blocked",
+        "- bridge: codex_mobile_local_runtime",
+        `- taskCardId: ${normalizedCardId(card)}`,
+        `- workspaceId: ${compactOneLine(config.workspaceId)}`,
+        `- issueCode: ${issueCode}`,
+        "- commandExecutionCount: 0",
+      ].join("\n"), MAX_RETURN_BODY_CHARS),
+      metadata: {
+        bridge: "codex_mobile_local_runtime",
+        localExecutionBridge: "codex_mobile_local_runtime",
+        taskCardId: normalizedCardId(card),
+        workspaceId: compactOneLine(config.workspaceId).slice(0, 180),
+        localThreadId: "",
+        localTurnId: "",
+        turnStatus: "not_started",
+        completed: false,
+        issueCode,
+        executionAuthority: null,
+        toolSurfaceAvailability: availability || null,
+        executionRequirements: requirements || null,
+        executionResult: Object.assign({
+          taskCardId: normalizedCardId(card),
+          workspaceId: compactOneLine(config.workspaceId).slice(0, 180),
+          localThreadId: "",
+          localTurnId: "",
+          terminalStatus: "blocked",
+        }, executionResult),
+      },
+    };
+  }
+
   function terminalForCompletedTurn(card, config, execution, completion) {
     const turn = completion.turn || {};
     const turnStatus = statusText(turn.status || turn.state) || (completion.completed ? "completed" : "timeout");
@@ -597,12 +794,13 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
       : requirements
         ? {
             ok: false,
-            issueCode: "local_task_card_execution_completion_timeout",
+          issueCode: "local_task_card_execution_completion_timeout",
             commandExecutionCount: 0,
             minimumCompletedCommandCount: requirements.minimumCompletedCommandCount,
             requiredCommandClasses: requirements.requiredCommandClasses,
             completedCommandClasses: [],
             toolSurfaceRequired: requirements.toolSurfaceRequired,
+            toolSurfaceAvailability: normalizeToolSurfaceAvailability(execution.toolSurfaceAvailability, requirements),
           }
         : null;
     const executionIssue = executionResult && executionResult.ok === false ? executionResult.issueCode : "";
@@ -639,6 +837,7 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
         completed: completion.completed === true,
         issueCode,
         executionAuthority: execution.executionAuthority || null,
+        toolSurfaceAvailability: execution.toolSurfaceAvailability || null,
         executionRequirements: requirements || null,
         executionResult: executionResult ? Object.assign({
           taskCardId: normalizedCardId(card),
@@ -662,13 +861,19 @@ function createRemoteManagedWorkspaceLocalExecutionService(dependencies = {}) {
     const runtimeSettings = applyReasoningEffortFloor(Object.assign({}, inheritedRuntimeSettings || {}, requestedReasoningEffort ? {
       reasoningEffort: requestedReasoningEffort,
     } : {}), "xhigh");
+    const toolSurfaceAvailability = await commandToolSurfaceAvailability(card, config, runtimeSettings);
+    const requirements = normalizeExecutionRequirements(card);
+    if (requirements && requirements.toolSurfaceRequired && toolSurfaceAvailability.available === false) {
+      return terminalForToolSurfaceUnavailable(card, config, toolSurfaceAvailability);
+    }
     const started = await startLocalThread(card, config, runtimeSettings);
-    const turn = await startLocalTurn(card, config, started.threadId, runtimeSettings);
+    const turn = await startLocalTurn(card, config, started.threadId, runtimeSettings, toolSurfaceAvailability);
     const execution = {
       threadId: started.threadId,
       turnId: turn.turnId,
       requestedReasoningEffort,
       reasoningEffort: runtimeSettings.reasoningEffort || "",
+      toolSurfaceAvailability,
     };
     execution.executionAuthority = await configureExecutionAuthority(card, config, execution);
     if (typeof options.onExecutionStarted === "function") {

@@ -164,7 +164,16 @@ async function runRemoteManagedWorkspaceHarness() {
     path,
     codex: {
       request: async (method, params) => {
-        localCodexRequests.push({ method, threadId: params && params.threadId || "", cwd: params && params.cwd || "" });
+        localCodexRequests.push({
+          method,
+          threadId: params && params.threadId || "",
+          cwd: params && params.cwd || "",
+          hasRmwExecutionContract: Boolean(params && params.remoteManagedWorkspaceExecution),
+          contractVersion: params && params.remoteManagedWorkspaceExecution && params.remoteManagedWorkspaceExecution.contractVersion || "",
+          toolSurfaceAvailable: params && params.remoteManagedWorkspaceExecution
+            && params.remoteManagedWorkspaceExecution.toolSurfaceAvailability
+            && params.remoteManagedWorkspaceExecution.toolSurfaceAvailability.available === true,
+        });
         if (method === "thread/start") {
           await fetchJson(`${remoteProject.url}/status`);
           return { threadId: "rmw-local-thread", thread: { id: "rmw-local-thread", cwd: params.cwd } };
@@ -349,6 +358,11 @@ async function runRemoteManagedWorkspaceHarness() {
       pendingApprovalCount,
       localCodexThreadStarted: localCodexRequests.some((entry) => entry.method === "thread/start" && entry.cwd === projectRoot),
       localCodexTurnStarted: localCodexRequests.some((entry) => entry.method === "turn/start" && entry.threadId === "rmw-local-thread"),
+      localCodexTurnHasRmwExecutionContract: localCodexRequests.some((entry) => entry.method === "turn/start" && entry.hasRmwExecutionContract),
+      localCodexTurnToolSurfaceAvailable: localCodexRequests.some((entry) => entry.method === "turn/start" && entry.toolSurfaceAvailable),
+      toolSurfaceAvailabilityStatus: settingsService.publicSettings().lastExecutionResult
+        && settingsService.publicSettings().lastExecutionResult.toolSurfaceAvailability
+        && settingsService.publicSettings().lastExecutionResult.toolSurfaceAvailability.status || "",
       localExecutionThreadId: settingsService.publicSettings().lastLocalThreadId,
       localExecutionTurnId: settingsService.publicSettings().lastLocalTurnId,
       privacyCheck: "passed",

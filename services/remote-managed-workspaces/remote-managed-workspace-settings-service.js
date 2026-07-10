@@ -252,6 +252,22 @@ function normalizeExecutionAuthoritySummary(value) {
 
 function normalizeExecutionResultSummary(value) {
   const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const hasToolSurfaceAvailability = source.toolSurfaceAvailability
+    && typeof source.toolSurfaceAvailability === "object"
+    && !Array.isArray(source.toolSurfaceAvailability);
+  const availability = hasToolSurfaceAvailability ? source.toolSurfaceAvailability : {};
+  const toolSurfaceAvailability = hasToolSurfaceAvailability
+    ? Object.fromEntries(Object.entries({
+        required: availability.required === true,
+        available: availability.available === true,
+        status: compactOneLine(availability.status).toLowerCase().replace(/[^a-z0-9_-]+/g, "_").slice(0, 80),
+        source: compactOneLine(availability.source).slice(0, 120),
+        commandExecutionToolAvailable: availability.commandExecutionToolAvailable === true,
+        authorityBridgeAvailable: availability.authorityBridgeAvailable === true,
+        issueCode: compactOneLine(availability.issueCode).toLowerCase().replace(/[^a-z0-9_-]+/g, "_").slice(0, 120),
+        checkedAt: compactOneLine(availability.checkedAt).slice(0, 80),
+      }).filter(([, entry]) => entry !== "" && entry != null))
+    : null;
   const out = {
     taskCardId: compactOneLine(source.taskCardId).slice(0, 180),
     workspaceId: compactOneLine(source.workspaceId).slice(0, 180),
@@ -266,6 +282,7 @@ function normalizeExecutionResultSummary(value) {
     completedCommandClasses: normalizeStringList(source.completedCommandClasses, [], 12),
     missingCommandClasses: normalizeStringList(source.missingCommandClasses, [], 12),
     toolSurfaceRequired: source.toolSurfaceRequired === true,
+    toolSurfaceAvailability: toolSurfaceAvailability && Object.keys(toolSurfaceAvailability).length ? toolSurfaceAvailability : null,
     recordedAt: compactOneLine(source.recordedAt).slice(0, 80),
   };
   for (const key of Object.keys(out)) {

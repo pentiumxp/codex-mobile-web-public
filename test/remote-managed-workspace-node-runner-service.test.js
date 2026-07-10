@@ -291,6 +291,15 @@ test("remote node runner preserves bounded per-card execution result history", a
             requiredCommandClasses: ["workspace_read"],
             completedCommandClasses: card.taskCardId.endsWith("_a") ? [] : ["workspace_read"],
             toolSurfaceRequired: true,
+            toolSurfaceAvailability: {
+              required: true,
+              available: card.taskCardId.endsWith("_b"),
+              status: card.taskCardId.endsWith("_b") ? "available" : "unavailable",
+              source: "local_execution_authority_bridge",
+              commandExecutionToolAvailable: card.taskCardId.endsWith("_b"),
+              authorityBridgeAvailable: true,
+              issueCode: card.taskCardId.endsWith("_a") ? "remote_managed_workspace_command_tool_surface_unavailable" : "",
+            },
           },
         },
       }),
@@ -302,11 +311,14 @@ test("remote node runner preserves bounded per-card execution result history", a
 
     assert.equal(second.status.lastExecutionResult.taskCardId, "ttc_runner_history_b");
     assert.equal(second.status.lastExecutionResult.commandExecutionCount, 1);
+    assert.equal(second.status.lastExecutionResult.toolSurfaceAvailability.available, true);
     assert.deepEqual(
       second.status.recentExecutionResults.map((entry) => entry.taskCardId),
       ["ttc_runner_history_a", "ttc_runner_history_b"],
     );
     assert.equal(second.status.recentExecutionResults[0].issueCode, "remote_managed_workspace_required_command_execution_missing");
+    assert.equal(second.status.recentExecutionResults[0].toolSurfaceAvailability.available, false);
+    assert.equal(second.status.recentExecutionResults[0].toolSurfaceAvailability.issueCode, "remote_managed_workspace_command_tool_surface_unavailable");
     assert.doesNotMatch(JSON.stringify(second.status), /runner-token|raw/i);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

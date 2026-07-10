@@ -32,6 +32,10 @@ const {
 const {
   handleMessage,
 } = require("./codex-mobile-mcp-server");
+const {
+  authorityDecisionForServerRequest,
+  summarizeExecutionAuthority,
+} = require("../services/task-cards/task-card-execution-authority-service");
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -319,31 +323,59 @@ async function runRmwControlE2eHarness() {
     enrollmentTokenFile: path.join(root, "remote-node-scoped-credential"),
   });
   const localCodexRequests = [];
+  const registeredAuthorities = [];
   let commandExecutionCount = 0;
+  let manualRequestApprovalCount = 0;
+  let pendingApprovalCount = 0;
   const localExecutionService = createRemoteManagedWorkspaceLocalExecutionService({
     fs,
     path,
     codex: {
       request: async (method, params) => {
-        localCodexRequests.push({ method, threadId: params && params.threadId || "", cwd: params && params.cwd || "" });
+        localCodexRequests.push({
+          method,
+          threadId: params && params.threadId || "",
+          cwd: params && params.cwd || "",
+          hasRmwExecutionContract: Boolean(params && params.remoteManagedWorkspaceExecution),
+          contractVersion: params && params.remoteManagedWorkspaceExecution && params.remoteManagedWorkspaceExecution.contractVersion || "",
+          toolSurfaceAvailable: params && params.remoteManagedWorkspaceExecution
+            && params.remoteManagedWorkspaceExecution.toolSurfaceAvailability
+            && params.remoteManagedWorkspaceExecution.toolSurfaceAvailability.available === true,
+        });
         if (method === "thread/start") {
           await fetchJson(`${projectUrl}/status`);
           return { threadId: "rmw-control-thread", thread: { id: "rmw-control-thread", cwd: params.cwd } };
         }
         if (method === "turn/start") return { turnId: "rmw-control-turn" };
         if (method === "thread/turns/list") {
-          commandExecutionCount += 1;
+          if (registeredAuthorities.length && commandExecutionCount === 0) {
+            const decision = authorityDecisionForServerRequest(registeredAuthorities[0], {
+              id: "rmw-control-command-approval",
+              method: "item/commandExecution/requestApproval",
+              params: {
+                threadId: "rmw-control-thread",
+                turnId: "rmw-control-turn",
+                cwd: projectRoot,
+                command: `curl -fsS ${projectUrl}/status`,
+              },
+            });
+            if (decision && decision.action === "allow") commandExecutionCount += 1;
+            else {
+              manualRequestApprovalCount += 1;
+              pendingApprovalCount += 1;
+            }
+          }
           return {
             turns: [{
               id: "rmw-control-turn",
               status: { type: "completed" },
               completedAt: "2026-07-09T00:00:00.000Z",
-              items: [{
+              items: commandExecutionCount > 0 ? [{
                 id: "rmw-control-command-1",
                 type: "commandExecution",
                 status: "completed",
                 command: `curl -fsS ${projectUrl}/status`,
-              }],
+              }] : [],
             }],
           };
         }
@@ -363,6 +395,10 @@ async function runRmwControlE2eHarness() {
     rememberStartedThread: () => true,
     persistThreadTitleToSessionIndex: () => true,
     tryUpdateThreadTitle: async () => true,
+    registerExecutionAuthority: async (authority) => {
+      registeredAuthorities.push(authority);
+      return summarizeExecutionAuthority(authority);
+    },
     completionPollIntervalMs: 10,
     completionTimeoutMs: 500,
   });
@@ -481,12 +517,19 @@ async function runRmwControlE2eHarness() {
       readTerminalStatus: read.structuredContent.card.terminalStatus,
       readTerminalSummaryPresent: Boolean(read.structuredContent.card.terminalSummary),
       commandExecutionCount,
+      manualRequestApprovalCount,
+      pendingApprovalCount,
       requiredCommandExecutionOk: settingsService.publicSettings().lastExecutionResult
         && settingsService.publicSettings().lastExecutionResult.ok === true,
       rawTaskBodyExposed: JSON.stringify(combined).includes("Execute bounded fixture task without raw task body exposure."),
       rawReturnBodyExposed: /terminalReturn|raw return body/i.test(JSON.stringify(combined)),
       localCodexThreadStarted: localCodexRequests.some((entry) => entry.method === "thread/start" && entry.cwd === projectRoot),
       localCodexTurnStarted: localCodexRequests.some((entry) => entry.method === "turn/start" && entry.threadId === "rmw-control-thread"),
+      localCodexTurnHasRmwExecutionContract: localCodexRequests.some((entry) => entry.method === "turn/start" && entry.hasRmwExecutionContract),
+      localCodexTurnToolSurfaceAvailable: localCodexRequests.some((entry) => entry.method === "turn/start" && entry.toolSurfaceAvailable),
+      toolSurfaceAvailabilityStatus: settingsService.publicSettings().lastExecutionResult
+        && settingsService.publicSettings().lastExecutionResult.toolSurfaceAvailability
+        && settingsService.publicSettings().lastExecutionResult.toolSurfaceAvailability.status || "",
       contractVersion: listed.structuredContent.contract.contractVersion,
       controlSurface: listed.structuredContent.contract.controlSurface,
       privacyCheck: "passed",

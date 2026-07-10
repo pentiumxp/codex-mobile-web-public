@@ -135,6 +135,9 @@ test("remote managed workspace local execution starts Codex thread, waits for co
     assert.equal(terminal.metadata.executionResult.ok, true);
     assert.equal(terminal.metadata.executionResult.commandExecutionCount, 1);
     assert.deepEqual(terminal.metadata.executionResult.completedCommandClasses, ["workspace_read"]);
+    assert.equal(terminal.metadata.toolSurfaceAvailability.available, true);
+    assert.equal(terminal.metadata.toolSurfaceAvailability.commandExecutionToolAvailable, true);
+    assert.equal(terminal.metadata.executionResult.toolSurfaceAvailability.available, true);
     assert.equal(registeredAuthorities.length, 1);
     assert.equal(registeredAuthorities[0].taskCardId, "ttc_remote_local");
     assert.equal(registeredAuthorities[0].targetThreadId, "local-thread-1");
@@ -188,9 +191,66 @@ test("remote managed workspace local execution starts Codex thread, waits for co
     assert.equal(requests[1].method, "turn/start");
     assert.equal(requests[1].params.threadId, "local-thread-1");
     assert.equal(requests[1].params.effort, "xhigh");
+    assert.equal(requests[1].params.remoteManagedWorkspaceExecution.contractVersion, "remote-managed-workspace-local-execution-v1");
+    assert.equal(requests[1].params.remoteManagedWorkspaceExecution.taskCardId, "ttc_remote_local");
+    assert.deepEqual(requests[1].params.remoteManagedWorkspaceExecution.requiredToolSurface.requiredCommandClasses, ["workspace_read"]);
+    assert.equal(requests[1].params.remoteManagedWorkspaceExecution.toolSurfaceAvailability.available, true);
+    assert.match(requests[1].params.developerInstructions, /Remote Managed Workspace structured execution contract:/);
     assert.match(requests[1].params.input[0].text, /Implement bounded local task/);
     assert.match(requests[1].params.input[0].text, /requiresCommandExecution: true/);
     assert.doesNotMatch(JSON.stringify(terminal), /secret-token-that-must-not-leak/);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("remote managed workspace local execution blocks before turn start when required command tool surface is unavailable", async () => {
+  const { root, projectRoot } = makeProject();
+  const requests = [];
+  try {
+    const service = createRemoteManagedWorkspaceLocalExecutionService({
+      fs,
+      path,
+      codex: {
+        request: async (method, params) => {
+          requests.push({ method, params });
+          return { ok: true };
+        },
+      },
+      resolveCommandToolSurfaceAvailability: async () => ({
+        available: false,
+        status: "unavailable",
+        source: "local_execution_authority_bridge",
+        commandExecutionToolAvailable: false,
+        authorityBridgeAvailable: false,
+        issueCode: "remote_managed_workspace_command_tool_surface_unavailable",
+      }),
+    });
+
+    const terminal = await service.execute({
+      taskCardId: "ttc_surface_unavailable",
+      title: "Required unavailable",
+      bodyMarkdown: "Run command.",
+      executionRequirements: {
+        requiresCommandExecution: true,
+        minimumCompletedCommandCount: 1,
+        requiredCommandClasses: ["workspace_read"],
+        toolSurfaceRequired: true,
+      },
+    }, {
+      config: {
+        workspaceId: "rmw_local",
+        projectRoot,
+        allowedRoots: [root],
+      },
+    });
+
+    assert.equal(terminal.status, "blocked");
+    assert.equal(terminal.summary, "remote_managed_workspace_command_tool_surface_unavailable");
+    assert.equal(terminal.metadata.turnStatus, "not_started");
+    assert.equal(terminal.metadata.executionResult.toolSurfaceAvailability.available, false);
+    assert.equal(terminal.metadata.executionResult.toolSurfaceAvailability.commandExecutionToolAvailable, false);
+    assert.deepEqual(requests, []);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }

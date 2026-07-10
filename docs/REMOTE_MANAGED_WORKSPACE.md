@@ -117,6 +117,21 @@ central shell, broad filesystem read route, or inbound remote-machine
 management surface. If the bridge is unavailable in a custom composition, the
 runner still fails closed with `local_task_card_execution_bridge_unavailable`.
 
+Structured command execution requirements are runtime contract, not task-body
+inference. When a trusted central task card includes
+`executionRequirements.requiresCommandExecution=true`, the local execution
+bridge attaches a bounded `remoteManagedWorkspaceExecution` contract to
+`turn/start`, adds trusted developer guidance for the standard command execution
+tool surface, and records direct `toolSurfaceAvailability` evidence in the
+per-card execution result. If `toolSurfaceRequired=true` but the command tool
+surface or authority bridge is unavailable, the bridge fails closed before
+starting a local turn with
+`remote_managed_workspace_command_tool_surface_unavailable`. A completed local
+turn with only assistant text, zero response/items, too few completed command
+items, or missing required command classes remains blocked by terminal
+validation; Codex Mobile must not synthesize command evidence or execute shell
+commands outside the app-server approval bridge.
+
 Daily summaries and escalations accept bounded metadata only. Forbidden
 raw/private payload classes such as raw logs, endpoint bodies, secrets, cookies,
 screenshots, provider payloads, private thread bodies, and raw cache data are
