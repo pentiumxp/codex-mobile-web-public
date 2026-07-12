@@ -8,9 +8,13 @@ CODEX_HOME_VALUE="${CODEX_HOME:-$HOME/.codex}"
 REAL_CODEX_EXE="${CODEX_MUX_CODEX_EXE:-}"
 NODE_EXE_VALUE="${CODEX_MUX_NODE_EXE:-}"
 MUX_WRAPPER="${CODEX_CLI_PATH:-$SCRIPT_DIR/codex-app-server-mux-macos.sh}"
+OPEN_BIN="${CODEX_DESKTOP_OPEN_BIN:-/usr/bin/open}"
+LAUNCHCTL_BIN="${CODEX_DESKTOP_LAUNCHCTL_BIN:-/bin/launchctl}"
 CODEX_APP_NAME=""
 PRINT_ONLY=0
 FORCE_QUIT=0
+PERSIST_LAUNCH_ENV=1
+CLEAR_LAUNCH_ENV=0
 
 usage() {
   cat <<'EOF'
@@ -25,6 +29,9 @@ Options:
   --codex-home <path>    Codex state directory, default $HOME/.codex
   --mux-wrapper <path>   Executable wrapper, default ./codex-app-server-mux-macos.sh
   --force-quit           Ask the running Codex app to quit before relaunching
+  --no-persist-launch-env
+                         Inject the shared environment only into this launch
+  --clear-launch-env     Remove the persisted shared environment and exit
   --print-only           Print the launch environment without starting Codex
   -h, --help             Show this help
 EOF
@@ -134,6 +141,30 @@ codex_is_running() {
   pgrep -f "$pattern" >/dev/null 2>&1
 }
 
+shared_launch_environment_names() {
+  printf '%s\n' \
+    CODEX_HOME \
+    CODEX_CLI_PATH \
+    CODEX_MUX_SCRIPT_PATH \
+    CODEX_MUX_CODEX_EXE \
+    CODEX_MUX_NODE_EXE \
+    CODEX_MUX_KEEP_ALIVE
+}
+
+persist_launch_environment() {
+  local name
+  while IFS= read -r name; do
+    "$LAUNCHCTL_BIN" setenv "$name" "${!name}"
+  done < <(shared_launch_environment_names)
+}
+
+clear_launch_environment() {
+  local name
+  while IFS= read -r name; do
+    "$LAUNCHCTL_BIN" unsetenv "$name"
+  done < <(shared_launch_environment_names)
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --app)
@@ -164,6 +195,14 @@ while [[ $# -gt 0 ]]; do
       FORCE_QUIT=1
       shift
       ;;
+    --no-persist-launch-env)
+      PERSIST_LAUNCH_ENV=0
+      shift
+      ;;
+    --clear-launch-env)
+      CLEAR_LAUNCH_ENV=1
+      shift
+      ;;
     --print-only)
       PRINT_ONLY=1
       shift
@@ -179,6 +218,21 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$CLEAR_LAUNCH_ENV" -eq 1 && "$PRINT_ONLY" -eq 1 ]]; then
+  echo "--clear-launch-env and --print-only are mutually exclusive" >&2
+  exit 2
+fi
+
+if [[ "$CLEAR_LAUNCH_ENV" -eq 1 ]]; then
+  if [[ ! -x "$LAUNCHCTL_BIN" ]]; then
+    echo "launchctl not found or not executable: $LAUNCHCTL_BIN" >&2
+    exit 1
+  fi
+  clear_launch_environment
+  echo "Cleared persisted Codex shared environment for the current macOS login session."
+  exit 0
+fi
 
 if [[ -z "$CODEX_APP_PATH" ]]; then
   CODEX_APP_PATH="$(default_app_path)"
@@ -199,6 +253,19 @@ for executable in "$CODEX_DESKTOP_EXE" "$MUX_WRAPPER" "$NODE_EXE_VALUE" "$REAL_C
     exit 1
   fi
 done
+
+if [[ "$PRINT_ONLY" -eq 0 ]]; then
+  for executable in "$OPEN_BIN"; do
+    if [[ ! -x "$executable" ]]; then
+      echo "Executable not found or not executable: $executable" >&2
+      exit 1
+    fi
+  done
+  if [[ "$PERSIST_LAUNCH_ENV" -eq 1 && ! -x "$LAUNCHCTL_BIN" ]]; then
+    echo "launchctl not found or not executable: $LAUNCHCTL_BIN" >&2
+    exit 1
+  fi
+fi
 
 if [[ "$FORCE_QUIT" -eq 1 ]]; then
   osascript - "$CODEX_APP_NAME" >/dev/null 2>&1 <<'APPLESCRIPT' || true
@@ -222,6 +289,7 @@ export CODEX_CLI_PATH="$MUX_WRAPPER"
 export CODEX_MUX_SCRIPT_PATH="$SCRIPT_DIR/codex-app-server-mux.js"
 export CODEX_MUX_CODEX_EXE="$REAL_CODEX_EXE"
 export CODEX_MUX_NODE_EXE="$NODE_EXE_VALUE"
+export CODEX_MUX_KEEP_ALIVE=1
 
 echo "Codex Desktop shared app-server launch environment:"
 echo "  Desktop app: $CODEX_APP_PATH"
@@ -231,17 +299,28 @@ echo "  CODEX_CLI_PATH=$CODEX_CLI_PATH"
 echo "  CODEX_MUX_SCRIPT_PATH=$CODEX_MUX_SCRIPT_PATH"
 echo "  CODEX_MUX_CODEX_EXE=$CODEX_MUX_CODEX_EXE"
 echo "  CODEX_MUX_NODE_EXE=$CODEX_MUX_NODE_EXE"
+echo "  CODEX_MUX_KEEP_ALIVE=$CODEX_MUX_KEEP_ALIVE"
 echo "  CODEX_HOME=$CODEX_HOME"
+if [[ "$PERSIST_LAUNCH_ENV" -eq 1 ]]; then
+  echo "  LaunchServices environment: persist for the current login session"
+else
+  echo "  LaunchServices environment: this launch only"
+fi
 echo "  Endpoint file: $CODEX_HOME/app-server-mux/endpoint.json"
 
 if [[ "$PRINT_ONLY" -eq 1 ]]; then
   exit 0
 fi
 
-exec /usr/bin/open -n \
+if [[ "$PERSIST_LAUNCH_ENV" -eq 1 ]]; then
+  persist_launch_environment
+fi
+
+exec "$OPEN_BIN" -n \
   --env "CODEX_HOME=$CODEX_HOME" \
   --env "CODEX_CLI_PATH=$CODEX_CLI_PATH" \
   --env "CODEX_MUX_SCRIPT_PATH=$CODEX_MUX_SCRIPT_PATH" \
   --env "CODEX_MUX_CODEX_EXE=$CODEX_MUX_CODEX_EXE" \
   --env "CODEX_MUX_NODE_EXE=$CODEX_MUX_NODE_EXE" \
+  --env "CODEX_MUX_KEEP_ALIVE=$CODEX_MUX_KEEP_ALIVE" \
   "$CODEX_APP_PATH"

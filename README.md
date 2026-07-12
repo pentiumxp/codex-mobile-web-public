@@ -10624,6 +10624,8 @@ Useful launcher overrides:
 - `--node "$(command -v node)"`
 - `--codex-home "$HOME/.codex"`
 - `--mux-wrapper "$PWD/codex-app-server-mux-macos.sh"`
+- `--no-persist-launch-env` to inject the bridge variables into this launch only
+- `--clear-launch-env` to remove previously persisted bridge variables and exit
 
 The launcher sets:
 
@@ -10633,6 +10635,25 @@ The launcher sets:
 - `CODEX_MUX_CODEX_EXE`
 - `CODEX_MUX_NODE_EXE`
 - `CODEX_MUX_KEEP_ALIVE=1`
+
+By default, the launcher also writes these bridge variables to the current
+macOS LaunchServices login session with `launchctl setenv`. A later ChatGPT app
+relaunch, including an in-session relaunch after an app update, therefore keeps
+using the shared mux wrapper instead of silently starting a separate app-server.
+The explicit `open --env` values still cover the immediate launch.
+
+This persistence is scoped to the current macOS login session. Use a one-shot
+launch when session-wide persistence is not desired:
+
+```bash
+./start-codex-desktop-shared-macos.sh --no-persist-launch-env
+```
+
+Remove the persisted bridge variables without launching or quitting ChatGPT:
+
+```bash
+./start-codex-desktop-shared-macos.sh --clear-launch-env
+```
 
 By default, the launcher uses `/Applications/ChatGPT.app` and its
 `Contents/MacOS/ChatGPT` executable for process detection. If `ChatGPT.app` is
