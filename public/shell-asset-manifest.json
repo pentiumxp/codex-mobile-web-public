@@ -1,31 +1,31 @@
 {
   "schemaVersion": 4,
   "generatedBy": "generate-frontend-shell-manifest",
-  "shellCacheName": "codex-mobile-shell-v625-8ef5628b5ff1",
-  "clientBuildId": "0.1.11|codex-mobile-shell-v625-8ef5628b5ff1",
-  "classicShellCacheName": "codex-mobile-shell-v625-2eecdf8a62a1",
+  "shellCacheName": "codex-mobile-shell-v625-4a1f8d222c6c",
+  "clientBuildId": "0.1.11|codex-mobile-shell-v625-4a1f8d222c6c",
+  "classicShellCacheName": "codex-mobile-shell-v625-1e15c7a513ba",
   "viteArtifactCache": {
     "schemaVersion": 1,
     "source": "vite-shell-public-artifact",
-    "baseShellCacheName": "codex-mobile-shell-v625-2eecdf8a62a1",
-    "fingerprint": "6ea5ad36dfe5cd8b36c83f199cc5b2d572a3190585b17458431e1cdc9cebe7dd",
+    "baseShellCacheName": "codex-mobile-shell-v625-1e15c7a513ba",
+    "fingerprint": "bb387d42040dbc37dd5a978c1a1353d6bf15d532e907bfc50bfe1f00215f0b28",
     "fileCount": 20,
-    "byteCount": 2897008,
+    "byteCount": 2893663,
     "files": [
       {
-        "fileName": "assets/_virtual_codex-mobile-esm-compatibility-bUxUl_7p.js",
+        "fileName": "assets/_virtual_codex-mobile-esm-compatibility-eNKnrZ8e.js",
         "bytes": 6491,
-        "sha256": "53797113d2338e394147e14f75a4543e4c11b974c0751eead18b22ce19ac7637"
+        "sha256": "83f36bbc7cd786cf4520f1cfe21b1012a59241857b407acdcf23aae2cdee6510"
       },
       {
-        "fileName": "assets/app-bootstrap-sUWisIdL.js",
+        "fileName": "assets/app-bootstrap-Gyg4imZ4.js",
         "bytes": 50872,
-        "sha256": "df4341e77577abe1e7f4d480f756d921a0594081611286c9743a2f0ed9409547"
+        "sha256": "af6dac5e0f5d35b08804c8de8cc3d69efc46522054152cc6ed7a8b55c640f127"
       },
       {
-        "fileName": "assets/shard-01-6SLPqW2e.js",
-        "bytes": 291680,
-        "sha256": "435d3305154a08768f53032fab19d1d91509d8c1944d13f6f1de0ec8f7b9195b"
+        "fileName": "assets/shard-01-Oro20QGv.js",
+        "bytes": 291251,
+        "sha256": "a5593e118bb698297929bb44b9ccf56ae0c98dee21169c843c45d40feb70b550"
       },
       {
         "fileName": "assets/shard-02-2-31Za9L.js",
@@ -48,9 +48,9 @@
         "sha256": "58b7e8ac3a2594f6913a27a8f905fe88c3d861107bfa591dc4b378f6c9660578"
       },
       {
-        "fileName": "assets/shard-06-DrgZylQ2.js",
-        "bytes": 298429,
-        "sha256": "cab8e9228fab1791ac8976a4815310d9bf4aa878a40c4651fd5170f9d6d22f12"
+        "fileName": "assets/shard-06-CirJchoS.js",
+        "bytes": 298202,
+        "sha256": "dee297db1e240eb0df4273b43c93b91020df600fb9f04cef9d50a3f46d03b5fb"
       },
       {
         "fileName": "assets/shard-07-D8M3s1r_.js",
@@ -68,49 +68,49 @@
         "sha256": "75ba54cfbdf39979cc506b06fbe77ba3ec6d00debe05d21863c2ba32d4bea933"
       },
       {
-        "fileName": "assets/shard-10-DAMOoqvT.js",
-        "bytes": 283147,
-        "sha256": "11b80132b22adbf39d7d312c45a0e686dc3d0b3fd8c25bae279d2ad8d160da69"
+        "fileName": "assets/shard-10-lpYt0hF5.js",
+        "bytes": 280458,
+        "sha256": "4cfd437e9abc1b7578d822b135a15fa6e3e29aab41f4e87a1c5815051c1334af"
       },
       {
-        "fileName": "assets/vite-deferred-entry-topology-VkQVhF_z.js",
+        "fileName": "assets/vite-deferred-entry-topology-DcRUx7r4.js",
         "bytes": 814,
-        "sha256": "7fc1b29057afbe5f3ca6b6483980c00f16e26bd29025625efeed0f10c4ae1019"
+        "sha256": "b7819dd5db1ed5216c42ac081c4ca8ff07179a3923d3f62419f231e64f320585"
       },
       {
-        "fileName": "assets/vite-entry-group-app-entry-Cb3yfSQV.js",
+        "fileName": "assets/vite-entry-group-app-entry-DsItsN1T.js",
         "bytes": 2207,
-        "sha256": "e263d39adfe1c1b1ae9530bf88aefb8e28c59a3f7036cd26808c81c1e331eb06"
+        "sha256": "7b63a6a02225f042e7da95d6907b5e5835cb61d7c7e53c9f58bc79f1a11e3d9d"
       },
       {
-        "fileName": "assets/vite-entry-group-bootstrap-state-zDpJ2OdY.js",
+        "fileName": "assets/vite-entry-group-bootstrap-state-Dqb0ENVB.js",
         "bytes": 44195,
-        "sha256": "a6f5a36cad3ca8bc046190684f108bcc195406d859a5f66a2df933b5e7e4f08f"
+        "sha256": "e7f8197e50a205442b1055580189369988d759b42c20476653d2b47c87f37d47"
       },
       {
-        "fileName": "assets/vite-entry-group-feature-runtimes-DXLLT2B7.js",
+        "fileName": "assets/vite-entry-group-feature-runtimes-1tgbPwiB.js",
         "bytes": 10924,
-        "sha256": "bb5a7a90a5b85ccdcda1cc12ebb43c072c86f3ae272b027ae962aa0f5aa29255"
+        "sha256": "58e77332991607d199dba00ebee93e1abd8f42322da9a59a4923c43badd587b1"
       },
       {
-        "fileName": "assets/vite-entry-group-foundation-D5EC5Dn8.js",
+        "fileName": "assets/vite-entry-group-foundation-BE1hQ-9I.js",
         "bytes": 8277,
-        "sha256": "c6f18082cce9f27fa58f367feada9aecc421f2493c6fe60fde11a46e22dca854"
+        "sha256": "bf80c274c3d94d9aac2b00441d5ba9ff2367aec3e8b0523268d4b9d937ad4d96"
       },
       {
-        "fileName": "assets/vite-entry-group-manifest-BQRJCKAr.js",
+        "fileName": "assets/vite-entry-group-manifest-Ic0roD9P.js",
         "bytes": 1156,
-        "sha256": "eeb8f8d794d9ce623020a7639089f0888c63465bee7f51c139231e1be8ca1f9a"
+        "sha256": "dbd5745e997e6873d9165bc3658de93b1bf5590eec7a4bb8aea9f326fbf3538e"
       },
       {
-        "fileName": "assets/vite-entry-group-shell-services-Uf_5uXLI.js",
+        "fileName": "assets/vite-entry-group-shell-services-wRItYckI.js",
         "bytes": 4161,
-        "sha256": "b671a4a3db36b54616a18fac293d3d46738c1ed49235a84d71117806c3dfeacd"
+        "sha256": "75c17ad53d036cf666b6305cb8c85a15b380662bd4328c89255b6350d9f4b033"
       },
       {
-        "fileName": "assets/vite-shell-entry-DpL_0wn_.js",
+        "fileName": "assets/vite-shell-entry-CSnLKc20.js",
         "bytes": 86812,
-        "sha256": "b8765e631ffb8ffadb4cd6e2a9e92ee55aa07106332733c5f9a2579335a76c74"
+        "sha256": "cce1ba71bfba631d89ef3b0b70b4ac35265229b53338b8de62f2ccc2044aecfd"
       }
     ]
   },

@@ -1253,9 +1253,6 @@ function evaluatedLiveUserMessageUpsert() {
     "shouldDropOptimisticUserMessageForDurable",
     "shouldDropOptimisticUserMessageForHigherPriorityEcho",
   "shouldDropDuplicateUserMessageEvent",
-    "isTrailingPendingUserEcho",
-    "shouldPlaceLiveProgressBeforeTrailingUserEcho",
-    "insertLiveItem",
     "upsertItem",
     "appendToItem",
   ].map((name) => functionSourceFrom(appJs, name));
@@ -1283,7 +1280,6 @@ function scheduleRenderCurrentThread() { renderCount += 1; }
 function visibleTextItemsLikelySame() { return false; }
 function appendCommandOutput(item, delta) { item.aggregatedOutput = (item.aggregatedOutput || "") + delta; }
 function compactLiveText(value) { return String(value || ""); }
-function sustainSubmittedMessageBottomFollow() {}
 function shouldRenderAfterAppend() { return true; }
 function updateLiveOperationDockForLocalPatch() {}
 function patchLiveTextItemDom() { return false; }
@@ -2790,7 +2786,7 @@ test("live upsert merges same-turn durable user message duplicate before render"
   assert.equal(userMessages[0].id, "durable-user-two");
 });
 
-test("live upsert inserts assistant progress before trailing pending submitted user echo", () => {
+test("live upsert keeps a trailing submitted user message before later assistant progress", () => {
   const harness = evaluatedLiveUserMessageUpsert();
 
   harness.upsertItem("turn-1", {
@@ -2815,12 +2811,12 @@ test("live upsert inserts assistant progress before trailing pending submitted u
 
   assert.deepEqual(harness.state.currentThread.turns[0].items.map((item) => item.id), [
     "local-user-first",
-    "agent-progress",
     "local-user-second",
+    "agent-progress",
   ]);
 });
 
-test("live append inserts new assistant text before trailing pending submitted user echo", () => {
+test("live append keeps a trailing submitted user message before later assistant text", () => {
   const harness = evaluatedLiveUserMessageUpsert();
 
   harness.upsertItem("turn-1", {
@@ -2842,10 +2838,10 @@ test("live append inserts new assistant text before trailing pending submitted u
   const turn = harness.state.currentThread.turns[0];
   assert.deepEqual(turn.items.map((item) => item.id), [
     "local-user-first",
-    "agent-progress",
     "local-user-second",
+    "agent-progress",
   ]);
-  assert.equal(turn.items[1].text, "working");
+  assert.equal(turn.items[2].text, "working");
 });
 
 test("existing thread send inserts a local pending user turn before server projection catches up", () => {
