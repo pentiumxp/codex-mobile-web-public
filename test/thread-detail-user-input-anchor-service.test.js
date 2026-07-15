@@ -62,6 +62,99 @@ test("does not duplicate anchors when latest completed turn already has matching
   assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["u-existing", "a1", "usage"]);
 });
 
+test("matching completed user input receives its rollout anchor timestamp", () => {
+  const turnId = "turn-durable-user";
+  const submittedAt = "2026-07-15T02:25:37.293Z";
+  const collected = collectRolloutUserInputAnchors([
+    { type: "turn_context", payload: { turn_id: turnId } },
+    {
+      type: "response_item",
+      timestamp: submittedAt,
+      payload: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: "Actual user request" }],
+      },
+    },
+  ]);
+  const thread = {
+    turns: [{
+      id: turnId,
+      status: "completed",
+      items: [
+        { id: "a1", type: "agentMessage", text: "Answer", startedAt: "2026-07-15T02:26:00.000Z" },
+        {
+          id: "item-durable-user",
+          type: "userMessage",
+          text: "Actual user request",
+          mobileDisplayTimestamp: "2026-07-15T02:52:19.379Z",
+          mobileDisplayTimestampMs: Date.parse("2026-07-15T02:52:19.379Z"),
+          mobileDisplayTimestampInferred: true,
+        },
+      ],
+    }],
+  };
+  const originalItem = thread.turns[0].items[1];
+
+  const result = appendLatestCompletedUserInputAnchors(thread, collected);
+
+  assert.equal(result.changed, true);
+  assert.deepEqual(thread.turns[0].items.map((item) => item.id), ["item-durable-user", "a1"]);
+  const item = thread.turns[0].items[0];
+  assert.equal(item.startedAtMs, Date.parse(submittedAt));
+  assert.equal(item.startedAt, submittedAt);
+  assert.equal(item.mobileDisplayTimestampMs, Date.parse(submittedAt));
+  assert.equal(item.mobileDisplayTimestamp, submittedAt);
+  assert.equal(item.mobileDisplayTimestampInferred, false);
+  assert.equal(item.mobileDisplayTimestampSource, "rollout-user-input-anchor");
+  assert.equal(item.mobileUserInputTimestampEnriched, true);
+  assert.equal(thread.turns[0].mobileUserInputTimestampEnriched, true);
+  assert.equal(thread.turns[0].mobileUserInputAnchorBackfilled, undefined);
+  assert.notEqual(item, originalItem);
+  assert.equal(originalItem.startedAtMs, undefined);
+});
+
+test("timestamp enrichment survives another anchor insertion in the same completed turn", () => {
+  const turnId = "turn-mixed-anchor-work";
+  const collected = collectRolloutUserInputAnchors([
+    { type: "turn_context", payload: { turn_id: turnId } },
+    {
+      type: "response_item",
+      timestamp: "2026-07-15T02:25:00.000Z",
+      payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Missing earlier input" }] },
+    },
+    {
+      type: "response_item",
+      timestamp: "2026-07-15T02:25:37.293Z",
+      payload: { type: "message", role: "user", content: [{ type: "input_text", text: "Existing durable input" }] },
+    },
+  ]);
+  const thread = {
+    turns: [{
+      id: turnId,
+      status: "completed",
+      items: [
+        { id: "item-existing", type: "userMessage", text: "Existing durable input" },
+        { id: "assistant", type: "agentMessage", text: "Answer", startedAt: "2026-07-15T02:26:00.000Z" },
+      ],
+    }],
+  };
+
+  const result = appendLatestCompletedUserInputAnchors(thread, collected);
+
+  assert.equal(result.changed, true);
+  assert.equal(result.inserted, 1);
+  assert.equal(result.enriched, 1);
+  const existing = thread.turns[0].items.find((item) => item.id === "item-existing");
+  assert.equal(existing.startedAt, "2026-07-15T02:25:37.293Z");
+  assert.equal(existing.mobileUserInputTimestampEnriched, true);
+  assert.deepEqual(thread.turns[0].items.map((item) => item.text), [
+    "Missing earlier input",
+    "Existing durable input",
+    "Answer",
+  ]);
+});
+
 test("appends missing same-turn user input anchors when a completed turn already has earlier user input", () => {
   const turnId = "turn-1";
   const collected = collectRolloutUserInputAnchors([

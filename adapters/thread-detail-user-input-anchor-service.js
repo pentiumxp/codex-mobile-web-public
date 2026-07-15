@@ -240,19 +240,53 @@ function shouldBackfillUserInputAnchorsIntoTurn(turn = {}) {
   return items.some(isAssistantOrUsageItem);
 }
 
+function enrichUserInputWithAnchorTimestamp(existing = {}, anchor = {}) {
+  const anchorTimestamp = displayTimestampMs(anchor);
+  if (!anchorTimestamp || displayTimestampMs(existing)) return null;
+  const timestamp = anchor.startedAt || new Date(anchorTimestamp).toISOString();
+  const enriched = Object.assign({}, existing, {
+    startedAtMs: anchorTimestamp,
+    startedAt: timestamp,
+    mobileUserInputTimestampEnriched: true,
+  });
+  if (existing.mobileDisplayTimestampInferred === true
+    || existing.mobileDisplayTimestampMs
+    || existing.mobileDisplayTimestamp) {
+    enriched.mobileDisplayTimestampMs = anchorTimestamp;
+    enriched.mobileDisplayTimestamp = timestamp;
+    enriched.mobileDisplayTimestampInferred = false;
+    enriched.mobileDisplayTimestampSource = "rollout-user-input-anchor";
+  }
+  return enriched;
+}
+
 function appendMissingUserInputAnchorsToTurn(turn = {}, anchors = []) {
   if (!shouldBackfillUserInputAnchorsIntoTurn(turn) || !Array.isArray(anchors) || !anchors.length) {
-    return 0;
+    return { inserted: 0, enriched: 0 };
   }
   const items = Array.isArray(turn.items) ? turn.items : [];
   const existingIds = new Set(items.map((item) => text(item.id || item.itemId || item.item_id)).filter(Boolean));
   const existingUserInputs = items.filter(isUserInputItem);
   let inserted = 0;
+  let enriched = 0;
   let nextItems = null;
   for (const anchor of anchors) {
     const anchorId = text(anchor && (anchor.id || anchor.itemId || anchor.item_id));
     if (!anchor || !anchorId || existingIds.has(anchorId)) continue;
-    if (existingUserInputs.some((existing) => userInputAnchorMatchesExistingItem(existing, anchor))) continue;
+    const matchingIndex = existingUserInputs.findIndex((existing) => userInputAnchorMatchesExistingItem(existing, anchor));
+    const matchingExisting = matchingIndex >= 0 ? existingUserInputs[matchingIndex] : null;
+    if (matchingExisting) {
+      const enrichedItem = enrichUserInputWithAnchorTimestamp(matchingExisting, anchor);
+      if (enrichedItem) {
+        if (!nextItems) nextItems = items.slice();
+        const nextItemIndex = nextItems.indexOf(matchingExisting);
+        if (nextItemIndex >= 0) nextItems.splice(nextItemIndex, 1);
+        insertByTimestamp(nextItems, enrichedItem);
+        existingUserInputs[matchingIndex] = enrichedItem;
+        enriched += 1;
+      }
+      continue;
+    }
     const cloned = Object.assign({}, anchor);
     if (!nextItems) nextItems = items.slice();
     insertByTimestamp(nextItems, cloned);
@@ -261,7 +295,7 @@ function appendMissingUserInputAnchorsToTurn(turn = {}, anchors = []) {
     inserted += 1;
   }
   if (nextItems) turn.items = nextItems;
-  return inserted;
+  return { inserted, enriched };
 }
 
 function appendLatestCompletedUserInputAnchors(thread = {}, anchorPayload = {}) {
@@ -272,12 +306,19 @@ function appendLatestCompletedUserInputAnchors(thread = {}, anchorPayload = {}) 
     const turn = thread.turns[index];
     const id = turnId(turn);
     if (!id || !byTurn.has(id)) continue;
-    const inserted = appendMissingUserInputAnchorsToTurn(turn, byTurn.get(id));
-    if (!inserted) continue;
-    turn.mobileUserInputAnchorBackfilled = true;
-    turn.mobileUserInputAnchorBackfillCount = Number(turn.mobileUserInputAnchorBackfillCount || 0) + inserted;
-    thread.mobileUserInputAnchorBackfilled = id || true;
-    return { changed: true, thread };
+    const changes = appendMissingUserInputAnchorsToTurn(turn, byTurn.get(id));
+    if (!changes.inserted && !changes.enriched) continue;
+    if (changes.inserted) {
+      turn.mobileUserInputAnchorBackfilled = true;
+      turn.mobileUserInputAnchorBackfillCount = Number(turn.mobileUserInputAnchorBackfillCount || 0) + changes.inserted;
+      thread.mobileUserInputAnchorBackfilled = id || true;
+    }
+    if (changes.enriched) {
+      turn.mobileUserInputTimestampEnriched = true;
+      turn.mobileUserInputTimestampEnrichedCount = Number(turn.mobileUserInputTimestampEnrichedCount || 0) + changes.enriched;
+      thread.mobileUserInputTimestampEnriched = id || true;
+    }
+    return { changed: true, thread, inserted: changes.inserted, enriched: changes.enriched };
   }
   return { changed: false, thread };
 }

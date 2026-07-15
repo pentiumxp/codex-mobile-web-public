@@ -971,13 +971,21 @@ function createThreadDetailRolloutBackfillService(dependencies = {}) {
     if (!item || !candidate || !candidate.timestampMs || itemDirectTimestampMs(item)) return;
     item.startedAtMs = candidate.timestampMs;
     item.startedAt = candidate.timestamp || new Date(candidate.timestampMs).toISOString();
+    if (item.mobileDisplayTimestampInferred === true
+      || item.mobileDisplayTimestampMs
+      || item.mobileDisplayTimestamp) {
+      item.mobileDisplayTimestampMs = candidate.timestampMs;
+      item.mobileDisplayTimestamp = item.startedAt;
+      item.mobileDisplayTimestampInferred = false;
+      item.mobileDisplayTimestampSource = "rollout-item-timestamp";
+    }
   }
 
   function enrichTurnItemTimestampsFromCandidates(turn, candidates) {
     if (!turn || !Array.isArray(turn.items) || !Array.isArray(candidates) || !candidates.length) return turn;
     const orderedCandidates = candidates.map((candidate) => Object.assign({}, candidate, { used: false }));
     for (const item of turn.items) {
-      if (!item || itemDisplayTimestampMs(item)) continue;
+      if (!item || itemDirectTimestampMs(item)) continue;
       const candidate = takeTimestampCandidateForItem(orderedCandidates, item, timestampCandidateTypesForItem(item));
       if (candidate) applyRolloutItemTimestamp(item, candidate);
     }

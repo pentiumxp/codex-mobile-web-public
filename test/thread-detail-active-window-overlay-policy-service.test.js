@@ -473,6 +473,59 @@ test("active overlay turn backfill orders visible items by display timestamp", (
   assert.deepEqual(merged.items.map((item) => item.id), ["agent-early", "agent-mid", "agent-late"]);
 });
 
+test("active overlay ordering places a UUIDv7 steering user item between earlier and later assistant receipts", () => {
+  const turn = {
+    id: "active-turn",
+    status: "inProgress",
+    startedAt: "2026-07-15T02:20:00.000Z",
+  };
+  const items = [
+    {
+      id: "assistant-before",
+      type: "agentMessage",
+      text: "receipt before steering",
+      startedAt: "2026-07-15T02:24:00.000Z",
+    },
+    {
+      id: "assistant-after",
+      type: "agentMessage",
+      text: "receipt after steering",
+      startedAt: "2026-07-15T02:26:00.000Z",
+    },
+    {
+      id: "019f6398-0e0d-7abc-8def-0123456789ab",
+      type: "userMessage",
+    },
+  ];
+
+  assert.deepEqual(orderItemsByDisplayTimestamp(items, turn, null).map((item) => item.id), [
+    "assistant-before",
+    "019f6398-0e0d-7abc-8def-0123456789ab",
+    "assistant-after",
+  ]);
+});
+
+test("display timestamp precedence keeps explicit event time above UUIDv7 identity and UUIDv7 above inferred display time", () => {
+  const id = "019f6398-0e0d-7abc-8def-0123456789ab";
+  const identityTimestamp = Date.parse("2026-07-15T02:25:37.293Z");
+  const explicitTimestamp = Date.parse("2026-07-15T02:25:38.000Z");
+  const staleInferredTimestamp = Date.parse("2026-07-15T02:29:26.944Z");
+
+  assert.equal(itemDisplayTimestampMs({
+    id,
+    type: "userMessage",
+    startedAtMs: explicitTimestamp,
+    mobileDisplayTimestampMs: staleInferredTimestamp,
+    mobileDisplayTimestampInferred: true,
+  }), explicitTimestamp);
+  assert.equal(itemDisplayTimestampMs({
+    id,
+    type: "userMessage",
+    mobileDisplayTimestampMs: staleInferredTimestamp,
+    mobileDisplayTimestampInferred: true,
+  }), identityTimestamp);
+});
+
 test("display timestamp order matches client fallback for completed turns", () => {
   const turn = {
     id: "turn-completed",

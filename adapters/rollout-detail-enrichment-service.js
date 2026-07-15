@@ -258,7 +258,11 @@ function createRolloutDetailEnrichmentService(dependencies = {}) {
     }
     if (entry.type !== "response_item") return "";
     if (payload.type === "message") {
-      if (payload.role === "user") return "userMessage";
+      if (payload.role === "user") {
+        const candidateText = rolloutItemTimestampCandidateText(entry);
+        if (/^<environment_context>[\s\S]*<\/environment_context>$/.test(candidateText)) return "";
+        return "userMessage";
+      }
       if (payload.role === "assistant") return "agentMessage";
       return "";
     }
@@ -335,10 +339,16 @@ function createRolloutDetailEnrichmentService(dependencies = {}) {
   function appendRolloutItemTimestampCandidate(list, candidate) {
     if (!candidate || !candidate.itemType || !candidate.timestampMs) return;
     const last = list.length ? list[list.length - 1] : null;
+    const lastText = normalizeTimestampMatchText(last && last.text);
+    const candidateText = normalizeTimestampMatchText(candidate.text);
+    const sameEntryId = Boolean(last && last.entryId && candidate.entryId && last.entryId === candidate.entryId);
+    const sameText = Boolean(lastText && candidateText && lastText === candidateText);
+    const missingComparableText = !lastText || !candidateText;
     if (last
       && dedupedRolloutTimestampTypes.has(candidate.itemType)
       && last.itemType === candidate.itemType
-      && Math.abs(last.timestampMs - candidate.timestampMs) <= 50) {
+      && Math.abs(last.timestampMs - candidate.timestampMs) <= 50
+      && (sameEntryId || sameText || missingComparableText)) {
       if (!last.text && candidate.text) last.text = candidate.text;
       return;
     }
