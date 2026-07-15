@@ -2,6 +2,7 @@
 
 const { normalizeThreadVisibleProjection } = require("../../adapters/thread-visible-item-normalizer");
 const {
+  itemIdentityTimestampMs,
   itemDisplayTimestampMs,
   orderItemsByDisplayTimestamp,
 } = require("./thread-detail-active-window-overlay-policy-service");
@@ -231,7 +232,7 @@ function timestampMs(value) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
-function itemOwnDisplayTimestampMs(item) {
+function itemExplicitDisplayTimestampMs(item) {
   if (!item || typeof item !== "object") return 0;
   for (const key of [
     "createdAtMs",
@@ -248,8 +249,6 @@ function itemOwnDisplayTimestampMs(item) {
     "updated_at",
     "timestampMs",
     "timestamp",
-    "mobileDisplayTimestampMs",
-    "mobileDisplayTimestamp",
     "completedAtMs",
     "completedAt",
     "completed_at_ms",
@@ -260,6 +259,18 @@ function itemOwnDisplayTimestampMs(item) {
     if (timestamp) return timestamp;
   }
   return 0;
+}
+
+function itemInferredDisplayTimestampMs(item) {
+  if (!item || typeof item !== "object") return 0;
+  return timestampMs(item.mobileDisplayTimestampMs)
+    || timestampMs(item.mobileDisplayTimestamp);
+}
+
+function itemOwnDisplayTimestampMs(item) {
+  return itemExplicitDisplayTimestampMs(item)
+    || itemIdentityTimestampMs(item)
+    || itemInferredDisplayTimestampMs(item);
 }
 
 function itemType(item) {
@@ -331,15 +342,23 @@ function inferredDisplayTimestampForItem(items, index, turn, thread, ownTimestam
 
 function ensureTurnItemDisplayTimestamps(turn, thread) {
   if (!turn || !Array.isArray(turn.items) || turn.items.length < 1) return turn;
-  const ownTimestamps = turn.items.map(itemOwnDisplayTimestampMs);
+  const explicitTimestamps = turn.items.map(itemExplicitDisplayTimestampMs);
+  const identityTimestamps = turn.items.map(itemIdentityTimestampMs);
+  const ownTimestamps = turn.items.map((item, index) => explicitTimestamps[index]
+    || identityTimestamps[index]
+    || itemInferredDisplayTimestampMs(item));
   for (let index = 0; index < turn.items.length; index += 1) {
     const item = turn.items[index];
-    if (!item || ownTimestamps[index] || !inferableDisplayTimestampItem(item)) continue;
-    const timestamp = inferredDisplayTimestampForItem(turn.items, index, turn, thread, ownTimestamps);
+    if (!item || explicitTimestamps[index] || !inferableDisplayTimestampItem(item)) continue;
+    const identityTimestamp = identityTimestamps[index];
+    if (!identityTimestamp && itemInferredDisplayTimestampMs(item)) continue;
+    const timestamp = identityTimestamp
+      || inferredDisplayTimestampForItem(turn.items, index, turn, thread, ownTimestamps);
     if (!timestamp) continue;
     item.mobileDisplayTimestampMs = timestamp;
     item.mobileDisplayTimestamp = new Date(timestamp).toISOString();
     item.mobileDisplayTimestampInferred = true;
+    if (identityTimestamp) item.mobileDisplayTimestampSource = "item-uuid-v7";
   }
   return turn;
 }

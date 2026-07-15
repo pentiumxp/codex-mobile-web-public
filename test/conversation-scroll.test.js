@@ -49,26 +49,26 @@ test("submitted-message follow ignores empty thread ids", () => {
   assert.equal(conversationScroll.shouldFollowSubmittedMessage(null, { threadId: "thread-a" }), false);
 });
 
-test("submitted-message follow extends while a live reply continues streaming", () => {
+test("submitted-message follow has a short fixed window that live output cannot renew", () => {
   const follow = conversationScroll.createSubmittedMessageFollow("thread-a", {
     clientSubmissionId: "submit-1",
     nowMs: 1000,
-    ttlMs: 5000,
-  });
-  const extended = conversationScroll.extendSubmittedMessageFollow(follow, {
-    nowMs: 4500,
-    ttlMs: 5000,
   });
 
-  assert.deepEqual(extended, {
+  assert.deepEqual(follow, {
     threadId: "thread-a",
     clientSubmissionId: "submit-1",
-    untilMs: 9500,
+    untilMs: 2800,
   });
-  assert.equal(conversationScroll.shouldFollowSubmittedMessage(extended, {
+  assert.equal(conversationScroll.shouldFollowSubmittedMessage(follow, {
     threadId: "thread-a",
-    nowMs: 9000,
+    nowMs: 2799,
   }), true);
+  assert.equal(conversationScroll.shouldFollowSubmittedMessage(follow, {
+    threadId: "thread-a",
+    nowMs: 2801,
+  }), false);
+  assert.equal(conversationScroll.extendSubmittedMessageFollow, undefined);
 });
 
 test("viewport follow starts only from current or recently bottomed conversations", () => {
@@ -363,7 +363,7 @@ test("full render scroll planning protects user scroll before bottom follow", ()
   });
 
   assert.deepEqual(conversationScroll.planFullRenderScroll({
-    sustainedSubmittedFollow: true,
+    submittedMessageFollow: true,
     userReadingCurrentTurn: true,
   }), {
     stickToBottom: false,

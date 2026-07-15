@@ -135,6 +135,62 @@ test("thread detail response budget infers missing display timestamps before fin
   );
 });
 
+test("thread detail response budget uses a UUIDv7 user item timestamp before neighboring assistant timestamps", () => {
+  const submittedAt = Date.parse("2026-07-15T02:25:37.293Z");
+  const result = {
+    thread: {
+      id: "thread-1",
+      activeTurnId: "turn-active",
+      mobileReadMode: "projection-active-overlay",
+      turns: [{
+        id: "turn-active",
+        status: "inProgress",
+        items: [
+          {
+            id: "assistant-after-1",
+            type: "agentMessage",
+            text: "first later receipt",
+            startedAt: "2026-07-15T02:26:23.994Z",
+          },
+          {
+            id: "assistant-after-2",
+            type: "agentMessage",
+            text: "second later receipt",
+            startedAt: "2026-07-15T02:27:17.593Z",
+          },
+          {
+            id: "019f6398-0e0d-7abc-8def-0123456789ab",
+            type: "userMessage",
+            content: [{ type: "input_text", text: "submitted before both receipts" }],
+            mobileDisplayTimestamp: "2026-07-15T02:29:26.944Z",
+            mobileDisplayTimestampMs: Date.parse("2026-07-15T02:29:26.944Z"),
+            mobileDisplayTimestampInferred: true,
+          },
+          {
+            id: "context-after",
+            type: "contextCompaction",
+            startedAt: "2026-07-15T02:29:26.945Z",
+          },
+        ],
+      }],
+    },
+  };
+
+  const compacted = compactThreadDetailResponseResult(result, {});
+  const items = compacted.thread.turns[0].items;
+  const userItem = items.find((item) => item.type === "userMessage");
+
+  assert.equal(userItem.mobileDisplayTimestampInferred, true);
+  assert.equal(userItem.mobileDisplayTimestampSource, "item-uuid-v7");
+  assert.equal(userItem.mobileDisplayTimestampMs, submittedAt);
+  assert.deepEqual(items.map((item) => item.id), [
+    "019f6398-0e0d-7abc-8def-0123456789ab",
+    "assistant-after-1",
+    "assistant-after-2",
+    "context-after",
+  ]);
+});
+
 test("thread detail response budget keeps bounded active reasoning and operation tail", () => {
   const result = {
     thread: {

@@ -4851,17 +4851,12 @@ function renderCurrentThread(options = {}) {
   updateSubagentPanelUi();
   const nearBottom = isConversationNearBottom();
   const userReadingCurrentTurn = isUserReadingCurrentTurn({ nearBottom });
-  const explicitNoStickToBottom = options.stickToBottom === false || Boolean(options.scrollToTurnReceiptStart);
-  const sustainedSubmittedFollow = !explicitNoStickToBottom
-    && !userReadingCurrentTurn
-    && sustainSubmittedMessageBottomFollowFromThread(thread);
   const fullRenderScrollPlan = conversationScroll.planFullRenderScroll({
     stickToBottom: options.stickToBottom,
     scrollToTurnReceiptStart: options.scrollToTurnReceiptStart,
     nearBottom,
     userReadingCurrentTurn,
     autoScrollHold: shouldHoldAutoScrollForCurrentTurn(),
-    sustainedSubmittedFollow,
     submittedMessageFollow: shouldFollowSubmittedMessageToBottom(),
     viewportFollow: shouldFollowViewportChangeToBottom(),
   });

@@ -164,7 +164,7 @@ test("manual conversation scroll pauses live auto-stick until the user returns t
   assert.match(functionBody("shouldFollowViewportChangeToBottom"), /leaseActive,/);
   assert.match(functionBody("shouldFollowViewportChangeToBottom"), /hasLease: Boolean\(state\.viewportBottomFollow\),/);
   assert.match(functionBody("shouldFollowViewportChangeToBottom"), /if \(plan\.clearLease\) clearViewportBottomFollow\(\);/);
-  assert.match(appJs, /(?:const|var) sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\);/);
+  assert.doesNotMatch(appJs, /sustainSubmittedMessageBottomFollow/);
   assert.match(appJs, /(?:const|var) fullRenderScrollPlan = conversationScroll\.planFullRenderScroll\(\{/);
   assert.match(appJs, /submittedMessageFollow: shouldFollowSubmittedMessageToBottom\(\),/);
   assert.match(appJs, /viewportFollow: shouldFollowViewportChangeToBottom\(\),/);
@@ -229,13 +229,8 @@ test("successful message submit follows the new turn to the bottom", () => {
   assert.match(appJs, /(?:const|var) conversationScroll = window\.CodexConversationScroll/);
   assert.match(appJs, /function followSubmittedMessageToBottom\(threadId, clientSubmissionId = ""\)/);
   assert.match(appJs, /conversationScroll\.createSubmittedMessageFollow\(threadId/);
-  assert.match(appJs, /function sustainSubmittedMessageBottomFollow\(turn, itemType, field\)/);
-  assert.match(appJs, /conversationScroll\.extendSubmittedMessageFollow\(follow, \{/);
-  assert.match(appJs, /function sustainSubmittedMessageBottomFollowFromThread\(thread\)/);
-  assert.match(appJs, /latestLiveTurnForThread\(thread\)/);
-  assert.match(appJs, /visibleItemsForTurn\(liveTurn, thread\)[\s\S]*item\.type !== "userMessage"/);
-  assert.match(appJs, /(?:const|var) sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\)/);
-  assert.match(appJs, /sustainedSubmittedFollow,/);
+  assert.doesNotMatch(appJs, /sustainSubmittedMessageBottomFollow/);
+  assert.doesNotMatch(appJs, /extendSubmittedMessageFollow/);
   assert.match(appJs, /submittedMessageFollow: shouldFollowSubmittedMessageToBottom\(\),/);
   assert.match(appJs, /viewportFollow: shouldFollowViewportChangeToBottom\(\),/);
   assert.match(appJs, /function scheduleSubmittedMessageBottomFollowScroll\(\)/);
@@ -245,7 +240,6 @@ test("successful message submit follows the new turn to the bottom", () => {
     functionSourceFrom(composerRuntimeJs, "sendMessage"),
     /followSubmittedMessageToBottom\(targetThreadId, clientSubmissionId\);[\s\S]*await api\(`\/api\/threads\/\$\{encodeURIComponent\(targetThreadId\)\}\/messages`/,
   );
-  assert.match(appJs, /sustainSubmittedMessageBottomFollow\(turn, itemType, field\);/);
   assert.match(appJs, /clearSubmittedMessageBottomFollow\(\);[\s\S]*const message = normalizeClientErrorMessage/);
   assert.match(appJs, /conversationScroll\.isNearBottom\(\{/);
   assert.doesNotMatch(functionBody("renderCurrentThread"), /const shouldFollowBottom = !userReadingCurrentTurn/);
@@ -270,7 +264,6 @@ test("live and final message renders stay anchored when the user is at bottom", 
   assertInOrder(renderBody, [
     /const nearBottom = isConversationNearBottom\(\);/,
     /const userReadingCurrentTurn = isUserReadingCurrentTurn\(\{ nearBottom \}\);/,
-    /const sustainedSubmittedFollow = !explicitNoStickToBottom[\s\S]*sustainSubmittedMessageBottomFollowFromThread\(thread\);/,
     /const fullRenderScrollPlan = conversationScroll\.planFullRenderScroll\(\{/,
     /autoScrollHold: shouldHoldAutoScrollForCurrentTurn\(\),/,
     /viewportFollow: shouldFollowViewportChangeToBottom\(\),/,
@@ -294,7 +287,6 @@ test("live and final message renders stay anchored when the user is at bottom", 
 
   const appendBody = functionBody("appendToItem");
   assertInOrder(appendBody, [
-    /sustainSubmittedMessageBottomFollow\(turn, itemType, field\);/,
     /if \(shouldRenderAfterAppend\(turn, itemType, field, previousValue, nextValue, options\)\) \{/,
     /if \(!patchLiveTextItemDom\(turn, item\)\) scheduleRenderCurrentThread\(\);/,
   ]);
@@ -316,58 +308,10 @@ test("live and final message renders stay anchored when the user is at bottom", 
   assert.match(functionBody("applyThreadDetailDomUpdateEffect"), /if \(type === "schedule-conversation-to-bottom"\) \{/);
   assert.doesNotMatch(functionBody("completeLocalConversationDomUpdate"), /!userReadingCurrentTurn && !shouldHoldAutoScrollForCurrentTurn\(\) && \(wasNearBottom/);
 
-  const sustainBody = functionBody("sustainSubmittedMessageBottomFollow");
-  assert.match(sustainBody, /if \(itemType !== "agentMessage" \|\| field !== "text"\) return;/);
-  assert.match(sustainBody, /if \(!turn \|\| !isLatestTurn\(turn\) \|\| !isLiveTurn\(turn\)\) return;/);
-  assert.match(sustainBody, /state\.submittedMessageBottomFollow = conversationScroll\.extendSubmittedMessageFollow\(follow, \{/);
-  assert.match(sustainBody, /scheduleSubmittedMessageBottomFollowScroll\(\);/);
-
   const notificationBody = functionBody("applyNotification");
   assert.match(notificationBody, /method === "item\/agentMessage\/delta"[\s\S]*appendToItem\(params\.turnId, params\.itemId, "agentMessage", "text", params\.delta \|\| "", 0\)/);
   assert.doesNotMatch(notificationBody, /defer-final-receipt/);
   assert.match(notificationBody, /method === "turn\/completed"[\s\S]*const suppressAutomaticRefresh = shouldSuppressAutomaticCurrentThreadRefresh\("post-completion", \{ threadId: params\.threadId \}\);[\s\S]*renderCurrentThread\(\{ stickToBottom: !suppressAutomaticRefresh \}\);/);
-});
-
-test("submitted message bottom follow sustain uses target thread for visible progress", () => {
-  const source = functionSourceFrom(appJs, "sustainSubmittedMessageBottomFollowFromThread");
-  const result = Function(`
-const targetThread = { id: "target-thread" };
-const liveTurn = { id: "live-turn" };
-const state = {
-  currentThreadId: "target-thread",
-  submittedMessageBottomFollow: { threadId: "target-thread" },
-};
-let visibleThreadId = "";
-const conversationScroll = {
-  shouldFollowSubmittedMessage(follow, context) {
-    return Boolean(follow && context && context.threadId === "target-thread");
-  },
-  extendSubmittedMessageFollow(follow, context) {
-    return Object.assign({}, follow, { extendedAt: context.nowMs });
-  },
-};
-function latestLiveTurnForThread(thread) {
-  return thread === targetThread ? liveTurn : null;
-}
-function visibleItemsForTurn(turn, thread) {
-  visibleThreadId = String(thread && thread.id || "");
-  if (turn === liveTurn && visibleThreadId === "target-thread") return [{ item: { type: "agentMessage" } }];
-  return [];
-}
-${source}
-const sustained = sustainSubmittedMessageBottomFollowFromThread(targetThread);
-return {
-  sustained,
-  visibleThreadId,
-  extended: Boolean(state.submittedMessageBottomFollow.extendedAt),
-};
-`)();
-
-  assert.deepEqual(result, {
-    sustained: true,
-    visibleThreadId: "target-thread",
-    extended: true,
-  });
 });
 
 test("thread opens and same-signature renders still land on the latest message", () => {

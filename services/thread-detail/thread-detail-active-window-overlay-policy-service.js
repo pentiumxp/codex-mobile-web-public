@@ -78,6 +78,14 @@ function uuidV7TimestampMs(value) {
   return Number.isFinite(parsed) && parsed > 946684800000 && parsed < 4102444800000 ? parsed : 0;
 }
 
+function itemIdentityTimestampMs(item) {
+  return uuidV7TimestampMs(item && (
+    item.id
+    || item.itemId
+    || item.item_id
+  ));
+}
+
 function turnStartedAtMs(turn) {
   return timestampMs(turn && (
     turn.startedAtMs
@@ -156,11 +164,16 @@ function itemDisplayTimestampMs(item, turn = null, thread = null) {
     || item.updated_at
     || item.timestampMs
     || item.timestamp
-    || item.mobileDisplayTimestampMs
-    || item.mobileDisplayTimestamp
     || item.timeMs
   ));
   if (direct) return direct;
+  const identityTimestamp = itemIdentityTimestampMs(item);
+  if (identityTimestamp) return identityTimestamp;
+  const inferredDisplayTimestamp = timestampMs(item && (
+    item.mobileDisplayTimestampMs
+    || item.mobileDisplayTimestamp
+  ));
+  if (inferredDisplayTimestamp) return inferredDisplayTimestamp;
   if (type === "agentmessage" || type === "plan") {
     return timestampMs(item && (
       item.completedAtMs
@@ -594,6 +607,7 @@ function orderItemsByDisplayTimestamp(items, turn = null, thread = null) {
 
 module.exports = {
   classifyActiveOverlayItem,
+  itemIdentityTimestampMs,
   itemDisplayTimestampMs,
   mergeActiveOverlayTurnWithWindowBackfill,
   mergeProjectionThreadWithActiveOverlay,

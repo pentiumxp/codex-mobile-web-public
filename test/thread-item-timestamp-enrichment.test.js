@@ -58,6 +58,53 @@ test("thread detail items receive per-item timestamps from rollout events", () =
   }
 });
 
+test("distinct close user rollout items repair a stale inferred display timestamp", () => {
+  const actualUserTimestamp = "2026-07-15T02:25:37.293Z";
+  const { dir, rolloutPath } = writeRollout([
+    event("2026-07-15T02:25:37.280Z", "event_msg", { type: "task_started", turn_id: "turn-close-user-items" }),
+    event("2026-07-15T02:25:37.286Z", "response_item", {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "<environment_context>internal context</environment_context>" }],
+    }),
+    event(actualUserTimestamp, "response_item", {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text: "Actual user request" }],
+    }),
+  ]);
+  try {
+    const thread = {
+      id: "thread-close-user-items",
+      path: rolloutPath,
+      turns: [{
+        id: "turn-close-user-items",
+        status: "completed",
+        items: [{
+          id: "item-durable-user",
+          type: "userMessage",
+          text: "Actual user request",
+          mobileDisplayTimestamp: "2026-07-15T02:52:19.379Z",
+          mobileDisplayTimestampMs: Date.parse("2026-07-15T02:52:19.379Z"),
+          mobileDisplayTimestampInferred: true,
+        }],
+      }],
+    };
+
+    enrichThreadItemTimestampsFromRollout(thread);
+
+    const item = thread.turns[0].items[0];
+    assert.equal(item.startedAtMs, Date.parse(actualUserTimestamp));
+    assert.equal(item.startedAt, actualUserTimestamp);
+    assert.equal(item.mobileDisplayTimestampMs, Date.parse(actualUserTimestamp));
+    assert.equal(item.mobileDisplayTimestamp, actualUserTimestamp);
+    assert.equal(item.mobileDisplayTimestampInferred, false);
+    assert.equal(item.mobileDisplayTimestampSource, "rollout-item-timestamp");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("compact thread infers display timestamp for unmatched visible user messages", () => {
   const thread = compactThread({
     id: "thread-display-timestamp",

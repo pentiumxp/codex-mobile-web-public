@@ -9,7 +9,7 @@
   }
 }(typeof globalThis !== "undefined" ? globalThis : null, function () {
   const DEFAULT_NEAR_BOTTOM_PX = 96;
-  const DEFAULT_SUBMIT_FOLLOW_MS = 15000;
+  const DEFAULT_SUBMIT_FOLLOW_MS = 1800;
   const DEFAULT_VIEWPORT_FOLLOW_MS = 3200;
   const DEFAULT_RECENT_BOTTOM_MS = 120000;
   const DEFAULT_BOTTOM_FOLLOW_DELAYS_MS = Object.freeze([0, 80, 240, 600, 1200]);
@@ -45,16 +45,6 @@
     if (!threadId || String(follow.threadId) !== threadId) return false;
     const nowMs = numberOrZero(options.nowMs) || Date.now();
     return nowMs <= numberOrZero(follow.untilMs);
-  }
-
-  function extendSubmittedMessageFollow(follow, options = {}) {
-    if (!follow || !follow.threadId) return null;
-    const nowMs = numberOrZero(options.nowMs) || Date.now();
-    const ttlMs = Math.max(1000, numberOrZero(options.ttlMs) || DEFAULT_SUBMIT_FOLLOW_MS);
-    return {
-      ...follow,
-      untilMs: nowMs + ttlMs,
-    };
   }
 
   function shouldStartViewportFollow(options = {}) {
@@ -362,17 +352,13 @@
         reason: "auto-scroll-hold",
       };
     }
-    const shouldFollowBottom = Boolean(options.sustainedSubmittedFollow || options.submittedMessageFollow || options.viewportFollow);
+    const shouldFollowBottom = Boolean(options.submittedMessageFollow || options.viewportFollow);
     if (shouldFollowBottom) {
       return {
         stickToBottom: true,
         explicitNoStickToBottom: false,
         shouldFollowBottom: true,
-        reason: options.sustainedSubmittedFollow
-          ? "sustained-submitted-message-follow"
-          : options.submittedMessageFollow
-            ? "submitted-message-follow"
-            : "viewport-follow",
+        reason: options.submittedMessageFollow ? "submitted-message-follow" : "viewport-follow",
       };
     }
     if (options.stickToBottom === true) {
@@ -406,7 +392,6 @@
     DEFAULT_RECENT_BOTTOM_MS,
     DEFAULT_BOTTOM_FOLLOW_DELAYS_MS,
     createSubmittedMessageFollow,
-    extendSubmittedMessageFollow,
     createViewportFollow,
     isNearBottom,
     planBottomFollowLeaseEvaluation,
