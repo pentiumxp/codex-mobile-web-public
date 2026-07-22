@@ -1922,6 +1922,29 @@
     };
   }
 
+  function detailRefreshBatchPlan(input = {}, options = {}) {
+    const targetIds = uniqueIds(input.targetIds || input.ids || input.activeIds || []);
+    const concurrencyInput = {
+      activeIds: targetIds,
+      maxPanes: input.maxPanes || options.maxPanes || DEFAULT_USER_MAX_PANES,
+    };
+    if (Object.prototype.hasOwnProperty.call(input, "configuredMaxConcurrentLoads")) {
+      concurrencyInput.configuredMaxConcurrentLoads = input.configuredMaxConcurrentLoads;
+    }
+    const concurrency = detailLoadConcurrencyPlan(concurrencyInput, options);
+    const batches = [];
+    for (let index = 0; index < targetIds.length; index += concurrency.maxConcurrentLoads) {
+      batches.push(targetIds.slice(index, index + concurrency.maxConcurrentLoads));
+    }
+    return {
+      action: "detail-refresh-batches",
+      reason: targetIds.length ? "bounded-refresh" : "no-targets",
+      targetIds,
+      maxConcurrentLoads: concurrency.maxConcurrentLoads,
+      batches,
+    };
+  }
+
   function detailLoadQueueDrainPlan(input = {}, options = {}) {
     const activeIds = uniqueIds(input.activeIds || input.ids || []);
     const delayMs = Math.max(0, Number(input.delayMs || options.defaultDelayMs || 0));
@@ -2088,6 +2111,7 @@
     detailLoadErrorEffectsPlan,
     detailLoadFinallyEffectsPlan,
     detailLoadConcurrencyPlan,
+    detailRefreshBatchPlan,
     detailLoadQueueDrainPlan,
     detailLoadQueuePlan,
     detailLoadStartEffectsPlan,

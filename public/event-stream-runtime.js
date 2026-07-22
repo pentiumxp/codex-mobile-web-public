@@ -786,8 +786,25 @@ function scheduleMobileResume(reason = "resume", delay = 80) {
     }, visualDelay));
   }
   state.resumeTimer = setTimeout(() => {
-    if (seq === state.resumeSeq) resumeMobileSession(reason).catch(showError);
+    if (seq === state.resumeSeq) runMobileResumeSingleFlight(reason).catch(showError);
   }, delay);
+}
+
+async function runMobileResumeSingleFlight(reason = "resume") {
+  if (state.resumeInFlight) {
+    postClientEvent("mobile_resume_coalesced", {
+      reason,
+      currentThreadId: state.currentThreadId || "",
+    });
+    return state.resumeInFlight;
+  }
+  const run = resumeMobileSession(reason);
+  state.resumeInFlight = run;
+  try {
+    return await run;
+  } finally {
+    if (state.resumeInFlight === run) state.resumeInFlight = null;
+  }
 }
 
 function isTransientResumeError(err) {

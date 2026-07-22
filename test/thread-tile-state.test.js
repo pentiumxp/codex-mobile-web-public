@@ -1765,6 +1765,31 @@ test("thread tile state owns detail-load concurrency limits", () => {
   });
 });
 
+test("thread tile state batches background detail refreshes through the concurrency limit", () => {
+  assert.deepEqual(state.detailRefreshBatchPlan({
+    targetIds: ["a", "b", "c", "a"],
+    maxPanes: 12,
+  }), {
+    action: "detail-refresh-batches",
+    reason: "bounded-refresh",
+    targetIds: ["a", "b", "c"],
+    maxConcurrentLoads: 1,
+    batches: [["a"], ["b"], ["c"]],
+  });
+
+  assert.deepEqual(state.detailRefreshBatchPlan({
+    targetIds: ["a", "b", "c"],
+    configuredMaxConcurrentLoads: 2,
+    maxPanes: 12,
+  }), {
+    action: "detail-refresh-batches",
+    reason: "bounded-refresh",
+    targetIds: ["a", "b", "c"],
+    maxConcurrentLoads: 2,
+    batches: [["a", "b"], ["c"]],
+  });
+});
+
 test("thread tile state plans pane refresh scheduling without DOM state", () => {
   assert.deepEqual(state.refreshSchedulePlan({
     enabled: false,
