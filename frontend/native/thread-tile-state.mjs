@@ -1,7 +1,9 @@
 "use strict";
 
   const DEFAULT_USER_MAX_PANES = 12;
-  const DEFAULT_DETAIL_LOAD_MAX_CONCURRENT = 4;
+  const DEFAULT_DETAIL_LOAD_MAX_CONCURRENT = 1;
+  const DEFAULT_BACKGROUND_REFRESH_MAX_TARGETS = 1;
+  const DEFAULT_BACKGROUND_REFRESH_MIN_AGE_MS = 9000;
   const DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS = 500;
   const DEFAULT_PANE_NEAR_BOTTOM_PX = 48;
   const DEFAULT_PANE_SCROLLABLE_DELTA_PX = 96;
@@ -1750,10 +1752,47 @@
     const visibleInput = input.visibleIds;
     const visibleIds = Array.isArray(visibleInput) ? new Set(uniqueIds(visibleInput)) : null;
     const currentThreadId = text(input.currentThreadId).trim();
-    return ids.filter((id) => {
+    const nowMs = nowValue(input.nowMs);
+    const minRefreshAgeMs = Math.max(0, Number(
+      Object.prototype.hasOwnProperty.call(input, "minRefreshAgeMs")
+        ? input.minRefreshAgeMs
+        : DEFAULT_BACKGROUND_REFRESH_MIN_AGE_MS,
+    ) || 0);
+    const parsedMaxTargets = Math.floor(Number(
+      Object.prototype.hasOwnProperty.call(input, "maxRefreshTargets")
+        ? input.maxRefreshTargets
+        : DEFAULT_BACKGROUND_REFRESH_MAX_TARGETS,
+    ));
+    const maxRefreshTargets = Number.isFinite(parsedMaxTargets) && parsedMaxTargets > 0
+      ? parsedMaxTargets
+      : DEFAULT_BACKGROUND_REFRESH_MAX_TARGETS;
+    const loadedAtById = input.loadedAtById;
+    const loadedAtForId = (id) => {
+      if (loadedAtById && typeof loadedAtById.get === "function") {
+        return Math.max(0, Number(loadedAtById.get(id) || 0));
+      }
+      if (loadedAtById && typeof loadedAtById === "object") {
+        return Math.max(0, Number(loadedAtById[id] || 0));
+      }
+      return 0;
+    };
+    const candidates = ids.filter((id) => {
       if (visibleIds && !visibleIds.has(id)) return false;
       return !currentThreadId || id !== currentThreadId;
     });
+    const staleCandidates = candidates
+      .map((id, index) => {
+        const loadedAtMs = loadedAtForId(id);
+        return { id, index, loadedAtMs, ageMs: loadedAtMs ? nowMs - loadedAtMs : Number.POSITIVE_INFINITY };
+      })
+      .filter((entry) => !entry.loadedAtMs || minRefreshAgeMs <= 0 || entry.ageMs >= minRefreshAgeMs)
+      .sort((a, b) => {
+        if (!a.loadedAtMs && b.loadedAtMs) return -1;
+        if (a.loadedAtMs && !b.loadedAtMs) return 1;
+        if (a.loadedAtMs !== b.loadedAtMs) return a.loadedAtMs - b.loadedAtMs;
+        return a.index - b.index;
+      });
+    return staleCandidates.slice(0, maxRefreshTargets).map((entry) => entry.id);
   }
 
   function detailLoadQueuePlan(input = {}) {
@@ -1837,6 +1876,29 @@
       activeCount: activeIds.length,
       configuredMaxConcurrentLoads: boundedConfiguredMax,
       maxConcurrentLoads,
+    };
+  }
+
+  function detailRefreshBatchPlan(input = {}, options = {}) {
+    const targetIds = uniqueIds(input.targetIds || input.ids || input.activeIds || []);
+    const concurrencyInput = {
+      activeIds: targetIds,
+      maxPanes: input.maxPanes || options.maxPanes || DEFAULT_USER_MAX_PANES,
+    };
+    if (Object.prototype.hasOwnProperty.call(input, "configuredMaxConcurrentLoads")) {
+      concurrencyInput.configuredMaxConcurrentLoads = input.configuredMaxConcurrentLoads;
+    }
+    const concurrency = detailLoadConcurrencyPlan(concurrencyInput, options);
+    const batches = [];
+    for (let index = 0; index < targetIds.length; index += concurrency.maxConcurrentLoads) {
+      batches.push(targetIds.slice(index, index + concurrency.maxConcurrentLoads));
+    }
+    return {
+      action: "detail-refresh-batches",
+      reason: targetIds.length ? "bounded-refresh" : "no-targets",
+      targetIds,
+      maxConcurrentLoads: concurrency.maxConcurrentLoads,
+      batches,
     };
   }
 
@@ -1956,6 +2018,8 @@
 
 const api = {
   DEFAULT_DETAIL_LOAD_MAX_CONCURRENT,
+  DEFAULT_BACKGROUND_REFRESH_MAX_TARGETS,
+  DEFAULT_BACKGROUND_REFRESH_MIN_AGE_MS,
   DEFAULT_OPERATION_BUBBLE_MIN_VISIBLE_MS,
   DEFAULT_USER_MAX_PANES,
   THREAD_IDENTITY_COLOR_SCHEMES,
@@ -2003,6 +2067,7 @@ const api = {
   detailLoadErrorEffectsPlan,
   detailLoadFinallyEffectsPlan,
   detailLoadConcurrencyPlan,
+  detailRefreshBatchPlan,
   detailLoadQueueDrainPlan,
   detailLoadQueuePlan,
   detailLoadStartEffectsPlan,

@@ -929,15 +929,21 @@ async function refreshThreadTileDetails(ids = [], options = {}) {
     ids: uniqueIds,
     visibleIds,
     currentThreadId: state.currentThread && state.currentThread.id,
+    loadedAtById: state.threadTileLoadedAtById,
+    nowMs: Date.now(),
   });
   if (!targetIds.length) return;
-  await Promise.all(targetIds.map((id) => {
-    return loadThreadTileDetail(id, {
+  const refreshPlan = threadTileStatePolicy.detailRefreshBatchPlan({
+    targetIds,
+    maxPanes: THREAD_TILE_USER_MAX_PANES,
+  });
+  for (const batch of refreshPlan.batches) {
+    await Promise.all(batch.map((id) => loadThreadTileDetail(id, {
       force: true,
       background: true,
       source: options.source || "tile-refresh",
-    });
-  }));
+    })));
+  }
 }
 
 function abortThreadTileLoads() {
